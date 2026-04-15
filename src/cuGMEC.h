@@ -1,3 +1,22 @@
+/*
+ * cuGMEC
+ *
+ * Copyright (C) 2025 Shiyang Liu
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+ */
+
 #pragma once
 #include "cuda_runtime.h"
 #include "device_launch_parameters.h"
@@ -15,6 +34,8 @@
 #include <sys/stat.h>
 #include <fstream>
 #include <vector>
+#include <array>
+#include <tuple>
 #include <math.h>
 #include <random>
 #include <string>
@@ -127,7 +148,8 @@ public:
 		y0{ -PI }, y1{ PI }, y0PlusGhost{ y0 - (gridGhost - 0.5) * gridDy }, y1PlusGhost{ y1 + (gridGhost - 0.5) * gridDy },
 		z0{ -PI / tubes }, z1{ PI / tubes }, z0PlusGhost{ z0 - (gridGhost - 0.5) * gridDz }, z1PlusGhost{ z1 + (gridGhost - 0.5) * gridDz },
 
-		B0{ normalizationInput[0] }, L0{ normalizationInput[1] }, VA0{ normalizationInput[2] }, CHI0{ normalizationInput[3] }, CHI1{ normalizationInput[4] }, NormQE{ QE / (B0 * L0 * L0 / MU0 / VA0) }, dt{ normalizationInput[5] },
+		B0{ normalizationInput[0] }, L0{ normalizationInput[1] }, VA0{ normalizationInput[2] }, RHO0{ normalizationInput[3] }, RHO1{ normalizationInput[4] },
+		PSITMAX{ normalizationInput[5] }, NormQE{ QE / (B0 * L0 * L0 / MU0 / VA0) }, dt{ normalizationInput[6] },
 
 		nablaPerp2A{ perp2AInput }, nablaPerp2w{ perp2wInput }, nablaPerp2dNe{ perp2dNeInput }, nablaPerp2dTe{ perp2dTeInput },
 		nablaPerp2dPi{ perp2dPiInput }, nablaPerp2dPa{ perp2dPaInput }, nablaPerp2dPb{ perp2dPbInput },
@@ -135,13 +157,13 @@ public:
 		ifSlowing{ std::get<0>(SlowingInput) }, randMax{ std::get<1>(SlowingInput) },
 
 		ifIon{ std::get<0>(IonInput) }, IonMass{ std::get<1>(IonInput)[0] }, IonChar{ std::get<1>(IonInput)[1] }, IonBeta{ std::get<1>(IonInput)[2] }, IonVmin{ std::get<1>(IonInput)[3] }, IonVmax{ std::get<1>(IonInput)[4] },
-		IonVb{ std::get<1>(IonInput)[5] }, IonVc{ std::get<1>(IonInput)[6] }, IonDeltaV{ std::get<1>(IonInput)[7] }, IonLambda0{ std::get<1>(IonInput)[8] }, IonDeltaLambda2{ std::get<1>(IonInput)[9] },
+		IonVb{ std::get<1>(IonInput)[5] }, IonDeltaV{ std::get<1>(IonInput)[6] }, IonLambda0{ std::get<1>(IonInput)[7] }, IonDeltaLambda2{ std::get<1>(IonInput)[8] },
 
 		ifAlpha{ std::get<0>(AlphaInput) }, AlphaMass{ std::get<1>(AlphaInput)[0] }, AlphaChar{ std::get<1>(AlphaInput)[1] }, AlphaBeta{ std::get<1>(AlphaInput)[2] }, AlphaVmin{ std::get<1>(AlphaInput)[3] }, AlphaVmax{ std::get<1>(AlphaInput)[4] },
-		AlphaVb{ std::get<1>(AlphaInput)[5] }, AlphaVc{ std::get<1>(AlphaInput)[6] }, AlphaDeltaV{ std::get<1>(AlphaInput)[7] }, AlphaLambda0{ std::get<1>(AlphaInput)[8] }, AlphaDeltaLambda2{ std::get<1>(AlphaInput)[9] },
+		AlphaVb{ std::get<1>(AlphaInput)[5] }, AlphaDeltaV{ std::get<1>(AlphaInput)[6] }, AlphaLambda0{ std::get<1>(AlphaInput)[7] }, AlphaDeltaLambda2{ std::get<1>(AlphaInput)[8] },
 
 		ifBeam{ std::get<0>(BeamInput) }, BeamMass{ std::get<1>(BeamInput)[0] }, BeamChar{ std::get<1>(BeamInput)[1] }, BeamBeta{ std::get<1>(BeamInput)[2] }, BeamVmin{ std::get<1>(BeamInput)[3] }, BeamVmax{ std::get<1>(BeamInput)[4] },
-		BeamVb{ std::get<1>(BeamInput)[5] }, BeamVc{ std::get<1>(BeamInput)[6] }, BeamDeltaV{ std::get<1>(BeamInput)[7] }, BeamLambda0{ std::get<1>(BeamInput)[8] }, BeamDeltaLambda2{ std::get<1>(BeamInput)[9] } {
+		BeamVb{ std::get<1>(BeamInput)[5] }, BeamDeltaV{ std::get<1>(BeamInput)[6] }, BeamLambda0{ std::get<1>(BeamInput)[7] }, BeamDeltaLambda2{ std::get<1>(BeamInput)[8] } {
 
 		if (hostId == 0) {
 
@@ -194,7 +216,7 @@ public:
 	const double y0, y1, y0PlusGhost, y1PlusGhost;
 	const double z0, z1, z0PlusGhost, z1PlusGhost;
 
-	const double B0, L0, VA0, CHI0, CHI1, NormQE, dt;
+	const double B0, L0, VA0, RHO0, RHO1, PSITMAX, NormQE, dt;
 
 	const std::tuple<bool, double> nablaPerp2A;
 	const std::tuple<bool, double> nablaPerp2w;
@@ -214,7 +236,6 @@ public:
 	const double IonVmin;
 	const double IonVmax;
 	const double IonVb;
-	const double IonVc;
 	const double IonDeltaV;
 	const double IonLambda0;
 	const double IonDeltaLambda2;
@@ -226,7 +247,6 @@ public:
 	const double AlphaVmin;
 	const double AlphaVmax;
 	const double AlphaVb;
-	const double AlphaVc;
 	const double AlphaDeltaV;
 	const double AlphaLambda0;
 	const double AlphaDeltaLambda2;
@@ -238,17 +258,14 @@ public:
 	const double BeamVmin;
 	const double BeamVmax;
 	const double BeamVb;
-	const double BeamVc;
 	const double BeamDeltaV;
 	const double BeamLambda0;
 	const double BeamDeltaLambda2;
 
 	/*--------------------------------------------------MHD Equilibrium on CPU--------------------------------------------------*/
 
-	double** q;
-	double** I; double** I_px;
-	double** G; double** G_px;
-	double** K; double** K_py;
+	double** q; double** q_px;
+	double** psip; double** psip_px;
 
 	double** Ni; double** Ni_px;
 	double** Ti; double** Ti_px;
@@ -528,11 +545,6 @@ public:
 	std::vector<std::vector<cudssMatrix_t>> dPbXs;
 	std::vector<std::vector<cudssMatrix_t>> dPbBs;
 
-	/*------------------------------------------------------------Diagnose------------------------------------------------------------*/
-
-	dataType** h_diagnose;
-	dataType** d_diagnose;
-
 	/*---------------------------------------------------------Particle in Cell---------------------------------------------------------*/
 
 	dataType** dpic_Phi_py_A; dataType** dpic_dNe_py_A;
@@ -735,7 +747,7 @@ public:
 		/*----------------------------MHD Equilibrium on CPU----------------------------*/
 
 		HostAllocator.allocateHostArrays(gridNx, gridNy,
-			q, I, I_px, G, G_px, K, K_py,
+			q, q_px, psip, psip_px,
 			Ni, Ni_px, Ti, Ti_px, Pi, Pi_px, Ne, Ne_px, Te, Te_px, Pe, Pe_px,
 			Na, Na_px, Ta, Ta_px, Nb, Nb_px, Tb, Tb_px,
 			B, B_px, B_py, B_px2, B_pxy, B_py2, J, J_px, J_py, Bny, Bny_px, Bny_py,
@@ -824,10 +836,6 @@ public:
 		HostAllocator.allocateHostArrays(gridNy, gridNx, 6, h_PhiTe_dTe);
 		HostAllocator.allocateHostArrays(gridNy, gridNx, 18, h_PhiTeA_dTe);
 
-		/*---------------------------------Diagnose Energy---------------------------------*/
-
-		HostAllocator.allocateHostArrays(gridNy * gridNx, 15, h_diagnose);
-
 		/*----------------------------------Particle in Cell----------------------------------*/
 
 		if (ifIon) {
@@ -857,11 +865,11 @@ public:
 		if (ifSlowing) {
 
 			HostAllocator.allocateHostArrays(devNums, (size_t)randMax, h_rand_keys);
-			HostAllocator.allocateHostArrays(devNums, (size_t)randMax * 3, h_rand_values);
+			HostAllocator.allocateHostArrays(devNums, (size_t)randMax * 4, h_rand_values);
 
 		}
 
-		HostAllocator.allocateHostArrays(cellNx, 26, h_pic1d);
+		HostAllocator.allocateHostArrays(cellNx, 28, h_pic1d);
 		HostAllocator.allocateHostArrays(cellNy * cellNx, 72, h_pic2d);
 		HostAllocator.allocateHostArrays(gridNyPlusGhost, gridNx * gridNzPlusGhost * 8, h_pic3d);
 
@@ -883,7 +891,7 @@ public:
 		/*----------------------------MHD Equilibrium on CPU----------------------------*/
 
 		HostAllocator.releaseHostArrays(
-			q, I, I_px, G, G_px, K, K_py,
+			q, q_px, psip, psip_px,
 			Ni, Ni_px, Ti, Ti_px, Pi, Pi_px, Ne, Ne_px, Te, Te_px, Pe, Pe_px,
 			Na, Na_px, Ta, Ta_px, Nb, Nb_px, Tb, Tb_px,
 			B, B_px, B_py, B_px2, B_pxy, B_py2, J, J_px, J_py, Bny, Bny_px, Bny_py,
@@ -970,10 +978,6 @@ public:
 			h_PhiA_A, h_NeA_A,
 			h_AdJpB_dNe, h_dNePhi_dNe,
 			h_PhiTe_dTe, h_PhiTeA_dTe);
-
-		/*---------------------------------Diagnose Energy---------------------------------*/
-
-		HostAllocator.releaseHostArrays(h_diagnose);
 
 		/*----------------------------------Particle in Cell----------------------------------*/
 
@@ -1098,10 +1102,6 @@ public:
 		DeviceAllocator.allocateDeviceArrays(localId, devNums, devNy * gridNx * 6, d_PhiTe_dTe);
 		DeviceAllocator.allocateDeviceArrays(localId, devNums, devNy * gridNx * 18, d_PhiTeA_dTe);
 
-		/*---------------------------------Diagnose Energy---------------------------------*/
-
-		DeviceAllocator.allocateDeviceArrays(localId, devNums, devNy * gridNx * 15, d_diagnose);
-
 		/*----------------------------------Particle in Cell----------------------------------*/
 
 		DeviceAllocator.allocateDeviceArrays(localId, devNums, devNy * gridNx,
@@ -1139,11 +1139,11 @@ public:
 		if (ifSlowing) {
 
 			DeviceAllocator.allocateDeviceArrays(localId, devNums, (size_t)randMax, d_rand_keys);
-			DeviceAllocator.allocateDeviceArrays(localId, devNums, (size_t)randMax * 3, d_rand_values);
+			DeviceAllocator.allocateDeviceArrays(localId, devNums, (size_t)randMax * 4, d_rand_values);
 
 		}
 
-		DeviceAllocator.allocateDeviceArrays(localId, devNums, cellNx * 26, d_pic1d);
+		DeviceAllocator.allocateDeviceArrays(localId, devNums, cellNx * 28, d_pic1d);
 		DeviceAllocator.allocateDeviceArrays(localId, devNums, cellNy * cellNx * 72, d_pic2d);
 		DeviceAllocator.allocateDeviceArrays(localId, devNums, gridNyPlusGhost * gridNx * gridNzPlusGhost * 8, d_pic3d);
 
@@ -1243,10 +1243,6 @@ public:
 			d_PhiA_A, d_NeA_A,
 			d_AdJpB_dNe, d_dNePhi_dNe,
 			d_PhiTe_dTe, d_PhiTeA_dTe);
-
-		/*---------------------------------Diagnose Energy---------------------------------*/
-
-		DeviceAllocator.releaseDeviceArrays(localId, devNums, d_diagnose);
 
 		/*------------------------------Inverse Matrix on GPU------------------------------*/
 
@@ -1521,8 +1517,6 @@ public:
 				d_dNe_beg[i], h_dNe[0][0], d_dNe_midl[i], h_dNe[0][0], d_dNe_midr[i], h_dPe[0][0], d_dNe_end[i], h_dPe[0][0],
 				d_dTe_beg[i], h_dTe[0][0], d_dTe_midl[i], h_dTe[0][0], d_dTe_midr[i], h_dPe[0][0], d_dTe_end[i], h_dPe[0][0]);
 
-			H2DAllocator.hostToDevice(devNy * gridNx * 15, 0, (hostId * hostNy + i * devNy) * gridNx * 15, d_diagnose[i], h_diagnose[0]);
-
 			/*-------------------------------------------PIC-------------------------------------------*/
 
 			H2DAllocator.hostToDevice(devNy * gridNx, 0, (hostId * hostNy + i * devNy) * gridNx,
@@ -1566,11 +1560,11 @@ public:
 			if (ifSlowing) {
 
 				H2DAllocator.hostToDevice((size_t)randMax, 0, (size_t)i * randMax, d_rand_keys[i], h_rand_keys[0]);
-				H2DAllocator.hostToDevice((size_t)randMax * 3, 0, (size_t)i * randMax * 3, d_rand_values[i], h_rand_values[0]);
+				H2DAllocator.hostToDevice((size_t)randMax * 4, 0, (size_t)i * randMax * 4, d_rand_values[i], h_rand_values[0]);
 
 			}
 
-			H2DAllocator.hostToDevice(cellNx * 26, 0, 0, d_pic1d[i], h_pic1d[0]);
+			H2DAllocator.hostToDevice(cellNx * 28, 0, 0, d_pic1d[i], h_pic1d[0]);
 			H2DAllocator.hostToDevice(cellNy * cellNx * 72, 0, 0, d_pic2d[i], h_pic2d[0]);
 			H2DAllocator.hostToDevice(gridNyPlusGhost * gridNx * gridNzPlusGhost * 8, 0, 0, d_pic3d[i], h_pic3d[0]);
 
@@ -1622,7 +1616,7 @@ public:
 			SFAcovyz, SFAcovyz_px, SFAcovyz_py, SFAcovzz, SFAcovzz_px, SFAcovzz_py);
 
 		B2HAllocator.binaryToHost(gridNx * gridNyPlusGhost * 37, gridNx, gridNy, binaryData,
-			q, I, I_px, G, G_px, K, K_py,
+			q, q_px, psip, psip_px,
 			Ni, Ni_px, Ti, Ti_px, Pi, Pi_px, Ne, Ne_px, Te, Te_px, Pe, Pe_px,
 			Na, Na_px, Ta, Ta_px, Nb, Nb_px, Tb, Tb_px,
 			gconxx, gconxx_px, gconxx_py, gconxy, gconxy_px, gconxy_py,
@@ -1635,43 +1629,17 @@ public:
 			Rho, Rho_px, Rho_py, Va, Va_px, Va_py, R, Z,
 			B, B_px, B_py, B_px2, B_pxy, B_py2);
 
-		for (int j = 0; j < gridNy; j++) {
-			for (int i = 0; i < gridNx; i++) {
-
-				int index = j * gridNx + i;
-
-				h_diagnose[index][0] = J[i][j];
-				h_diagnose[index][1] = B[i][j];
-
-				h_diagnose[index][2] = gcovxx[i][j];
-				h_diagnose[index][3] = gcovxy[i][j];
-				h_diagnose[index][4] = gcovxz[i][j];
-				h_diagnose[index][5] = gcovyy[i][j];
-				h_diagnose[index][6] = gcovyz[i][j];
-				h_diagnose[index][7] = gcovzz[i][j];
-
-				h_diagnose[index][8] = gconxx[i][j];
-				h_diagnose[index][9] = gconxy[i][j];
-				h_diagnose[index][10] = gconxz[i][j];
-				h_diagnose[index][11] = gconyy[i][j];
-				h_diagnose[index][12] = gconyz[i][j];
-				h_diagnose[index][13] = gconzz[i][j];
-
-				h_diagnose[index][14] = Ni[i][j];
-
-			}
-		}
-
 		auto loadPICProfile = [&](int index, int offset, double**& field) {
 			h_pic1d[index][offset + 0] = field[index][0];
 			h_pic1d[index][offset + 1] = field[index + 1][0];
 		};
 
-		auto loadPICBoozer = [&](int index, int offset, int i, int jl, int jr, double**& field) {
-			h_pic2d[index][offset + 0] = field[i][jl];
-			h_pic2d[index][offset + 1] = field[i + 1][jl];
-			h_pic2d[index][offset + 2] = field[i][jr];
-			h_pic2d[index][offset + 3] = field[i + 1][jr];
+		auto loadPICStraight = [&](int index, int offset, int i, int j, double**& field) {
+			j = (j - gridGhost + gridNy) % gridNy;
+			h_pic2d[index][offset + 0] = field[i][j];
+			h_pic2d[index][offset + 1] = field[i + 1][j];
+			h_pic2d[index][offset + 2] = field[i][j + 1];
+			h_pic2d[index][offset + 3] = field[i + 1][j + 1];
 		};
 
 		auto loadPICAligned = [&](int index, int offset, int i, int j, double**& field) {
@@ -1684,20 +1652,21 @@ public:
 		for (int index = 0; index < cellNx; index++) {
 
 			loadPICProfile(index, 0, q);
-			loadPICProfile(index, 2, Na);
-			loadPICProfile(index, 4, Na_px);
-			loadPICProfile(index, 6, Nb);
-			loadPICProfile(index, 8, Nb_px);
-			loadPICProfile(index, 10, Ni);
-			loadPICProfile(index, 12, Ni_px);
-			loadPICProfile(index, 14, Ta);
-			loadPICProfile(index, 16, Ta_px);
-			loadPICProfile(index, 18, Tb);
-			loadPICProfile(index, 20, Tb_px);
-			loadPICProfile(index, 22, Ti);
-			loadPICProfile(index, 24, Ti_px);
+			loadPICProfile(index, 2, q_px);
+			loadPICProfile(index, 4, Na);
+			loadPICProfile(index, 6, Na_px);
+			loadPICProfile(index, 8, Nb);
+			loadPICProfile(index, 10, Nb_px);
+			loadPICProfile(index, 12, Ni);
+			loadPICProfile(index, 14, Ni_px);
+			loadPICProfile(index, 16, Ta);
+			loadPICProfile(index, 18, Ta_px);
+			loadPICProfile(index, 20, Tb);
+			loadPICProfile(index, 22, Tb_px);
+			loadPICProfile(index, 24, Ti);
+			loadPICProfile(index, 26, Ti_px);
 
-			for (int i = 2; i < 14; i++)
+			for (int i = 4; i < 16; i++)
 				h_pic1d[index][i] *= 1.0e-19;
 
 		}
@@ -1706,15 +1675,13 @@ public:
 
 			int i = index % cellNx;
 			int j = index / cellNx;
-			int jl = (j - gridGhost + gridNy) % gridNy;
-			int jr = (j + 1 - gridGhost + gridNy) % gridNy;
 
-			loadPICBoozer(index, 0, i, jl, jr, J);
-			loadPICBoozer(index, 4, i, jl, jr, B);
-			loadPICBoozer(index, 8, i, jl, jr, J_px);
-			loadPICBoozer(index, 12, i, jl, jr, J_py);
-			loadPICBoozer(index, 16, i, jl, jr, B_px);
-			loadPICBoozer(index, 20, i, jl, jr, B_py);
+			loadPICStraight(index, 0, i, j, J);
+			loadPICStraight(index, 4, i, j, B);
+			loadPICStraight(index, 8, i, j, J_px);
+			loadPICStraight(index, 12, i, j, J_py);
+			loadPICStraight(index, 16, i, j, B_px);
+			loadPICStraight(index, 20, i, j, B_py);
 
 			loadPICAligned(index, 24, i, j, SFAcovxy);
 			loadPICAligned(index, 28, i, j, SFAcovyy);
@@ -1727,8 +1694,8 @@ public:
 			loadPICAligned(index, 56, i, j, SFAconxy);
 			loadPICAligned(index, 60, i, j, SFAconyy);
 
-			loadPICBoozer(index, 64, i, jl, jr, R);
-			loadPICBoozer(index, 68, i, jl, jr, Z);
+			loadPICStraight(index, 64, i, j, R);
+			loadPICStraight(index, 68, i, j, Z);
 
 		}
 
@@ -1762,7 +1729,7 @@ public:
 				for (int i = 0; i < gridNx; i++) {
 					for (int k = 0; k < gridNz; k++) {
 						if (i != 0 && i != gridNx - 1)
-							h_w[j + gridGhost][i][k] = binaryData[j * gridNxz + i * gridNz + k];
+							h_Phi[j + gridGhost][i][k] = binaryData[j * gridNxz + i * gridNz + k];
 					}
 				}
 			}
@@ -2225,11 +2192,11 @@ public:
 		if (hostId == 0) {
 
 			if constexpr (matrixType == 0)
-				std::cout << BOLDYELLOW << "Start: Compute Laplacian COO." << RESET << std::endl;
+				std::cout << BOLDYELLOW << "Start: Compute Poisson COO." << RESET << std::endl;
 			else if constexpr (matrixType == 1)
 				std::cout << BOLDYELLOW << "Start: Compute Resistive COO." << RESET << std::endl;
 			else if constexpr (matrixType == 2)
-				std::cout << BOLDYELLOW << "Start: Compute NablaPerp2w COO." << RESET << std::endl;
+				std::cout << BOLDYELLOW << "Start: Compute NablaPerp2Phi COO." << RESET << std::endl;
 			else if constexpr (matrixType == 3)
 				std::cout << BOLDYELLOW << "Start: Compute NablaPerp2dNe COO." << RESET << std::endl;
 			else if constexpr (matrixType == 4)
@@ -2603,11 +2570,11 @@ public:
 		if (hostId == 0) {
 
 			if constexpr (matrixType == 0)
-				std::cout << BOLDYELLOW << "Start: Compute Laplacian CSR." << std::endl;
+				std::cout << BOLDYELLOW << "Start: Compute Poisson CSR." << std::endl;
 			else if constexpr (matrixType == 1)
 				std::cout << BOLDYELLOW << "Start: Compute Resistive CSR." << std::endl;
 			else if constexpr (matrixType == 2)
-				std::cout << BOLDYELLOW << "Start: Compute NablaPerp2w CSR." << std::endl;
+				std::cout << BOLDYELLOW << "Start: Compute NablaPerp2Phi CSR." << std::endl;
 			else if constexpr (matrixType == 3)
 				std::cout << BOLDYELLOW << "Start: Compute NablaPerp2dNe CSR." << std::endl;
 			else if constexpr (matrixType == 4)
@@ -3009,11 +2976,11 @@ public:
 		if (hostId == 0) {
 
 			if constexpr (matrixType == 0)
-				std::cout << BOLDYELLOW << "Start: Factorize Laplacian CSR." << RESET << std::endl;
+				std::cout << BOLDYELLOW << "Start: Factorize Poisson CSR." << RESET << std::endl;
 			else if constexpr (matrixType == 1)
 				std::cout << BOLDYELLOW << "Start: Factorize Resistive CSR." << RESET << std::endl;
 			else if constexpr (matrixType == 2)
-				std::cout << BOLDYELLOW << "Start: Factorize NablaPerp2w CSR." << RESET << std::endl;
+				std::cout << BOLDYELLOW << "Start: Factorize NablaPerp2Phi CSR." << RESET << std::endl;
 			else if constexpr (matrixType == 3)
 				std::cout << BOLDYELLOW << "Start: Factorize NablaPerp2dNe CSR." << RESET << std::endl;
 			else if constexpr (matrixType == 4)
@@ -3237,9 +3204,9 @@ public:
 
 						CUDSSCHECK(cudssMatrixCreateCsr(&wAs[i][j], nrows, ncols, nnz, d_wCsrR[i] + j * (gridNxz + 1), NULL,
 							d_wCsrC[i] + j * nnz, d_wCsrV[i] + j * nnz, CUDA_R_32I, CUDA_R_64F, mtype, mview, base));
-						CUDSSCHECK(cudssMatrixCreateDn(&wXs[i][j], nrows, nrhs, ld, d_w_midr[i] + (j + gridGhost) * gridNxz, CUDA_R_64F,
+						CUDSSCHECK(cudssMatrixCreateDn(&wXs[i][j], nrows, nrhs, ld, d_Phi_midr[i] + (j + gridGhost) * gridNxz, CUDA_R_64F,
 							CUDSS_LAYOUT_COL_MAJOR));
-						CUDSSCHECK(cudssMatrixCreateDn(&wBs[i][j], nrows, nrhs, ld, d_w_midl[i] + (j + gridGhost) * gridNxz, CUDA_R_64F,
+						CUDSSCHECK(cudssMatrixCreateDn(&wBs[i][j], nrows, nrhs, ld, d_Phi_midl[i] + (j + gridGhost) * gridNxz, CUDA_R_64F,
 							CUDSS_LAYOUT_COL_MAJOR));
 
 					}
@@ -3247,9 +3214,9 @@ public:
 
 						CUDSSCHECK(cudssMatrixCreateCsr(&wAs[i][j], nrows, ncols, nnz, d_wCsrR[i] + j * (gridNxz + 1), NULL,
 							d_wCsrC[i] + j * nnz, d_wCsrV[i] + j * nnz, CUDA_R_32I, CUDA_R_32F, mtype, mview, base));
-						CUDSSCHECK(cudssMatrixCreateDn(&wXs[i][j], nrows, nrhs, ld, d_w_midr[i] + (j + gridGhost) * gridNxz, CUDA_R_32F,
+						CUDSSCHECK(cudssMatrixCreateDn(&wXs[i][j], nrows, nrhs, ld, d_Phi_midr[i] + (j + gridGhost) * gridNxz, CUDA_R_32F,
 							CUDSS_LAYOUT_COL_MAJOR));
-						CUDSSCHECK(cudssMatrixCreateDn(&wBs[i][j], nrows, nrhs, ld, d_w_midl[i] + (j + gridGhost) * gridNxz, CUDA_R_32F,
+						CUDSSCHECK(cudssMatrixCreateDn(&wBs[i][j], nrows, nrhs, ld, d_Phi_midl[i] + (j + gridGhost) * gridNxz, CUDA_R_32F,
 							CUDSS_LAYOUT_COL_MAJOR));
 
 					}
@@ -3430,7 +3397,7 @@ public:
 		}
 
 	}
-	template<int picType, int disType>
+	template<int picType, int disType, int markerType>
 	void loadParticles() {
 
 		if (hostId == 0) {
@@ -3484,7 +3451,7 @@ public:
 		}
 
 		double Jmax, Jvmax;
-		double Mass, Vmin, Vmax, Vb, Vc, DeltaV, Lambda0, DeltaLambda2;
+		double Mass, Vmin, Vmax, Vb, DeltaV, Lambda0, DeltaLambda2;
 
 		std::vector<Rand01> xrand(devNums);
 		std::vector<Rand01> yrand(devNums);
@@ -3506,7 +3473,6 @@ public:
 			Vmin = IonVmin;
 			Vmax = IonVmax;
 			Vb = IonVb;
-			Vc = IonVc;
 			DeltaV = IonDeltaV;
 			Lambda0 = IonLambda0;
 			DeltaLambda2 = IonDeltaLambda2;
@@ -3518,7 +3484,6 @@ public:
 			Vmin = AlphaVmin;
 			Vmax = AlphaVmax;
 			Vb = AlphaVb;
-			Vc = AlphaVc;
 			DeltaV = AlphaDeltaV;
 			Lambda0 = AlphaLambda0;
 			DeltaLambda2 = AlphaDeltaLambda2;
@@ -3530,7 +3495,6 @@ public:
 			Vmin = BeamVmin;
 			Vmax = BeamVmax;
 			Vb = BeamVb;
-			Vc = BeamVc;
 			DeltaV = BeamDeltaV;
 			Lambda0 = BeamLambda0;
 			DeltaLambda2 = BeamDeltaLambda2;
@@ -3559,8 +3523,14 @@ public:
 					tempT[i][j + 1] = Tb[i][j];
 				}
 
-				if (J[i][j] > Jmax)
-					Jmax = J[i][j];
+				if constexpr (markerType == 0) {
+					if (tempJ[i][j + 1] * tempN[i][j + 1] > Jmax)
+						Jmax = tempJ[i][j + 1] * tempN[i][j + 1];
+				}
+				else if constexpr (markerType == 1) {
+					if (tempJ[i][j + 1] > Jmax)
+						Jmax = tempJ[i][j + 1];
+				}
 
 			}
 
@@ -3615,12 +3585,29 @@ public:
 				double J, B, v, Jv, N, T, Lambda;
 				double x, y, z, vp, mu, pw;
 
-				do {
+				if constexpr (markerType == 0) {
+					do {
+						x = x0 + (x1 - x0) * xrand[devId]();
+						y = y0 + (y1 - y0) * yrand[devId]();
+						z = z0 + gridDz * zrand[devId]();
+						N = interp2d(tempN, x, y);
+						J = interp2d(tempJ, x, y);
+					} while (Jrand[devId]() >= N * J / Jmax);
+				}
+				else if constexpr (markerType == 1) {
+					do {
+						x = x0 + (x1 - x0) * xrand[devId]();
+						y = y0 + (y1 - y0) * yrand[devId]();
+						z = z0 + gridDz * zrand[devId]();
+						J = interp2d(tempJ, x, y);
+					} while (Jrand[devId]() >= J / Jmax);
+				}
+				else if constexpr (markerType == 2) {
 					x = x0 + (x1 - x0) * xrand[devId]();
 					y = y0 + (y1 - y0) * yrand[devId]();
 					z = z0 + gridDz * zrand[devId]();
 					J = interp2d(tempJ, x, y);
-				} while (Jrand[devId]() >= J / Jmax);
+				}
 
 				do {
 					v = Vmax * vrand[devId]();
@@ -3642,13 +3629,20 @@ public:
 				if constexpr (disType == 0)
 					pw = N * pow(T, -1.5) * exp(-0.5 * Mass * pow(v, 2.0) * MP * pow(VA0, 2.0) / (T * KEV));
 				else if constexpr (disType == 1)
-					pw = N / (pow(v, 3.0) + pow(Vc, 3.0));
+					pw = N / (pow(v, 3.0) + pow(T, 3.0));
 				else if constexpr (disType == 2)
-					pw = N / (pow(v, 3.0) + pow(Vc, 3.0)) * (1.0 + erf((Vb - v) / DeltaV));
+					pw = N / (pow(v, 3.0) + pow(T, 3.0)) * (1.0 + erf((Vb - v) / DeltaV));
 				else if constexpr (disType == 3)
-					pw = N / (pow(v, 3.0) + pow(Vc, 3.0)) * exp(-pow(Lambda - Lambda0, 2.0) / DeltaLambda2);
+					pw = N / (pow(v, 3.0) + pow(T, 3.0)) * exp(-pow(Lambda - Lambda0, 2.0) / DeltaLambda2);
 				else if constexpr (disType == 4)
-					pw = N / (pow(v, 3.0) + pow(Vc, 3.0)) * exp(-pow(Lambda - Lambda0, 2.0) / DeltaLambda2) * (1.0 + erf((Vb - v) / DeltaV));
+					pw = N / (pow(v, 3.0) + pow(T, 3.0)) * exp(-pow(Lambda - Lambda0, 2.0) / DeltaLambda2) * (1.0 + erf((Vb - v) / DeltaV));
+
+				if constexpr (markerType == 0)
+					pw /= N;
+				else if constexpr (markerType == 1)
+					pw *= 1.0;
+				else if constexpr (markerType == 2)
+					pw *= J;
 
 				li = (x - x0PlusGhost) / gridDx;
 				lj = (y - y0PlusGhost) / gridDy;
@@ -3880,6 +3874,8 @@ public:
 		std::vector<Rand01> yrand(devNums);
 		std::vector<Rand01> zrand(devNums);
 		std::vector<Rand01> Jrand(devNums);
+		std::vector<Rand01> vprand(devNums);
+
 		std::vector<std::vector<double>> tempJ(gridNx, std::vector<double>(gridNy + 2));
 
 		for (int i = 0; i < gridNx; i++) {
@@ -3950,6 +3946,7 @@ public:
 				h_rand_values[devId][picId + 0 * randMax] = 0.999999 * x;
 				h_rand_values[devId][picId + 1 * randMax] = y;
 				h_rand_values[devId][picId + 2 * randMax] = z;
+				h_rand_values[devId][picId + 3 * randMax] = 2.0 * vprand[devId]() - 1.0;
 
 			}
 		}
@@ -4165,8 +4162,407 @@ public:
 
 	}
 
-	template<int picType>
-	void computePhaseJacobian() {
+	template<int picType, int disType, int markerType, int gridE, int gridPphi, int gridLambda, int ppcPhase>
+	void computePhaseSpaceF0() {
+
+		if (hostId == 0) {
+
+			if constexpr (picType == 0)
+				std::cout << BOLDYELLOW << "Start: Compute phase space f0 of thermal ions." << RESET << std::endl;
+			else if constexpr (picType == 1)
+				std::cout << BOLDYELLOW << "Start: Compute phase space f0 of alpha particles." << RESET << std::endl;
+			else if constexpr (picType == 2)
+				std::cout << BOLDYELLOW << "Start: Compute phase space f0 of beam particles." << RESET << std::endl;
+
+		}
+
+		double minE, maxE, dE;
+		double minPphi, maxPphi, dPphi;
+		double minLambda, maxLambda, dLambda;
+		double Mass, Char, Vmin, Vmax, Vb, DeltaV, Lambda0, DeltaLambda2;
+
+		double drho = RHO1 - RHO0;
+		double psitmax = PSITMAX / (B0 * L0 * L0);
+		double cm = VA0 / (L0 * (QE * B0 / MP));
+
+		if constexpr (picType == 0) {
+
+			Mass = IonMass;
+			Char = IonChar;
+			Vmin = IonVmin;
+			Vmax = IonVmax;
+			Vb = IonVb;
+			DeltaV = IonDeltaV;
+			Lambda0 = IonLambda0;
+			DeltaLambda2 = IonDeltaLambda2;
+
+		}
+		else if constexpr (picType == 1) {
+
+			Mass = AlphaMass;
+			Char = AlphaChar;
+			Vmin = AlphaVmin;
+			Vmax = AlphaVmax;
+			Vb = AlphaVb;
+			DeltaV = AlphaDeltaV;
+			Lambda0 = AlphaLambda0;
+			DeltaLambda2 = AlphaDeltaLambda2;
+
+		}
+		else if constexpr (picType == 2) {
+
+			Mass = BeamMass;
+			Char = BeamChar;
+			Vmin = BeamVmin;
+			Vmax = BeamVmax;
+			Vb = BeamVb;
+			DeltaV = BeamDeltaV;
+			Lambda0 = BeamLambda0;
+			DeltaLambda2 = BeamDeltaLambda2;
+
+		}
+
+		minE = 0.5 * Mass * pow(Vmin, 2.0);
+		maxE = 0.5 * Mass * pow(Vmax, 2.0);
+
+		minPphi = 20251106;
+		maxPphi = -20251106;
+
+		minLambda = 0.0;
+		maxLambda = 0.0;
+
+		for (int i = 0; i < gridNx; i++) {
+			for (int j = 0; j < gridNy; j++) {
+
+				double tempPphi, tempLambda;
+
+				tempLambda = 1.0 / B[i][j];
+				if (tempLambda > maxLambda)
+					maxLambda = tempLambda;
+
+				tempPphi = cm * Mass * Vmax * 2 * psitmax * drho * (RHO0 + i * gridDx * drho) * SFAcovyz[i][j+gridGhost] / (q[i][j] * J[i][j] * B[i][j]) - Char * psip[i][j];
+				if (tempPphi > maxPphi)
+					maxPphi = tempPphi;
+
+				tempPphi = -cm * Mass * Vmax * 2 * psitmax * drho * (RHO0 + i * gridDx * drho) * SFAcovyz[i][j+gridGhost] / (q[i][j] * J[i][j] * B[i][j]) - Char * psip[i][j];
+				if (tempPphi < minPphi)
+					minPphi = tempPphi;
+
+			}
+		}
+
+		dE = (maxE - minE) / (gridE - 1);
+		dPphi = (maxPphi - minPphi) / (gridPphi - 1);
+		dLambda = (maxLambda - minLambda) / (gridLambda - 1);
+
+		size_t picPhase = (size_t)gridE * gridPphi * gridLambda * ppcPhase / hostNums;
+
+		double*** phaseSpaceF0;
+		Allocator HostAllocator;
+		HostAllocator.allocateHostArrays(gridE, gridPphi, gridLambda, phaseSpaceF0);
+
+		double Jmax, Jvmax;
+		Jmax = 0.0;
+		Jvmax = pow(Vmax, 2.0);
+
+		std::vector<std::vector<double>> tempq(gridNx, std::vector<double>(gridNy + 2));
+		std::vector<std::vector<double>> temppsip(gridNx, std::vector<double>(gridNy + 2));
+		std::vector<std::vector<double>> tempJ(gridNx, std::vector<double>(gridNy + 2));
+		std::vector<std::vector<double>> tempB(gridNx, std::vector<double>(gridNy + 2));
+		std::vector<std::vector<double>> tempN(gridNx, std::vector<double>(gridNy + 2));
+		std::vector<std::vector<double>> tempT(gridNx, std::vector<double>(gridNy + 2));
+		std::vector<std::vector<double>> tempSFAcovyz(gridNx, std::vector<double>(gridNy + 2));
+
+		for (int i = 0; i < gridNx; i++) {
+			for (int j = 0; j < gridNy; j++) {
+
+				tempq[i][j + 1] = q[i][j];
+				temppsip[i][j + 1] = psip[i][j];
+				tempJ[i][j + 1] = J[i][j];
+				tempB[i][j + 1] = B[i][j];
+
+				if constexpr (picType == 0) {
+					tempN[i][j + 1] = Ni[i][j] * 1.0e-19;
+					tempT[i][j + 1] = Ti[i][j];
+				}
+				else if constexpr (picType == 1) {
+					tempN[i][j + 1] = Na[i][j] * 1.0e-19;
+					tempT[i][j + 1] = Ta[i][j];
+				}
+				else if constexpr (picType == 2) {
+					tempN[i][j + 1] = Nb[i][j] * 1.0e-19;
+					tempT[i][j + 1] = Tb[i][j];
+				}
+
+				if constexpr (markerType == 0) {
+					if (tempJ[i][j + 1] * tempN[i][j + 1] > Jmax)
+						Jmax = tempJ[i][j + 1] * tempN[i][j + 1];
+				}
+				else if constexpr (markerType == 1) {
+					if (tempJ[i][j + 1] > Jmax)
+						Jmax = tempJ[i][j + 1];
+				}
+
+			}
+
+			tempq[i][0] = tempq[i][gridNy];
+			tempq[i][gridNy + 1] = tempq[i][1];
+
+			temppsip[i][0] = temppsip[i][gridNy];
+			temppsip[i][gridNy + 1] = temppsip[i][1];
+
+			tempJ[i][0] = tempJ[i][gridNy];
+			tempJ[i][gridNy + 1] = tempJ[i][1];
+
+			tempB[i][0] = tempB[i][gridNy];
+			tempB[i][gridNy + 1] = tempB[i][1];
+
+			tempN[i][0] = tempN[i][gridNy];
+			tempN[i][gridNy + 1] = tempN[i][1];
+
+			tempT[i][0] = tempT[i][gridNy];
+			tempT[i][gridNy + 1] = tempT[i][1];
+
+		}
+
+		for (int i = 0; i < gridNx; i++) {
+			for (int j = 0; j < gridNy + 2; j++) {
+				tempSFAcovyz[i][j] = SFAcovyz[i][j + gridGhost - 1];
+			}
+		}
+
+		auto interp2d = [&](std::vector<std::vector<double>>& field, double x, double y) {
+
+			double li = (x - x0) / gridDx;
+			double lj = (y - y0 + 0.5 * gridDy) / gridDy;
+			int i = floor(li);
+			int j = floor(lj);
+			double dx = li - i;
+			double dy = lj - j;
+
+			double coes[4] = {};
+			double cx[4] = { 1.0, 1.0, 0.0, 0.0 };
+			double sx[4] = { -1.0, -1.0, 1.0, 1.0 };
+			double cy[4] = { 1.0, 0.0, 1.0, 0.0 };
+			double sy[4] = { -1.0, 1.0, -1.0, 1.0 };
+
+			double result = 0.0;
+
+			coes[0] = (cx[0] + sx[0] * dx) * (cy[0] + sy[0] * dy);
+			coes[1] = (cx[1] + sx[1] * dx) * (cy[1] + sy[1] * dy);
+			coes[2] = (cx[2] + sx[2] * dx) * (cy[2] + sy[2] * dy);
+			coes[3] = (cx[3] + sx[3] * dx) * (cy[3] + sy[3] * dy);
+
+			result = field[i][j] * coes[0] + field[i][j + 1] * coes[1] + field[i + 1][j] * coes[2] + field[i + 1][j + 1] * coes[3];
+
+			return result;
+
+		};
+
+		Rand01 xrand;
+		Rand01 yrand;
+		Rand01 Jrand;
+
+		Rand01 vrand;
+		Rand01 vprand;
+		Rand01 Jvrand;
+
+		double cx[8] = { 1.0, 0.0, 1.0, 0.0,1.0, 0.0, 1.0, 0.0 };
+		double sx[8] = { -1.0, 1.0, -1.0, 1.0,-1.0, 1.0, -1.0, 1.0 };
+		double cy[8] = { 1.0, 1.0, 0.0, 0.0, 1.0, 1.0, 0.0, 0.0 };
+		double sy[8] = { -1.0, -1.0, 1.0, 1.0, -1.0, -1.0, 1.0, 1.0 };
+		double cz[8] = { 1.0, 1.0, 1.0, 1.0, 0.0, 0.0, 0.0, 0.0 };
+		double sz[8] = { -1.0, -1.0, -1.0, -1.0, 1.0, 1.0, 1.0, 1.0 };
+
+		for (size_t picId = 0; picId < picPhase; picId++) {
+
+			if (picId % (picPhase / 10) == 0)
+				if (hostId == 0)
+					std::cout << BOLDGREEN << 100 * picId / picPhase << "%" << RESET << std::endl;
+
+			int i, j, k;
+			double li, lj, lk;
+			double dx, dy, dz;
+			double q, psip, J, B, N, T, SFAcovyz;
+			double v, Jv, E, Pphi, Lambda;
+			double x, y, z, vp, mu, pw;
+			double coes[8];
+
+			if constexpr (markerType == 0) {
+				do {
+					x = x0 + (x1 - x0) * xrand();
+					y = y0 + (y1 - y0) * yrand();
+					N = interp2d(tempN, x, y);
+					J = interp2d(tempJ, x, y);
+				} while (Jrand() >= N * J / Jmax);
+			}
+			else if constexpr (markerType == 1) {
+				do {
+					x = x0 + (x1 - x0) * xrand();
+					y = y0 + (y1 - y0) * yrand();
+					J = interp2d(tempJ, x, y);
+				} while (Jrand() >= J / Jmax);
+			}
+			else if constexpr (markerType == 2) {
+				x = x0 + (x1 - x0) * xrand();
+				y = y0 + (y1 - y0) * yrand();
+				J = interp2d(tempJ, x, y);
+			}
+
+			do {
+				v = Vmax * vrand();
+				Jv = pow(v, 2.0);
+			} while (v <= Vmin || Jvrand() >= Jv / Jvmax);
+
+			q = interp2d(tempq, x, y);
+			psip = interp2d(temppsip, x, y);
+			SFAcovyz = interp2d(tempSFAcovyz, x, y);
+			B = interp2d(tempB, x, y);
+			N = interp2d(tempN, x, y);
+			T = interp2d(tempT, x, y);
+
+			if constexpr (picType == 2)
+				Lambda = vprand();
+			else
+				Lambda = 2.0 * vprand() - 1.0;
+			vp = v * Lambda;
+			mu = 0.5 * Mass * pow(v, 2.0) * (1.0 - pow(Lambda, 2.0)) / B;
+
+			E = 0.5 * Mass * pow(v, 2.0);
+			Pphi = cm * Mass * vp * 2 * psitmax * drho * (RHO0 + x * drho) * SFAcovyz / (q * J * B) - Char * psip;
+			Lambda = mu / E;
+
+			if constexpr (disType == 0)
+				pw = N * pow(T, -1.5) * exp(-0.5 * Mass * pow(v, 2.0) * MP * pow(VA0, 2.0) / (T * KEV));
+			else if constexpr (disType == 1)
+				pw = N / (pow(v, 3.0) + pow(T, 3.0));
+			else if constexpr (disType == 2)
+				pw = N / (pow(v, 3.0) + pow(T, 3.0)) * (1.0 + erf((Vb - v) / DeltaV));
+			else if constexpr (disType == 3)
+				pw = N / (pow(v, 3.0) + pow(T, 3.0)) * exp(-pow(Lambda - Lambda0, 2.0) / DeltaLambda2);
+			else if constexpr (disType == 4)
+				pw = N / (pow(v, 3.0) + pow(T, 3.0)) * exp(-pow(Lambda - Lambda0, 2.0) / DeltaLambda2) * (1.0 + erf((Vb - v) / DeltaV));
+
+			if constexpr (markerType == 0)
+				pw /= N;
+			else if constexpr (markerType == 1)
+				pw *= 1.0;
+			else if constexpr (markerType == 2)
+				pw *= J;
+
+			li = (E - minE) / dE;
+			lj = (Pphi - minPphi) / dPphi;
+			lk = (Lambda - minLambda) / dLambda;
+
+			i = floor(li);
+			j = floor(lj);
+			k = floor(lk);
+
+			dx = li - i;
+			dy = lj - j;
+			dz = lk - k;
+
+			if (i == gridE - 1) {
+				i--;
+				dx = 1;
+			}
+			if (j == gridPphi - 1) {
+				j--;
+				dy = 1;
+			}
+			if (k == gridLambda - 1) {
+				k--;
+				dz = 1;
+			}
+
+			for (int index = 0; index < 8; index++)
+				coes[index] = (cx[index] + sx[index] * dx) * (cy[index] + sy[index] * dy) * (cz[index] + sz[index] * dz);
+
+			phaseSpaceF0[i][j][k] += pw * coes[0];
+			phaseSpaceF0[i + 1][j][k] += pw * coes[1];
+			phaseSpaceF0[i][j + 1][k] += pw * coes[2];
+			phaseSpaceF0[i + 1][j + 1][k] += pw * coes[3];
+			phaseSpaceF0[i][j][k + 1] += pw * coes[4];
+			phaseSpaceF0[i + 1][j][k + 1] += pw * coes[5];
+			phaseSpaceF0[i][j + 1][k + 1] += pw * coes[6];
+			phaseSpaceF0[i + 1][j + 1][k + 1] += pw * coes[7];
+
+		}
+
+		if (hostId == 0) {
+			std::cout << BOLDGREEN << 100 << "%" << RESET << std::endl;
+			std::cout << std::endl;
+		}
+
+		MPICHECK(MPI_Allreduce(phaseSpaceF0[0][0], phaseSpaceF0[0][0], gridE * gridPphi * gridLambda, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD));
+
+		for (int i = 0; i < gridE; i++) {
+			for (int j = 0; j < gridPphi; j++) {
+				for (int k = 0; k < gridLambda; k++) {
+
+					bool isVertex = (i == 0 || i == gridE - 1) &&
+						(j == 0 || j == gridPphi - 1) &&
+						(k == 0 || k == gridLambda - 1);
+
+					bool isEdge = ((i == 0 || i == gridE - 1) && (j == 0 || j == gridPphi - 1)) ||
+						((i == 0 || i == gridE - 1) && (k == 0 || k == gridLambda - 1)) ||
+						((j == 0 || j == gridPphi - 1) && (k == 0 || k == gridLambda - 1));
+
+					bool isFace = (i == 0 || i == gridE - 1 || j == 0 || j == gridPphi - 1 || k == 0 || k == gridLambda - 1);
+
+					if (isVertex)
+						phaseSpaceF0[i][j][k] *= 8;
+					else if (isEdge)
+						phaseSpaceF0[i][j][k] *= 4;
+					else if (isFace)
+						phaseSpaceF0[i][j][k] *= 2;
+
+				}
+			}
+		}
+
+		if (hostId == 0) {
+
+			std::ofstream output;
+			std::string fileName;
+
+			if constexpr (picType == 0)
+				fileName = "IonPhaseSpaceF0.bin";
+			else if constexpr (picType == 1)
+				fileName = "AlphaPhaseSpaceF0.bin";
+			else if constexpr (picType == 2)
+				fileName = "BeamPhaseSpaceF0.bin";
+
+			output.open(fileName.c_str(), std::ios::out | std::ios::binary);
+
+			int tempGridE = gridE, tempGridPphi = gridPphi, tempGridLambda = gridLambda;
+			output.write((char*)(&tempGridE), sizeof(int));
+			output.write((char*)(&tempGridPphi), sizeof(int));
+			output.write((char*)(&tempGridLambda), sizeof(int));
+
+			output.write((char*)(&minE), sizeof(double));
+			output.write((char*)(&maxE), sizeof(double));
+
+			output.write((char*)(&minPphi), sizeof(double));
+			output.write((char*)(&maxPphi), sizeof(double));
+
+			output.write((char*)(&minLambda), sizeof(double));
+			output.write((char*)(&maxLambda), sizeof(double));
+
+			output.write((char*)(phaseSpaceF0[0][0]), sizeof(double) * gridE * gridPphi * gridLambda);
+
+			output.close();
+
+			std::cout << BOLDGREEN << "Done." << RESET << std::endl;
+			std::cout << std::endl;
+
+		}
+
+		HostAllocator.releaseHostArrays(phaseSpaceF0);
+
+	}
+	template<int picType, int gridE, int gridPphi, int gridLambda, int ppcPhase>
+	void computePhaseSpaceJacobian() {
 
 		if (hostId == 0) {
 
@@ -4179,49 +4575,14 @@ public:
 
 		}
 
-		double cm = VA0 / (L0 * (QE * B0 / MP));
-		double nchi0 = CHI0 / (B0 * L0 * L0);
-		double nchi1 = CHI1 / (B0 * L0 * L0);
-		double ndchi = nchi1 - nchi0;
-		double Jmax, Jvmax;
+		double minE, maxE, dE;
+		double minPphi, maxPphi, dPphi;
+		double minLambda, maxLambda, dLambda;
 		double Mass, Char, Vmin, Vmax;
 
-		int ppcPhase = 512;
-		int gridE = 128;
-		int gridPphi = 128;
-		int gridLambda = 16;
-		int picPhase = gridE * gridPphi * gridLambda * ppcPhase;
-		int picTheard = picPhase / 8;
-
-		double dE, dPphi, dLambda;
-		double localMinE, localMaxE, globalMinE, globalMaxE;
-		double localMinPphi, localMaxPphi, globalMinPphi, globalMaxPphi;
-		double localMinLambda, localMaxLambda, globalMinLambda, globalMaxLambda;
-
-		std::vector<Rand01> xrand(8);
-		std::vector<Rand01> yrand(8);
-		std::vector<Rand01> Jrand(8);
-
-		std::vector<Rand01> vrand(8);
-		std::vector<Rand01> vprand(8);
-		std::vector<Rand01> Jvrand(8);
-
-		std::vector<std::vector<double>> tempq(gridNx, std::vector<double>(gridNy + 2));
-		std::vector<std::vector<double>> tempJ(gridNx, std::vector<double>(gridNy + 2));
-		std::vector<std::vector<double>> tempB(gridNx, std::vector<double>(gridNy + 2));
-		std::vector<std::vector<double>> tempSFAcovyz(gridNx, std::vector<double>(gridNy + 2));
-
-		std::vector<double> picE(picPhase);
-		std::vector<double> picPphi(picPhase);
-		std::vector<double> picLambda(picPhase);
-
-		double coes[8];
-		double cx[8] = { 1.0, 0.0, 1.0, 0.0,1.0, 0.0, 1.0, 0.0 };
-		double sx[8] = { -1.0, 1.0, -1.0, 1.0,-1.0, 1.0, -1.0, 1.0 };
-		double cy[8] = { 1.0, 1.0, 0.0, 0.0, 1.0, 1.0, 0.0, 0.0 };
-		double sy[8] = { -1.0, -1.0, 1.0, 1.0, -1.0, -1.0, 1.0, 1.0 };
-		double cz[8] = { 1.0, 1.0, 1.0, 1.0, 0.0, 0.0, 0.0, 0.0 };
-		double sz[8] = { -1.0, -1.0, -1.0, -1.0, 1.0, 1.0, 1.0, 1.0 };
+		double drho = RHO1 - RHO0;
+		double psitmax = PSITMAX / (B0 * L0 * L0);
+		double cm = VA0 / (L0 * (QE * B0 / MP));
 
 		if constexpr (picType == 0) {
 
@@ -4248,23 +4609,73 @@ public:
 
 		}
 
+		minE = 0.5 * Mass * pow(Vmin, 2.0);
+		maxE = 0.5 * Mass * pow(Vmax, 2.0);
+
+		minPphi = 20251106;
+		maxPphi = -20251106;
+
+		minLambda = 0.0;
+		maxLambda = 0.0;
+
+		for (int i = 0; i < gridNx; i++) {
+			for (int j = 0; j < gridNy; j++) {
+
+				double tempPphi, tempLambda;
+
+				tempLambda = 1.0 / B[i][j];
+				if (tempLambda > maxLambda)
+					maxLambda = tempLambda;
+
+				tempPphi = cm * Mass * Vmax * 2 * psitmax * drho * (RHO0 + i * gridDx * drho) * SFAcovyz[i][j + gridGhost] / (q[i][j] * J[i][j] * B[i][j]) - Char * psip[i][j];
+				if (tempPphi > maxPphi)
+					maxPphi = tempPphi;
+
+				tempPphi = -cm * Mass * Vmax * 2 * psitmax * drho * (RHO0 + i * gridDx * drho) * SFAcovyz[i][j + gridGhost] / (q[i][j] * J[i][j] * B[i][j]) - Char * psip[i][j];
+				if (tempPphi < minPphi)
+					minPphi = tempPphi;
+
+			}
+		}
+
+		dE = (maxE - minE) / (gridE - 1);
+		dPphi = (maxPphi - minPphi) / (gridPphi - 1);
+		dLambda = (maxLambda - minLambda) / (gridLambda - 1);
+
+		size_t picPhase = (size_t)gridE * gridPphi * gridLambda * ppcPhase / hostNums;
+
+		double*** phaseSpaceJacobian;
+		Allocator HostAllocator;
+		HostAllocator.allocateHostArrays(gridE, gridPphi, gridLambda, phaseSpaceJacobian);
+
+		double Jmax, Jvmax;
 		Jmax = 0.0;
 		Jvmax = pow(Vmax, 2.0);
+
+		std::vector<std::vector<double>> tempq(gridNx, std::vector<double>(gridNy + 2));
+		std::vector<std::vector<double>> temppsip(gridNx, std::vector<double>(gridNy + 2));
+		std::vector<std::vector<double>> tempJ(gridNx, std::vector<double>(gridNy + 2));
+		std::vector<std::vector<double>> tempB(gridNx, std::vector<double>(gridNy + 2));
+		std::vector<std::vector<double>> tempSFAcovyz(gridNx, std::vector<double>(gridNy + 2));
 
 		for (int i = 0; i < gridNx; i++) {
 			for (int j = 0; j < gridNy; j++) {
 
 				tempq[i][j + 1] = q[i][j];
+				temppsip[i][j + 1] = psip[i][j];
 				tempJ[i][j + 1] = J[i][j];
 				tempB[i][j + 1] = B[i][j];
 
-				if (J[i][j] > Jmax)
-					Jmax = J[i][j];
+				if (tempJ[i][j + 1] > Jmax)
+					Jmax = tempJ[i][j + 1];
 
 			}
 
 			tempq[i][0] = tempq[i][gridNy];
 			tempq[i][gridNy + 1] = tempq[i][1];
+
+			temppsip[i][0] = temppsip[i][gridNy];
+			temppsip[i][gridNy + 1] = temppsip[i][1];
 
 			tempJ[i][0] = tempJ[i][gridNy];
 			tempJ[i][gridNy + 1] = tempJ[i][1];
@@ -4308,249 +4719,14 @@ public:
 
 		};
 
-#pragma omp parallel for num_threads(8)
-		for (int paraId = 0; paraId < 8; paraId++) {
-			for (int picId = 0; picId < picTheard; picId++) {
+		Rand01 xrand;
+		Rand01 yrand;
+		Rand01 Jrand;
 
-				double J, B, v, Jv, SFAcovyz;
-				double x, y, vp, mu, E, Pphi, Lambda;
+		Rand01 vrand;
+		Rand01 vprand;
+		Rand01 Jvrand;
 
-				do {
-					x = x0 + (x1 - x0) * xrand[paraId]();
-					y = y0 + (y1 - y0) * yrand[paraId]();
-					J = interp2d(tempJ, x, y);
-				} while (Jrand[paraId]() >= J / Jmax);
-
-				do {
-					v = Vmax * vrand[paraId]();
-					Jv = pow(v, 2.0);
-				} while (v <= Vmin || Jvrand[paraId]() >= Jv / Jvmax);
-
-				B = interp2d(tempB, x, y);
-				SFAcovyz = interp2d(tempSFAcovyz, x, y);
-
-				Lambda = 2.0 * vprand[paraId]() - 1.0;
-				vp = v * Lambda;
-				E = 0.5 * Mass * pow(v, 2.0);
-				mu = E * (1.0 - pow(Lambda, 2.0)) / B;
-				Lambda = mu / E;
-				Pphi = cm * Mass * vp * ndchi / (J * B) * SFAcovyz - Char * (nchi0 + x * ndchi);
-
-				picE[paraId * picTheard + picId] = E;
-				picPphi[paraId * picTheard + picId] = Pphi;
-				picLambda[paraId * picTheard + picId] = Lambda;
-
-			}
-		}
-#pragma omp barrier
-
-		auto minmaxIt = std::minmax_element(picE.begin(), picE.end());
-		localMinE = *minmaxIt.first;
-		localMaxE = *minmaxIt.second;
-
-		minmaxIt = std::minmax_element(picPphi.begin(), picPphi.end());
-		localMinPphi = *minmaxIt.first;
-		localMaxPphi = *minmaxIt.second;
-
-		minmaxIt = std::minmax_element(picLambda.begin(), picLambda.end());
-		localMinLambda = *minmaxIt.first;
-		localMaxLambda = *minmaxIt.second;
-
-		MPICHECK(MPI_Allreduce(&localMinE, &globalMinE, 1, MPI_DOUBLE, MPI_MIN, MPI_COMM_WORLD));
-		MPICHECK(MPI_Allreduce(&localMaxE, &globalMaxE, 1, MPI_DOUBLE, MPI_MAX, MPI_COMM_WORLD));
-
-		MPICHECK(MPI_Allreduce(&localMinPphi, &globalMinPphi, 1, MPI_DOUBLE, MPI_MIN, MPI_COMM_WORLD));
-		MPICHECK(MPI_Allreduce(&localMaxPphi, &globalMaxPphi, 1, MPI_DOUBLE, MPI_MAX, MPI_COMM_WORLD));
-
-		MPICHECK(MPI_Allreduce(&localMinLambda, &globalMinLambda, 1, MPI_DOUBLE, MPI_MIN, MPI_COMM_WORLD));
-		MPICHECK(MPI_Allreduce(&localMaxLambda, &globalMaxLambda, 1, MPI_DOUBLE, MPI_MAX, MPI_COMM_WORLD));
-
-		auto updateBounds = [](double& b, double& c) {
-			double delta = 0.001 * (c - b);
-			double a = b - delta;
-			double d = c + delta;
-			b = a;
-			c = d;
-		};
-
-		updateBounds(globalMinE, globalMaxE);
-		updateBounds(globalMinPphi, globalMaxPphi);
-		updateBounds(globalMinLambda, globalMaxLambda);
-
-		dE = (globalMaxE - globalMinE) / (gridE - 1);
-		dPphi = (globalMaxPphi - globalMinPphi) / (gridPphi - 1);
-		dLambda = (globalMaxLambda - globalMinLambda) / (gridLambda - 1);
-
-		int i, j, k;
-		double li, lj, lk;
-		double x, y, z;
-		double dx, dy, dz;
-		double*** localJacobian;
-		double*** globalJacobian;
-
-		Allocator HostAllocator;
-		HostAllocator.allocateHostArrays(gridE, gridPphi, gridLambda, localJacobian, globalJacobian);
-
-		for (int picId = 0; picId < picPhase; picId++) {
-
-			x = picE[picId];
-			y = picPphi[picId];
-			z = picLambda[picId];
-
-			li = (x - globalMinE) / dE;
-			lj = (y - globalMinPphi) / dPphi;
-			lk = (z - globalMinLambda) / dLambda;
-
-			i = floor(li);
-			j = floor(lj);
-			k = floor(lk);
-
-			dx = li - i;
-			dy = lj - j;
-			dz = lk - k;
-
-			for (int index = 0; index < 8; index++)
-				coes[index] = (cx[index] + sx[index] * dx) * (cy[index] + sy[index] * dy) * (cz[index] + sz[index] * dz);
-
-			localJacobian[i][j][k] += coes[0];
-			localJacobian[i + 1][j][k] += coes[1];
-			localJacobian[i][j + 1][k] += coes[2];
-			localJacobian[i + 1][j + 1][k] += coes[3];
-			localJacobian[i][j][k + 1] += coes[4];
-			localJacobian[i + 1][j][k + 1] += coes[5];
-			localJacobian[i][j + 1][k + 1] += coes[6];
-			localJacobian[i + 1][j + 1][k + 1] += coes[7];
-
-		}
-
-		MPICHECK(MPI_Allreduce(localJacobian[0][0], globalJacobian[0][0], gridE * gridPphi * gridLambda, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD));
-
-		for (int i = 0; i < gridE; i++) {
-			for (int j = 0; j < gridPphi; j++) {
-				for (int k = 0; k < gridLambda; k++) {
-
-					bool isVertex = (i == 0 || i == gridE - 1) &&
-						(j == 0 || j == gridPphi - 1) &&
-						(k == 0 || k == gridLambda - 1);
-
-					bool isEdge = ((i == 0 || i == gridE - 1) && (j == 0 || j == gridPphi - 1)) ||
-						((i == 0 || i == gridE - 1) && (k == 0 || k == gridLambda - 1)) ||
-						((j == 0 || j == gridPphi - 1) && (k == 0 || k == gridLambda - 1));
-
-					bool isFace = (i == 0 || i == gridE - 1 || j == 0 || j == gridPphi - 1 || k == 0 || k == gridLambda - 1);
-
-					if (isVertex) {
-						globalJacobian[i][j][k] *= 8;
-					}
-					else if (isEdge) {
-						globalJacobian[i][j][k] *= 4;
-					}
-					else if (isFace) {
-						globalJacobian[i][j][k] *= 2;
-					}
-
-				}
-			}
-		}
-
-		if (hostId == 0) {
-
-			std::ofstream output;
-			std::string fileName;
-
-			if constexpr (picType == 0) {
-				fileName = "IonPhaseJacobian.bin";
-				std::cout << BOLDYELLOW << "Ion minE: " << std::setprecision(10) << globalMinE << "." << RESET << std::endl;
-				std::cout << BOLDYELLOW << "Ion maxE: " << std::setprecision(10) << globalMaxE << "." << RESET << std::endl;
-				std::cout << BOLDYELLOW << "Ion minPphi: " << std::setprecision(10) << globalMinPphi << "." << RESET << std::endl;
-				std::cout << BOLDYELLOW << "Ion maxPphi: " << std::setprecision(10) << globalMaxPphi << "." << RESET << std::endl;
-				std::cout << BOLDYELLOW << "Ion minLambda: " << std::setprecision(10) << globalMinLambda << "." << RESET << std::endl;
-				std::cout << BOLDYELLOW << "Ion maxLambda: " << std::setprecision(10) << globalMaxLambda << "." << RESET << std::endl;
-			}
-			else if constexpr (picType == 1) {
-				fileName = "AlphaPhaseJacobian.bin";
-				std::cout << BOLDYELLOW << "Alpha minE: " << std::setprecision(10) << globalMinE << "." << RESET << std::endl;
-				std::cout << BOLDYELLOW << "Alpha maxE: " << std::setprecision(10) << globalMaxE << "." << RESET << std::endl;
-				std::cout << BOLDYELLOW << "Alpha minPphi: " << std::setprecision(10) << globalMinPphi << "." << RESET << std::endl;
-				std::cout << BOLDYELLOW << "Alpha maxPphi: " << std::setprecision(10) << globalMaxPphi << "." << RESET << std::endl;
-				std::cout << BOLDYELLOW << "Alpha minLambda: " << std::setprecision(10) << globalMinLambda << "." << RESET << std::endl;
-				std::cout << BOLDYELLOW << "Alpha maxLambda: " << std::setprecision(10) << globalMaxLambda << "." << RESET << std::endl;
-			}
-			else if constexpr (picType == 2) {
-				fileName = "BeamPhaseJacobian.bin";
-				std::cout << BOLDYELLOW << "Beam minE: " << std::setprecision(10) << globalMinE << "." << RESET << std::endl;
-				std::cout << BOLDYELLOW << "Beam maxE: " << std::setprecision(10) << globalMaxE << "." << RESET << std::endl;
-				std::cout << BOLDYELLOW << "Beam minPphi: " << std::setprecision(10) << globalMinPphi << "." << RESET << std::endl;
-				std::cout << BOLDYELLOW << "Beam maxPphi: " << std::setprecision(10) << globalMaxPphi << "." << RESET << std::endl;
-				std::cout << BOLDYELLOW << "Beam minLambda: " << std::setprecision(10) << globalMinLambda << "." << RESET << std::endl;
-				std::cout << BOLDYELLOW << "Beam maxLambda: " << std::setprecision(10) << globalMaxLambda << "." << RESET << std::endl;
-			}
-
-			output.open(fileName.c_str(), std::ios::out | std::ios::binary);
-			output.write((char*)(globalJacobian[0][0]), sizeof(double) * gridE * gridPphi * gridLambda);
-			output.close();
-
-			std::cout << BOLDGREEN << "Done." << RESET << std::endl;
-			std::cout << std::endl;
-
-		}
-
-		HostAllocator.releaseHostArrays(localJacobian, globalJacobian);
-
-	}
-	template<int picType>
-	void computePhaseDeltaf(std::string file1, std::string file2) {
-
-		double cm = VA0 / (L0 * (QE * B0 / MP));
-		double nchi0 = CHI0 / (B0 * L0 * L0);
-		double nchi1 = CHI1 / (B0 * L0 * L0);
-		double ndchi = nchi1 - nchi0;
-		double Mass, Char;
-
-		int gridE = 128;
-		int gridPphi = 128;
-		int gridLambda = 128;
-
-		double globalMinE = -0.004146178598;
-		double globalMaxE = 4.151347199;
-		double dE = (globalMaxE - globalMinE) / (gridE - 1);
-
-		double globalMinPphi = -0.09506228375;
-		double globalMaxPphi = 0.01616298665;
-		double dPphi = (globalMaxPphi - globalMinPphi) / (gridPphi - 1);
-
-		double globalMinLambda = -0.001170196067;
-		double globalMaxLambda = 1.171366563;
-		double dLambda = (globalMaxLambda - globalMinLambda) / (gridLambda - 1);
-
-		double*** localDeltaf;
-		double*** globalDeltaf;
-		double*** globalJacobian;
-
-		Allocator HostAllocator;
-		HostAllocator.allocateHostArrays(gridE, gridPphi, gridLambda, localDeltaf, globalDeltaf, globalJacobian);
-
-		std::ifstream input;
-
-		input.open(file1, std::ios::in | std::ios::binary);
-		input.read((char*)(globalJacobian[0][0]), sizeof(double) * gridE * gridPphi * gridLambda);
-		input.close();
-
-		input.open(file2, std::ios::in | std::ios::binary);
-		input.read((char*)(h_Alpha_values[0]), sizeof(dataType) * picHost * 7);
-		input.close();
-
-		std::vector<std::vector<double>> tempq(gridNx, std::vector<double>(gridNy + 2));
-		std::vector<std::vector<double>> tempJ(gridNx, std::vector<double>(gridNy + 2));
-		std::vector<std::vector<double>> tempB(gridNx, std::vector<double>(gridNy + 2));
-		std::vector<std::vector<double>> tempSFAcovyz(gridNx, std::vector<double>(gridNy + 2));
-
-		std::vector<double> picE(picHost);
-		std::vector<double> picPphi(picHost);
-		std::vector<double> picLambda(picHost);
-		std::vector<double> picDeltaf(picHost);
-
-		double coes[8];
 		double cx[8] = { 1.0, 0.0, 1.0, 0.0,1.0, 0.0, 1.0, 0.0 };
 		double sx[8] = { -1.0, 1.0, -1.0, 1.0,-1.0, 1.0, -1.0, 1.0 };
 		double cy[8] = { 1.0, 1.0, 0.0, 0.0, 1.0, 1.0, 0.0, 0.0 };
@@ -4558,132 +4734,50 @@ public:
 		double cz[8] = { 1.0, 1.0, 1.0, 1.0, 0.0, 0.0, 0.0, 0.0 };
 		double sz[8] = { -1.0, -1.0, -1.0, -1.0, 1.0, 1.0, 1.0, 1.0 };
 
-		if constexpr (picType == 0) {
+		for (size_t picId = 0; picId < picPhase; picId++) {
 
-			Mass = IonMass;
-			Char = IonChar;
+			if (picId % (picPhase / 10) == 0)
+				if (hostId == 0)
+					std::cout << BOLDGREEN << 100 * picId / picPhase << "%" << RESET << std::endl;
 
-		}
-		else if constexpr (picType == 1) {
+			int i, j, k;
+			double li, lj, lk;
+			double dx, dy, dz;
+			double q, psip, J, B, SFAcovyz;
+			double v, Jv, E, Pphi, Lambda;
+			double x, y, z, vp, mu;
+			double coes[8];
 
-			Mass = AlphaMass;
-			Char = AlphaChar;
-
-		}
-		else if constexpr (picType == 2) {
-
-			Mass = BeamMass;
-			Char = BeamChar;
-
-		}
-
-		for (int i = 0; i < gridNx; i++) {
-			for (int j = 0; j < gridNy; j++) {
-
-				tempq[i][j + 1] = q[i][j];
-				tempJ[i][j + 1] = J[i][j];
-				tempB[i][j + 1] = B[i][j];
-
-			}
-
-			tempq[i][0] = tempq[i][gridNy];
-			tempq[i][gridNy + 1] = tempq[i][1];
-
-			tempJ[i][0] = tempJ[i][gridNy];
-			tempJ[i][gridNy + 1] = tempJ[i][1];
-
-			tempB[i][0] = tempB[i][gridNy];
-			tempB[i][gridNy + 1] = tempB[i][1];
-
-		}
-
-		for (int i = 0; i < gridNx; i++) {
-			for (int j = 0; j < gridNy + 2; j++) {
-				tempSFAcovyz[i][j] = SFAcovyz[i][j + gridGhost - 1];
-			}
-		}
-
-		auto interp2d = [&](std::vector<std::vector<double>>& field, double x, double y) {
-
-			double li = (x - x0) / gridDx;
-			double lj = (y - y0 + 0.5 * gridDy) / gridDy;
-			int i = floor(li);
-			int j = floor(lj);
-			double dx = li - i;
-			double dy = lj - j;
-
-			double coes[4] = {};
-			double cx[4] = { 1.0, 1.0, 0.0, 0.0 };
-			double sx[4] = { -1.0, -1.0, 1.0, 1.0 };
-			double cy[4] = { 1.0, 0.0, 1.0, 0.0 };
-			double sy[4] = { -1.0, 1.0, -1.0, 1.0 };
-
-			double result = 0.0;
-
-			coes[0] = (cx[0] + sx[0] * dx) * (cy[0] + sy[0] * dy);
-			coes[1] = (cx[1] + sx[1] * dx) * (cy[1] + sy[1] * dy);
-			coes[2] = (cx[2] + sx[2] * dx) * (cy[2] + sy[2] * dy);
-			coes[3] = (cx[3] + sx[3] * dx) * (cy[3] + sy[3] * dy);
-
-			result = field[i][j] * coes[0] + field[i][j + 1] * coes[1] + field[i + 1][j] * coes[2] + field[i + 1][j + 1] * coes[3];
-
-			return result;
-
-		};
-
-#pragma omp parallel for num_threads(devNums)
-		for (int devId = 0; devId < devNums; devId++) {
-			for (int picId = 0; picId < picDev; picId++) {
-
-				double J, B, SFAcovyz;
-				double x, y, vp, pw, mu, E, Pphi, Lambda;
-
-				x = h_Alpha_values[devId][picId + 0 * picDev];
-				y = h_Alpha_values[devId][picId + 1 * picDev];
-				vp = h_Alpha_values[devId][picId + 3 * picDev];
-				pw = h_Alpha_values[devId][picId + 4 * picDev];
-				mu = h_Alpha_values[devId][picId + 6 * picDev];
-
+			do {
+				x = x0 + (x1 - x0) * xrand();
+				y = y0 + (y1 - y0) * yrand();
 				J = interp2d(tempJ, x, y);
-				B = interp2d(tempB, x, y);
-				SFAcovyz = interp2d(tempSFAcovyz, x, y);
+			} while (Jrand() >= J / Jmax);
 
-				E = 0.5 * Mass * vp * vp + mu * B;
-				Lambda = mu / E;
-				Pphi = cm * Mass * vp * ndchi / (J * B) * SFAcovyz - Char * (nchi0 + x * ndchi);
+			do {
+				v = Vmax * vrand();
+				Jv = pow(v, 2.0);
+			} while (v <= Vmin || Jvrand() >= Jv / Jvmax);
 
-				picE[devId * picDev + picId] = E;
-				picPphi[devId * picDev + picId] = Pphi;
-				picLambda[devId * picDev + picId] = Lambda;
-				picDeltaf[devId * picDev + picId] = pw;
+			q = interp2d(tempq, x, y);
+			psip = interp2d(temppsip, x, y);
+			SFAcovyz = interp2d(tempSFAcovyz, x, y);
+			B = interp2d(tempB, x, y);
 
-			}
-		}
-#pragma omp barrier
+			if constexpr (picType == 2)
+				Lambda = vprand();
+			else
+				Lambda = 2.0 * vprand() - 1.0;
+			vp = v * Lambda;
+			mu = 0.5 * Mass * pow(v, 2.0) * (1.0 - pow(Lambda, 2.0)) / B;
 
-		int sum = 0;
-		int i, j, k;
-		double li, lj, lk;
-		double x, y, z, pw, jacobian;
-		double dx, dy, dz;
+			E = 0.5 * Mass * pow(v, 2.0);
+			Pphi = cm * Mass * vp * 2 * psitmax * drho * (RHO0 + x * drho) * SFAcovyz / (q * J * B) - Char * psip;
+			Lambda = mu / E;
 
-		for (int picId = 0; picId < picHost; picId++) {
-
-			x = picE[picId];
-			y = picPphi[picId];
-			z = picLambda[picId];
-			pw = picDeltaf[picId];
-
-			if (x < globalMinE || x >= globalMaxE
-				|| y < globalMinPphi || y >= globalMaxPphi
-				|| z < globalMinLambda || z >= globalMaxLambda) {
-				sum++;
-				continue;
-			}
-
-			li = (x - globalMinE) / dE;
-			lj = (y - globalMinPphi) / dPphi;
-			lk = (z - globalMinLambda) / dLambda;
+			li = (E - minE) / dE;
+			lj = (Pphi - minPphi) / dPphi;
+			lk = (Lambda - minLambda) / dLambda;
 
 			i = floor(li);
 			j = floor(lj);
@@ -4693,31 +4787,39 @@ public:
 			dy = lj - j;
 			dz = lk - k;
 
+			if (i == gridE - 1) {
+				i--;
+				dx = 1;
+			}
+			if (j == gridPphi - 1) {
+				j--;
+				dy = 1;
+			}
+			if (k == gridLambda - 1) {
+				k--;
+				dz = 1;
+			}
+
 			for (int index = 0; index < 8; index++)
 				coes[index] = (cx[index] + sx[index] * dx) * (cy[index] + sy[index] * dy) * (cz[index] + sz[index] * dz);
 
-			jacobian = globalJacobian[i][j][k] * coes[0] + globalJacobian[i + 1][j][k] * coes[1]
-				+ globalJacobian[i][j + 1][k] * coes[2] + globalJacobian[i + 1][j + 1][k] * coes[3]
-				+ globalJacobian[i][j][k + 1] * coes[4] + globalJacobian[i + 1][j][k + 1] * coes[5]
-				+ globalJacobian[i][j + 1][k + 1] * coes[6] + globalJacobian[i + 1][j + 1][k + 1] * coes[7];
-
-			if (jacobian > 0)
-				pw /= jacobian;
-			else
-				pw = 0;
-
-			localDeltaf[i][j][k] += pw * coes[0];
-			localDeltaf[i + 1][j][k] += pw * coes[1];
-			localDeltaf[i][j + 1][k] += pw * coes[2];
-			localDeltaf[i + 1][j + 1][k] += pw * coes[3];
-			localDeltaf[i][j][k + 1] += pw * coes[4];
-			localDeltaf[i + 1][j][k + 1] += pw * coes[5];
-			localDeltaf[i][j + 1][k + 1] += pw * coes[6];
-			localDeltaf[i + 1][j + 1][k + 1] += pw * coes[7];
+			phaseSpaceJacobian[i][j][k] += coes[0];
+			phaseSpaceJacobian[i + 1][j][k] += coes[1];
+			phaseSpaceJacobian[i][j + 1][k] += coes[2];
+			phaseSpaceJacobian[i + 1][j + 1][k] += coes[3];
+			phaseSpaceJacobian[i][j][k + 1] += coes[4];
+			phaseSpaceJacobian[i + 1][j][k + 1] += coes[5];
+			phaseSpaceJacobian[i][j + 1][k + 1] += coes[6];
+			phaseSpaceJacobian[i + 1][j + 1][k + 1] += coes[7];
 
 		}
 
-		MPICHECK(MPI_Allreduce(localDeltaf[0][0], globalDeltaf[0][0], gridE * gridPphi * gridLambda, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD));
+		if (hostId == 0) {
+			std::cout << BOLDGREEN << 100 << "%" << RESET << std::endl;
+			std::cout << std::endl;
+		}
+
+		MPICHECK(MPI_Allreduce(phaseSpaceJacobian[0][0], phaseSpaceJacobian[0][0], gridE * gridPphi * gridLambda, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD));
 
 		for (int i = 0; i < gridE; i++) {
 			for (int j = 0; j < gridPphi; j++) {
@@ -4733,15 +4835,12 @@ public:
 
 					bool isFace = (i == 0 || i == gridE - 1 || j == 0 || j == gridPphi - 1 || k == 0 || k == gridLambda - 1);
 
-					if (isVertex) {
-						globalDeltaf[i][j][k] *= 8;
-					}
-					else if (isEdge) {
-						globalDeltaf[i][j][k] *= 4;
-					}
-					else if (isFace) {
-						globalDeltaf[i][j][k] *= 2;
-					}
+					if (isVertex)
+						phaseSpaceJacobian[i][j][k] *= 8;
+					else if (isEdge)
+						phaseSpaceJacobian[i][j][k] *= 4;
+					else if (isFace)
+						phaseSpaceJacobian[i][j][k] *= 2;
 
 				}
 			}
@@ -4752,28 +4851,39 @@ public:
 			std::ofstream output;
 			std::string fileName;
 
-			if constexpr (picType == 0) {
-				fileName = "IonPhaseDeltaf.bin";
-			}
-			else if constexpr (picType == 1) {
-				fileName = "AlphaPhaseDeltaf.bin";
-			}
-			else if constexpr (picType == 2) {
-				fileName = "BeamPhaseDeltaf.bin";
-			}
+			if constexpr (picType == 0)
+				fileName = "IonPhaseSpaceJacobian.bin";
+			else if constexpr (picType == 1)
+				fileName = "AlphaPhaseSpaceJacobian.bin";
+			else if constexpr (picType == 2)
+				fileName = "BeamPhaseSpaceJacobian.bin";
 
 			output.open(fileName.c_str(), std::ios::out | std::ios::binary);
-			output.write((char*)(globalDeltaf[0][0]), sizeof(double) * gridE * gridPphi * gridLambda);
-			output.close();
 
-			std::cout << BOLDYELLOW << "sum: " << std::setprecision(10) << sum << "." << RESET << std::endl;
+			int tempGridE = gridE, tempGridPphi = gridPphi, tempGridLambda = gridLambda;
+			output.write((char*)(&tempGridE), sizeof(int));
+			output.write((char*)(&tempGridPphi), sizeof(int));
+			output.write((char*)(&tempGridLambda), sizeof(int));
+
+			output.write((char*)(&minE), sizeof(double));
+			output.write((char*)(&maxE), sizeof(double));
+
+			output.write((char*)(&minPphi), sizeof(double));
+			output.write((char*)(&maxPphi), sizeof(double));
+
+			output.write((char*)(&minLambda), sizeof(double));
+			output.write((char*)(&maxLambda), sizeof(double));
+
+			output.write((char*)(phaseSpaceJacobian[0][0]), sizeof(double) * gridE * gridPphi * gridLambda);
+
+			output.close();
 
 			std::cout << BOLDGREEN << "Done." << RESET << std::endl;
 			std::cout << std::endl;
 
 		}
 
-		HostAllocator.releaseHostArrays(localDeltaf, globalDeltaf, globalJacobian);
+		HostAllocator.releaseHostArrays(phaseSpaceJacobian);
 
 	}
 
