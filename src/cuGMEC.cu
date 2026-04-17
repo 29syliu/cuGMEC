@@ -1,4 +1,23 @@
-﻿#include "cuGMEC.h"
+/*
+ * cuGMEC
+ *
+ * Copyright (C) 2025 Shiyang Liu
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+ */
+
+#include "cuGMEC.h"
 
 static uint64_t getHostHash(const char* string) {
 	// Based on DJB2a, result = result * 33 ^ char
@@ -30,50 +49,67 @@ using trueType = std::integral_constant<bool, true>;
 using falseType = std::integral_constant<bool, false>;
 enum picType { Ion, Alpha, Beam };
 enum disType { Maxwell, Slowing0, Slowing1, Slowing2, Slowing3 };
-enum matrixType { Laplacian, Resistive, Perp2w, Perp2dNe, Perp2dTe, Perp2dPi, Perp2dPa, Perp2dPb };
+enum markerType { physicalReal, physicalUniform, numericalUniform };
+enum matrixType { Laplacian, Resistive, Perp2Phi, Perp2dNe, Perp2dTe, Perp2dPi, Perp2dPa, Perp2dPb };
 
 /*-----------------------Data Type and File Address-----------------------*/
 
-using dataType = float;
+using dataType = double;
 
-const std::string MHDCollocated = "../MHDCollocated.bin";
-const std::string MHDStaggered = "../MHDStaggered_256_64.bin";
-const std::string MHDPerturbation = "../MHDPerturbation.bin";
-
-/*------------------------------Scale Setting------------------------------*/
-const int hostNums = 1;
-const int devNums = 8;
-const int gridNx = 256;
-const int gridNy = 64;
-const int gridNz = 16;
-const int gridGhost = 2;
-const int ppcNums = 64;
-const int tubes = 10;
-const int leftN = 1;
-const int rightN = 1;
-const int leftM = 0;
-const int rightM = 0;
+const std::string MHDCollocated = "../MHDCollocated_256_32.bin";
+const std::string MHDStaggered = "../MHDStaggered_256_32.bin";
+const std::string MHDPerturbation = "../MHDPerturbation_256_32_16_30_1.bin";
 
 /*-------------------------Normalization Setting-------------------------*/
 
-const double B0 = 2.001014556346378;
-const double L0 = 0.901894801128846;
-const double VA0 = 4.331469223803510e+06;
-const double CHI0 = 2.960885733218470e-04;
-const double CHI1 = 0.051310475961622;
+const double B0 = 4.921751144619735;
+const double L0 = 6.595629295925759;
+const double VA0 = 8.864164667700194e+06;
+const double RHO0 = 0.08;
+const double RHO1 = 0.90;
+const double PSITMAX = 18.868213504765762;
 const double OMEGACI = QE * B0 / MP;
 
+/*------------------------------Scale Setting------------------------------*/
+
+const int hostNums = 4;
+const int devNums = 4;
+const int gridNx = 256;
+const int gridNy = 32;
+const int gridNz = 16;
+const int gridGhost = 2;
+const int ppcNums = 128;
+
 /*-----------------------------MHD Setting-----------------------------*/
+
+const int tubes = 30;
+const int leftN = 1;
+const int rightN = 1;
+using ifFilterN_Phi = trueType;
+using ifFilterN_A = trueType;
+using ifFilterN_dNe = trueType;
+using ifFilterN_dTe = trueType;
+using ifFilterN_dP = trueType;
+constexpr std::array<int, 0> removeN_Phi = { };
+constexpr std::array<int, 0> removeN_A = { };
+constexpr std::array<int, 0> removeN_dNe = { };
+constexpr std::array<int, 0> removeN_dTe = { };
+constexpr std::array<int, 0> removeN_dP = { };
+constexpr std::array<std::tuple<int, int, int>, 0> selectNM_Phi = { };
+constexpr std::array<std::tuple<int, int, int>, 0> selectNM_A = { };
+constexpr std::array<std::tuple<int, int, int>, 0> selectNM_dNe = { };
+constexpr std::array<std::tuple<int, int, int>, 0> selectNM_dTe = { };
+constexpr std::array<std::tuple<int, int, int>, 0> selectNM_dP = { };
 
 using ifStaggered = falseType;
 using ifNonlinear = falseType;
 using ifEparallel = trueType;
 using ifFLRMHD = falseType;
 
-using ifNablaPerp2w = trueType;
-using ifNablaPara4w = trueType;
-const dataType perp2w = 1.0e-7;
-const dataType para4w = 1.0e-5;
+using ifNablaPerp2Phi = falseType;
+using ifNablaPara4Phi = falseType;
+const dataType perp2Phi = 0.0;
+const dataType para4Phi = 0.0;
 
 using ifNablaPerp2A = falseType;
 using ifNablaPara4A = falseType;
@@ -82,22 +118,22 @@ const dataType para4A = 0.0;
 
 using ifNablaPerp2dNe = falseType;
 using ifNablaPara4dNe = falseType;
-const dataType perp2dNe = 1.0e-7;
+const dataType perp2dNe = 0.0;
 const dataType para4dNe = 0.0;
 
 using ifNablaPerp2dTe = falseType;
 using ifNablaPara4dTe = falseType;
-const dataType perp2dTe = 1.0e-7;
+const dataType perp2dTe = 0.0;
 const dataType para4dTe = 0.0;
 
 using ifNablaPerp2dPi = falseType;
 using ifNablaPara4dPi = falseType;
-const dataType perp2dPi = 1.0e-5;
+const dataType perp2dPi = 0.0;
 const dataType para4dPi = 0.0;
 
 using ifNablaPerp2dPa = falseType;
 using ifNablaPara4dPa = falseType;
-const dataType perp2dPa = 1.0e-5;
+const dataType perp2dPa = 0.0;
 const dataType para4dPa = 0.0;
 
 using ifNablaPerp2dPb = falseType;
@@ -108,51 +144,51 @@ const dataType para4dPb = 0.0;
 /*------------------------------PIC Setting------------------------------*/
 
 using randomState = curandStateXORWOW_t;
-const unsigned int randMax = 1 << 0;
+const unsigned int randMax = 1 << 24;
 
 using ifFLRPIC = trueType;
-const int gyroNums = 16;
+const int gyroNums = 4;
 
 using ifIon = trueType;
 const disType IonType = Maxwell;
+const markerType IonMarker = physicalReal;
 using ifIonSlowing = falseType;
-const dataType IonMass = 1.0;
+const dataType IonMass = 2.5;
 const dataType IonChar = 1.0;
-const dataType IonBeta = 0.043772383170065;
-const dataType IonVmin = 0.0;
-const dataType IonVmax = 0.57;
+const dataType IonBeta = 0.037793721898356;
+const dataType IonVmin = 0.0135;
+const dataType IonVmax = 0.54;
 const dataType IonVb = 0.0;
-const dataType IonVc = 0.0;
 const dataType IonDeltaV = 0.0;
 const dataType IonLambda0 = 0.0;
 const dataType IonDeltaLambda2 = 0.0;
 const dataType IonDragRate = 0.0;
 
-using ifAlpha = falseType;
-const disType AlphaType = Maxwell;
+using ifAlpha = trueType;
+const disType AlphaType = Slowing0;
+const markerType AlphaMarker = physicalReal;
 using ifAlphaSlowing = falseType;
-const dataType AlphaMass = 2.0;
-const dataType AlphaChar = 1.0;
-const dataType AlphaBeta = 0.004555529879743;
-const dataType AlphaVmin = 0.0;
-const dataType AlphaVmax = 0.75;
+const dataType AlphaMass = 4.0;
+const dataType AlphaChar = 2.0;
+const dataType AlphaBeta = 0.018554328058860;
+const dataType AlphaVmin = 0.0733;
+const dataType AlphaVmax = 1.466;
 const dataType AlphaVb = 0.0;
-const dataType AlphaVc = 0.0;
 const dataType AlphaDeltaV = 0.0;
 const dataType AlphaLambda0 = 0.0;
 const dataType AlphaDeltaLambda2 = 0.0;
 const dataType AlphaDragRate = 0.0;
 
-using ifBeam = falseType;
+using ifBeam = trueType;
 const disType BeamType = Slowing2;
+const markerType BeamMarker = physicalReal;
 using ifBeamSlowing = falseType;
 const dataType BeamMass = 2.0;
 const dataType BeamChar = 1.0;
-const dataType BeamBeta = 0.011275221951336;
-const dataType BeamVmin = 0.1087;
-const dataType BeamVmax = 1.087;
+const dataType BeamBeta = 0.010583527513998;
+const dataType BeamVmin = 0.0552;
+const dataType BeamVmax = 1.104;
 const dataType BeamVb = 0.0;
-const dataType BeamVc = 1.98;
 const dataType BeamDeltaV = 0.0;
 const dataType BeamLambda0 = 0.4;
 const dataType BeamDeltaLambda2 = 1.0 / (4.5 * 4.5);
@@ -161,30 +197,45 @@ const dataType BeamDragRate = 0.0;
 /*------------------------------Run Setting------------------------------*/
 
 using ifContinue = falseType;
-using ifDiagEnergy = trueType;
-using ifDiagFrequency = trueType;
 using ifDiagAmplitude = trueType;
-using ifDiagEparallel = falseType;
+using ifDiagFrequency = trueType;
+using ifDiagEparallel = trueType;
 using ifDiagDensity = trueType;
+using ifDiagDiffusivity = trueType;
 
-using ifOutputw = falseType;
+using ifOutputPhi = falseType;
 using ifOutputA = falseType;
 using ifOutputdNe = falseType;
 using ifOutputdTe = falseType;
-using ifOutputPhi = trueType;
 using ifOutputdPi = falseType;
 using ifOutputdPa = falseType;
 using ifOutputdPb = falseType;
 
-const int continueSteps = 0;
+const int gridE = 64;
+const int gridPphi = 64;
+const int gridLambda = 64;
+const int ppcPhase = 4096;
+const dataType IonEPphiLambda[6] = { 0.0, 0.0, 0.0, 0.0, 0.0, 0.0 };
+const dataType AlphaEPphiLambda[6] = { 0.0, 0.0, 0.0, 0.0, 0.0, 0.0 };
+const dataType BeamEPphiLambda[6] = { 0.0, 0.0, 0.0, 0.0, 0.0, 0.0 };
+using ifOutputPhaceSpaceF0 = trueType;
+using ifOutputPhaceSpaceDeltaF = falseType;
+using ifOutputPhaceSpacePower = falseType;
+using ifOutputPhaceSpaceJacobian = trueType;
+using ifOutputPhaceSpaceFrequency = trueType;
+const std::string IonPhaseSpaceMapping = "../IonPhaseSpaceMapping.bin";
+const std::string BeamPhaseSpaceMapping = "../BeamPhaseSpaceMapping.bin";
+const std::string AlphaPhaseSpaceMapping = "../AlphaPhaseSpaceMapping.bin";
+
 const double dt = 0.02;
+const int continueSteps = 0;
 const int ratioDt = 1;
-const int totalSteps = 5000;
+const int totalSteps = 4000;
 const int sortSteps = 25;
 const int diagSteps = 1;
 const int diagLeftX = 0;
 const int diagRightX = gridNx - 1;
-const int outputSteps = 500;
+const int outputSteps = 5000;
 
 const int diagY = ((hostNums * devNums == 1) ? gridNy / 2 : 0);
 const int outerLoopMax = totalSteps / sortSteps / ratioDt;
@@ -215,7 +266,9 @@ const dataType gridDt = dt;
 const int picHost = gridNx * gridNy * gridNz / hostNums * ppcNums;
 const int picDev = gridNx * gridNy * gridNz / hostNums / devNums * ppcNums;
 
-const dataType ndchi = (CHI1 - CHI0) / (B0 * L0 * L0);
+const dataType rho0 = RHO0;
+const dataType drho = RHO1 - RHO0;
+const dataType psitmax = PSITMAX / (B0 * L0 * L0);
 const dataType xbeg = 0.0;
 const dataType xend = 1.0;
 const dataType ybeg = -PI - (gridGhost - 0.5) * gridDy;
@@ -230,6 +283,7 @@ const dataType mu0 = MU0;
 const dataType pitchB0 = B0;
 const dataType kev = KEV;
 const dataType va = VA0;
+const dataType l3 = 1e19 / (L0 * L0 * L0);
 const dataType cm = VA0 / (L0 * OMEGACI);
 
 __constant__ dataType IonConst;
@@ -244,28 +298,28 @@ __constant__ dataType sz[8] = { -1.0, -1.0, -1.0, -1.0, 1.0, 1.0, 1.0, 1.0 };
 
 /*-------------------------Thread Block Setting-------------------------*/
 
-using ifLocal = std::conditional<gridNz == 16 || gridNz == 32, trueType, falseType>::type;
+using ifLocal = std::conditional<gridNz == 8 || gridNz == 16 || gridNz == 32, trueType, falseType>::type;
 
-const int MRK4BlockDimx = ((gridNz == 32) ? 32 : 16);
-const int MRK4BlockDimy = ((gridNz == 32) ? 2 : 4);
+const int MRK4BlockDimx = (gridNz == 8) ? 8 : (gridNz == 16) ? 16 : (gridNz == 32) ? 32 : 16;
+const int MRK4BlockDimy = 2;
 const int MRK4BlockDimz = 4;
 const int MRK4GridDimx = gridNx / MRK4BlockDimz;
 const int MRK4GridDimy = gridNy / hostNums / devNums / MRK4BlockDimy;
 const int MRK4GridDimz = gridNz / MRK4BlockDimx;
 
-const int GhostBlockDimx = ((gridNz == 32) ? 32 : 16);
+const int GhostBlockDimx = (gridNz == 8) ? 8 : (gridNz == 16) ? 16 : (gridNz == 32) ? 32 : 16;
 const int GhostBlockDimy = 2;
 const int GhostBlockDimz = ((gridNz == 32) ? 4 : 8);
 const int GhostGridDimx = gridNx / GhostBlockDimz;
 const int GhostGridDimy = gridGhost / GhostBlockDimy;
 const int GhostGridDimz = gridNz / GhostBlockDimx;
 
-const int M2PBlockDimx = ((gridNz == 32) ? 32 : 16);
+const int M2PBlockDimx = (gridNz == 8) ? 8 : (gridNz == 16) ? 16 : (gridNz == 32) ? 32 : 16;
 const int M2PBlockDimy = ((gridNz == 32) ? 2 : 4);
 const int M2PBlockDimz = 4;
-const int M2PGridDimx = gridNx / MRK4BlockDimz;
-const int M2PGridDimy = gridNy / MRK4BlockDimy;
-const int M2PGridDimz = gridNz / MRK4BlockDimx;
+const int M2PGridDimx = gridNx / M2PBlockDimz;
+const int M2PGridDimy = gridNy / M2PBlockDimy;
+const int M2PGridDimz = gridNz / M2PBlockDimx;
 
 const int pptNums = 32;
 const int PICBlockDimx = 256;
@@ -275,7 +329,7 @@ const int nFFTBatchSize = devNy * gridNx;
 const int nFFTTimeSize = gridNz;
 const int nFFTFreqSize = gridNz / 2 + 1;
 
-const int mFFTBatchSize = gridNx;
+const int mFFTBatchSize = gridNx * gridNz;
 const int mFFTTimeSize = gridNy;
 const int mFFTFreqSize = gridNy / 2 + 1;
 
@@ -2337,7 +2391,7 @@ __global__ void MHDNablaPara4(type* __restrict__ d_qtheta, type* __restrict__ d_
 	qtheta_lr[3] = d_qtheta[offset2d + 2 * gridNx];
 
 	if constexpr (F == 0)
-		para4 = para4w;
+		para4 = para4Phi;
 	else if constexpr (F == 1)
 		para4 = para4A;
 	else if constexpr (F == 2)
@@ -2357,55 +2411,11 @@ __global__ void MHDNablaPara4(type* __restrict__ d_qtheta, type* __restrict__ d_
 
 	PartialY2<local>(k, offset3d, lane_id, shift_k, shift_lk, shift_dk, qtheta, qtheta_lr, d_nablaPara2, field, field_du, field_lr, field_py, nablaPara4);
 
-	if (i != 0 && i != gridNx - 1) {
-		d_field[offset3d] -= gridDt * para4 * nablaPara4;
-	}
+	d_field[offset3d] -= gridDt * para4 * nablaPara4;
 
 }
 
 /*----------------------------------------------MHD Filter Mode Number----------------------------------------------*/
-template<typename cufftType>
-__global__ void MHDFilterMode0N(cufftType* __restrict__ d_freq) {
-
-	/*--------------------------Related Index--------------------------*/
-
-	int offset = (blockIdx.x * blockDim.x + threadIdx.x) * nFFTFreqSize;
-
-	/*-------------------------------Filter-------------------------------*/
-
-	for (int mode = 0; mode < nFFTFreqSize; mode++) {
-		if (mode < leftN || mode > rightN) {
-
-			d_freq[offset + mode].x = 0;
-			d_freq[offset + mode].y = 0;
-
-		}
-	}
-
-}
-
-template<typename cufftType>
-__global__ void MHDFilterMode1N(cufftType* __restrict__ d_freq) {
-
-	/*--------------------------Related Index--------------------------*/
-
-	int offset = (blockIdx.x * blockDim.x + threadIdx.x) * nFFTFreqSize;
-
-	/*-------------------------------Filter-------------------------------*/
-
-	d_freq[offset].x = 0;
-	d_freq[offset].y = 0;
-
-	for (int mode = 1; mode < nFFTFreqSize; mode++) {
-		if (mode < leftN || mode > rightN) {
-
-			d_freq[offset + mode].x = 0;
-			d_freq[offset + mode].y = 0;
-
-		}
-	}
-
-}
 
 template<typename cufftType>
 __global__ void MHDFilterModeN(cufftType* __restrict__ d_freq, int modeNumber) {
@@ -2418,6 +2428,26 @@ __global__ void MHDFilterModeN(cufftType* __restrict__ d_freq, int modeNumber) {
 
 	for (int mode = 0; mode < nFFTFreqSize; mode++) {
 		if (mode != modeNumber) {
+
+			d_freq[offset + mode].x = 0;
+			d_freq[offset + mode].y = 0;
+
+		}
+	}
+
+}
+
+template<typename cufftType>
+__global__ void MHDFilterModeN(cufftType* __restrict__ d_freq, int leftModeNumber, int rightModeNumber) {
+
+	/*--------------------------Related Index--------------------------*/
+
+	int offset = (blockIdx.x * blockDim.x + threadIdx.x) * nFFTFreqSize;
+
+	/*-------------------------------Filter-------------------------------*/
+
+	for (int mode = 0; mode < nFFTFreqSize; mode++) {
+		if (mode < leftModeNumber || mode > rightModeNumber) {
 
 			d_freq[offset + mode].x = 0;
 			d_freq[offset + mode].y = 0;
@@ -2444,54 +2474,11 @@ __global__ void MHDFilterResizeN(type* __restrict__ d_field) {
 }
 
 template<typename cufftType>
-__global__ void MHDFilterMode0M(cufftType* __restrict__ d_freq) {
-
-	/*--------------------------Related Index--------------------------*/
-
-	int offset = threadIdx.x * mFFTFreqSize;
-
-	/*-------------------------------Filter-------------------------------*/
-
-	for (int mode = 0; mode < mFFTFreqSize; mode++) {
-		if (mode < leftM || mode > rightM) {
-
-			d_freq[offset + mode].x = 0;
-			d_freq[offset + mode].y = 0;
-
-		}
-	}
-
-}
-
-template<typename cufftType>
-__global__ void MHDFilterMode1M(cufftType* __restrict__ d_freq) {
-
-	/*--------------------------Related Index--------------------------*/
-
-	int offset = threadIdx.x * mFFTFreqSize;
-
-	/*-------------------------------Filter-------------------------------*/
-
-	d_freq[offset].x = 0;
-	d_freq[offset].y = 0;
-
-	for (int mode = 1; mode < mFFTFreqSize; mode++) {
-		if (mode < leftM || mode > rightM) {
-
-			d_freq[offset + mode].x = 0;
-			d_freq[offset + mode].y = 0;
-
-		}
-	}
-
-}
-
-template<typename cufftType>
 __global__ void MHDFilterModeM(cufftType* __restrict__ d_freq, int modeNumber) {
 
 	/*--------------------------Related Index--------------------------*/
 
-	int offset = threadIdx.x * mFFTFreqSize;
+	int offset = (blockIdx.x * blockDim.x + threadIdx.x) * mFFTFreqSize;
 
 	/*-------------------------------Filter-------------------------------*/
 
@@ -2506,107 +2493,74 @@ __global__ void MHDFilterModeM(cufftType* __restrict__ d_freq, int modeNumber) {
 
 }
 
+template<typename cufftType>
+__global__ void MHDFilterModeM(cufftType* __restrict__ d_freq, int leftModeNumber, int rightModeNumber) {
+
+	/*--------------------------Related Index--------------------------*/
+
+	int offset = (blockIdx.x * blockDim.x + threadIdx.x) * mFFTFreqSize;
+
+	/*-------------------------------Filter-------------------------------*/
+
+	for (int mode = 0; mode < mFFTFreqSize; mode++) {
+		if (mode < leftModeNumber || mode > rightModeNumber) {
+
+			d_freq[offset + mode].x = 0;
+			d_freq[offset + mode].y = 0;
+
+		}
+	}
+
+}
+
 template<typename type>
 __global__ void MHDFilterResizeM(type* __restrict__ d_field) {
 
 	/*--------------------------Related Index--------------------------*/
 
-	int i = threadIdx.x;
-	int j = blockIdx.x;
-	int offset2d = i * gridNy + j;
+	int i = blockIdx.x * blockDim.z + threadIdx.z;
+	int j = blockIdx.y * blockDim.y + threadIdx.y;
+	int k = blockIdx.z * blockDim.x + threadIdx.x;
+	int offset3d = (j + gridGhost) * gridNxz + i * gridNz + k;
 
 	/*------------------------------Resize------------------------------*/
 
-	d_field[offset2d] /= gridNy;
+	d_field[offset3d] /= gridNy;
 
 }
 
-template<typename type, typename... types>
-__device__ void ExtractZonal(type* d_initialField, type* d_zonalField, types*... d_fields) {
-
-	/*--------------------------Related Index--------------------------*/
-
-	int i = threadIdx.x;
-	int j = blockIdx.x;
-	int offset3d = (j + gridGhost) * gridNxz + i * gridNz;
-
-	/*--------------------------Extract Zonal--------------------------*/
-
-	d_zonalField[j * gridNx + i] = d_initialField[offset3d];
-
-	if constexpr (sizeof...(d_fields) > 0)
-		ExtractZonal(d_fields...);
-
-}
-
-template<typename type, typename... types>
-__global__ void MHDExtractZonal(type* __restrict__  d_initialField, type* __restrict__  d_zonalField, types* __restrict__ ... d_fields) {
-
-	ExtractZonal(d_initialField, d_zonalField, d_fields...);
-
-}
-
-template<typename type, typename... types>
-__device__ void TransposeZonal(type* d_initialField, type* d_transposedField, types*... d_fields) {
+template<typename type>
+__global__ void MHDTransposeLeft(type* __restrict__ d_yxzField, type* __restrict__ d_xzyField) {
 
 	/*--------------------------Related Index--------------------------*/
 
 	int i = threadIdx.x;
 	int j = blockIdx.x;
 
-	/*-------------------------Transpose Zonal-------------------------*/
+	/*-------------------------Transpose Left-------------------------*/
 
-	d_transposedField[i * gridNy + j] = d_initialField[j * gridNx + i];
-
-	if constexpr (sizeof...(d_fields) > 0)
-		TransposeZonal(d_fields...);
+	for (int k = 0; k < gridNz; k++)
+		d_xzyField[i * gridNz * gridNy + k * gridNy + j] = d_yxzField[j * gridNxz + i * gridNz + k];
 
 }
 
-template<typename type, typename... types>
-__global__ void MHDTransposeZonal(type* __restrict__  d_initialField, type* __restrict__  d_transposedField, types* __restrict__ ... d_fields) {
-
-	TransposeZonal(d_initialField, d_transposedField, d_fields...);
-
-}
-
-template<typename type, typename... types>
-__device__ void AddZonal(int indexY, type* d_zonalField, type* d_finalField, types*... d_fields) {
+template<typename type>
+__global__ void MHDTransposeRight(type* __restrict__ d_xzyField, type* __restrict__ d_yxzField) {
 
 	/*--------------------------Related Index--------------------------*/
 
-	int i = threadIdx.x;
-	int j = blockIdx.x;
-	int offset2d = i * gridNy + j + indexY;
-	int offset3d;
+	int i = blockIdx.x;
+	int k = threadIdx.x;
 
-	/*----------------------------Add Zonal----------------------------*/
+	/*-------------------------Transpose Right-------------------------*/
 
-	for (int k = 0; k < gridNz; k++) {
-
-		if (i != 0 && i != gridNx - 1) {
-
-			offset3d = (j + gridGhost) * gridNxz + i * gridNz + k;
-			d_finalField[offset3d] += d_zonalField[offset2d];
-
-		}
-
-	}
-
-	if constexpr (sizeof...(d_fields) > 0)
-		AddZonal(indexY, d_fields...);
+	for (int j = 0; j < gridNy; j++)
+		d_yxzField[j * gridNxz + i * gridNz + k] = d_xzyField[i * gridNz * gridNy + k * gridNy + j];
 
 }
 
-template<typename type, typename... types>
-__global__ void MHDAddZonal(int indexY, type* d_zonalField, type* d_finalField, types*... d_fields) {
-
-	AddZonal(indexY, d_zonalField, d_finalField, d_fields...);
-
-}
-
-template<typename type, typename... types>
-__device__ void DecayZonal(type* d_zonalField, type* d_finalField, types*... d_fields) {
+template<typename type>
+__global__ void MHDAddMode(type* __restrict__ d_Addend, type* __restrict__ d_Augend) {
 
 	/*--------------------------Related Index--------------------------*/
 
@@ -2615,109 +2569,29 @@ __device__ void DecayZonal(type* d_zonalField, type* d_finalField, types*... d_f
 	int k = blockIdx.z * blockDim.x + threadIdx.x;
 	int offset3d = (j + gridGhost) * gridNxz + i * gridNz + k;
 
-	/*-------------------------Boundary Decay-------------------------*/
+	/*-----------------------------Add N-----------------------------*/
 
-	d_finalField[offset3d] += (tanh(0.1 * (i - 30)) + tanh(0.1 * (gridNx - 1 - i - 30))) / 2 * d_zonalField[offset3d];
-
-	if constexpr (sizeof...(d_fields) > 0)
-		DecayZonal(d_fields...);
+	d_Augend[offset3d] += d_Addend[offset3d];
 
 }
 
-template<typename type, typename... types>
-__global__ void MHDDecayZonal(type* d_zonalField, type* d_finalField, types*... d_fields) {
+template<typename type>
+__global__ void MHDSubtractMode(type* __restrict__ d_Subtrahend, type* __restrict__ d_Minuend) {
 
-	DecayZonal(d_zonalField, d_finalField, d_fields...);
+	/*--------------------------Related Index--------------------------*/
+
+	int i = blockIdx.x * blockDim.z + threadIdx.z;
+	int j = blockIdx.y * blockDim.y + threadIdx.y;
+	int k = blockIdx.z * blockDim.x + threadIdx.x;
+	int offset3d = (j + gridGhost) * gridNxz + i * gridNz + k;
+
+	/*---------------------------Subtract N---------------------------*/
+
+	d_Minuend[offset3d] -= d_Subtrahend[offset3d];
 
 }
 
 /*----------------------------------------------------MHD Diagnose----------------------------------------------------*/
-
-template<typename local, typename type>
-__global__ void MHDDiagEnergy(type* __restrict__ d_diagnose, type* __restrict__  d_qtheta,
-	type* __restrict__ Phi_mid, type* __restrict__ d_energy) {
-
-	/*--------------------------Related Index--------------------------*/
-
-	int i = blockIdx.x * blockDim.z + threadIdx.z;
-	int j = blockIdx.y * blockDim.y + threadIdx.y;
-	int k = blockIdx.z * blockDim.x + threadIdx.x;
-	int offset2d = (j * gridNx + i) * 15;
-	int offset3d = (j + gridGhost) * gridNxz + i * gridNz + k;
-	int lane_id = (threadIdx.z * blockDim.y * blockDim.x + threadIdx.y * blockDim.x + threadIdx.x) % 32;
-
-	/*------------------------------Shifted------------------------------*/
-
-	type qtheta;
-	type qtheta_lr[4];
-	int shift_k;
-	type shift_lk;
-	type shift_dk;
-
-	/*-----------------------Field and Derivative-----------------------*/
-
-	type Phi;
-	type Phi_px, Phi_py, Phi_pz;
-	type dxPhi, dyPhi, dzPhi;
-	type Phi_du[4];
-	type Phi_lr[4];
-
-	/*-----------------------------Diagnose-----------------------------*/
-
-	type J, B, Ni, ndchi2J2B, energy;
-	type gcovxx, gcovxy, gcovxz, gcovyy, gcovyz, gcovzz;
-	type gconxx, gconxy, gconxz, gconyy, gconyz, gconzz;
-
-	/*-----------------------------Initialize-----------------------------*/
-
-	J = d_diagnose[offset2d + 0];
-	B = d_diagnose[offset2d + 1];
-
-	gcovxx = d_diagnose[offset2d + 2];
-	gcovxy = d_diagnose[offset2d + 3];
-	gcovxz = d_diagnose[offset2d + 4];
-	gcovyy = d_diagnose[offset2d + 5];
-	gcovyz = d_diagnose[offset2d + 6];
-	gcovzz = d_diagnose[offset2d + 7];
-
-	gconxx = d_diagnose[offset2d + 8];
-	gconxy = d_diagnose[offset2d + 9];
-	gconxz = d_diagnose[offset2d + 10];
-	gconyy = d_diagnose[offset2d + 11];
-	gconyz = d_diagnose[offset2d + 12];
-	gconzz = d_diagnose[offset2d + 13];
-
-	Ni = d_diagnose[offset2d + 14];
-
-	offset2d = (j + gridGhost) * gridNx + i;
-
-	qtheta = d_qtheta[offset2d];
-	qtheta_lr[0] = d_qtheta[offset2d - 2 * gridNx];
-	qtheta_lr[1] = d_qtheta[offset2d - 1 * gridNx];
-	qtheta_lr[2] = d_qtheta[offset2d + 1 * gridNx];
-	qtheta_lr[3] = d_qtheta[offset2d + 2 * gridNx];
-
-	/*------------------------------Energy------------------------------*/
-
-	Phi = Phi_mid[offset3d];
-
-	PartialZ<local>(k, offset3d, lane_id, Phi_mid, Phi, Phi_du, Phi_pz);
-	PartialX(0, i, k, offset3d, Phi_mid, Phi, Phi_lr, Phi_px);
-	PartialY<local>(k, offset3d, lane_id, shift_k, shift_lk, shift_dk, qtheta, qtheta_lr, Phi_mid, Phi_du, Phi_lr, Phi_py);
-
-	ndchi2J2B = ndchi / (J * J * B);
-	dxPhi = ndchi2J2B * (gcovyz * Phi_py - gcovyy * Phi_pz);
-	dyPhi = ndchi2J2B * (gcovxy * Phi_pz - gcovyz * Phi_px);
-	dzPhi = ndchi2J2B * (gcovyy * Phi_px - gcovxy * Phi_py);
-
-	energy = dxPhi * dxPhi * gcovxx + dyPhi * dyPhi * gcovyy + dzPhi * dzPhi * gcovzz
-		+ 2 * (dxPhi * dyPhi * gcovxy + dxPhi * dzPhi * gcovxz + dyPhi * dzPhi * gcovyz);
-	energy = energy / (B * B);
-	energy = IonMass * NormMP * Ni * J * gridDx * gridDy * gridDz * energy / 2;
-
-	atomicAdd(&d_energy[0], energy);
-
-}
 
 template<typename cufftType, typename type>
 __global__ void MHDDiagAmplitude(cufftType* __restrict__ d_freq, type* __restrict__  d_amplitude, type* __restrict__  d_modeReal, type* __restrict__  d_modeImag) {
@@ -2767,7 +2641,7 @@ __global__ void MHDDiagEparallel(type* __restrict__  d_qtheta,
 
 	/*--------------------------Related Index--------------------------*/
 
-	int i = diagLeftX + threadIdx.x;
+	int i = diagLeftX + blockIdx.x * blockDim.x + threadIdx.x;
 	int j = diagY;
 	int k = 0;
 	int offset2d = (j + gridGhost) * gridNx + i;
@@ -2969,8 +2843,8 @@ __global__ void MHDDiagEparallel(type* __restrict__  d_qtheta,
 
 	}
 
-	d_Epara[threadIdx.x] = Epara;
-	d_EparaES[threadIdx.x] = EparaES;
+	d_Epara[blockIdx.x * blockDim.x + threadIdx.x] = -Epara;
+	d_EparaES[blockIdx.x * blockDim.x + threadIdx.x] = EparaES;
 
 }
 
@@ -3732,23 +3606,23 @@ __global__ void DriftAlignedRK4(type* __restrict__ pic1d, type* __restrict__ pic
 	type vec1[5] = {};
 	type vec2[5] = {};
 
-	type q, J, B, J_px, J_py, B_px, B_py;
+	type q, q_px, J, J_px, J_py, B, B_px, B_py;
 	type gcovxy, gcovyy, gcovyz;
 	type gcovxy_py, gcovyy_px, gcovyz_px, gcovyz_py;
 	type APhiApt[8] = {};
 
 	type bx, by, bz;
+	type rho, bcony;
 	type cx, cy, cz;
 	type m2e, mu2e;
 	type dxy, dxz, dyz;
 	type dxB, dyB, dzB;
-	type ndchi2JB, ndchi2J2B;
 	type Bstarx, Bstary, Bstarz, Bstar;
 	type na, na_px, nb, nb_px, ni, ni_px;
 	type ta, ta_px, tb, tb_px, ti, ti_px;
-	type V, E, cdEdt, cdPdt, dEdt, dPdt;
+	type V, E, cdwdt;
 
-	type dPdv, dPdx, dPdy;
+	type dvdt1, dxdt1, dydt1;
 	type dxPhi, dyPhi, dzPhi;
 	type cxdxA, cydyA, czdzA;
 
@@ -3789,228 +3663,70 @@ __global__ void DriftAlignedRK4(type* __restrict__ pic1d, type* __restrict__ pic
 			vec2[index] = vec0[index];
 		}
 
-		qId = i * 26;
+		qId = i * 30;
 		tileId = (j * cellNx + i) * 72;
 		cellId *= 64;
 		illegal = 0;
 
-		auto dfdt1 = [&]() {
+		auto dfdt_XVpara = [&]() {
 
-			if constexpr (particle == Ion) {
-
-				dEdt = -IonChar / cm * (ddt[0] * (APhiApt[4] + APhiApt[7] * bx) + ddt[1] * (APhiApt[5] + APhiApt[7] * by) + ddt[2] * (APhiApt[6] + APhiApt[7] * bz));
-				dPdt = cm * IonMass * ndchi2JB * (ddt[3] * dPdv + vec1[3] * ddt[0] * dPdx + vec1[3] * ddt[1] * dPdy) - IonChar * ndchi * ddt[0];
-
-				if constexpr (distribution == Maxwell) {
-
-					cdEdt = mp * va * va / (ti * kev);
-					cdPdt = (ni_px / ni - 3 * ti_px / (2 * ti) + ti_px / (ti * ti) * E * mp * va * va / kev) / IonChar / ndchi;
-
-				}
-				else if constexpr (distribution == Slowing0) {
-
-					cdEdt = 3 * V / (2 * E * V + IonMass * IonVc * IonVc * IonVc);
-					cdPdt = ni_px / ni / IonChar / ndchi;
-
-				}
-				else if constexpr (distribution == Slowing1) {
-
-					cdEdt = 3 * V / (2 * E * V + IonMass * IonVc * IonVc * IonVc);
-					cdPdt = ni_px / ni / IonChar / ndchi;
-
-					if constexpr (std::is_same_v<type, double>)
-						cdEdt += 2 * exp(-pow((IonVb - V) / IonDeltaV, 2.0)) / (IonMass * V * IonDeltaV * sqrt(pi) * (1 + erf((IonVb - V) / IonDeltaV)));
-					else
-						cdEdt += 2 * expf(-powf((IonVb - V) / IonDeltaV, 2.0f)) / (IonMass * V * IonDeltaV * sqrtf(pi) * (1 + erff((IonVb - V) / IonDeltaV)));
-
-				}
-				else if constexpr (distribution == Slowing2) {
-
-					cdEdt = 3 * V / (2 * E * V + IonMass * IonVc * IonVc * IonVc);
-					cdPdt = ni_px / ni / IonChar / ndchi;
-
-					cdEdt += 2 * mu * (IonLambda0 * E - mu) / (IonDeltaLambda2 * E * E * E);
-
-				}
-				else if constexpr (distribution == Slowing3) {
-
-					cdEdt = 3 * V / (2 * E * V + IonMass * IonVc * IonVc * IonVc);
-					cdPdt = ni_px / ni / IonChar / ndchi;
-
-					cdEdt += 2 * mu * (IonLambda0 * E - mu) / (IonDeltaLambda2 * E * E * E);
-
-					if constexpr (std::is_same_v<type, double>)
-						cdEdt += 2 * exp(-pow((IonVb - V) / IonDeltaV, 2.0)) / (IonMass * V * IonDeltaV * sqrt(pi) * (1 + erf((IonVb - V) / IonDeltaV)));
-					else
-						cdEdt += 2 * expf(-powf((IonVb - V) / IonDeltaV, 2.0f)) / (IonMass * V * IonDeltaV * sqrtf(pi) * (1 + erff((IonVb - V) / IonDeltaV)));
-
-				}
-
-			}
-			else if constexpr (particle == Alpha) {
-
-				dEdt = -AlphaChar / cm * (ddt[0] * (APhiApt[4] + APhiApt[7] * bx) + ddt[1] * (APhiApt[5] + APhiApt[7] * by) + ddt[2] * (APhiApt[6] + APhiApt[7] * bz));
-				dPdt = cm * AlphaMass * ndchi2JB * (ddt[3] * dPdv + vec1[3] * ddt[0] * dPdx + vec1[3] * ddt[1] * dPdy) - AlphaChar * ndchi * ddt[0];
-
-				if constexpr (distribution == Maxwell) {
-
-					cdEdt = mp * va * va / (ta * kev);
-					cdPdt = (na_px / na - 3 * ta_px / (2 * ta) + ta_px / (ta * ta) * E * mp * va * va / kev) / AlphaChar / ndchi;
-
-				}
-				else if constexpr (distribution == Slowing0) {
-
-					cdEdt = 3 * V / (2 * E * V + AlphaMass * AlphaVc * AlphaVc * AlphaVc);
-					cdPdt = na_px / na / AlphaChar / ndchi;
-
-				}
-				else if constexpr (distribution == Slowing1) {
-
-					cdEdt = 3 * V / (2 * E * V + AlphaMass * AlphaVc * AlphaVc * AlphaVc);
-					cdPdt = na_px / na / AlphaChar / ndchi;
-
-					if constexpr (std::is_same_v<type, double>)
-						cdEdt += 2 * exp(-pow((AlphaVb - V) / AlphaDeltaV, 2.0)) / (AlphaMass * V * AlphaDeltaV * sqrt(pi) * (1 + erf((AlphaVb - V) / AlphaDeltaV)));
-					else
-						cdEdt += 2 * expf(-powf((AlphaVb - V) / AlphaDeltaV, 2.0f)) / (AlphaMass * V * AlphaDeltaV * sqrtf(pi) * (1 + erff((AlphaVb - V) / AlphaDeltaV)));
-
-				}
-				else if constexpr (distribution == Slowing2) {
-
-					cdEdt = 3 * V / (2 * E * V + AlphaMass * AlphaVc * AlphaVc * AlphaVc);
-					cdPdt = na_px / na / AlphaChar / ndchi;
-
-					cdEdt += 2 * mu * (AlphaLambda0 * E - mu) / (AlphaDeltaLambda2 * E * E * E);
-
-				}
-				else if constexpr (distribution == Slowing3) {
-
-					cdEdt = 3 * V / (2 * E * V + AlphaMass * AlphaVc * AlphaVc * AlphaVc);
-					cdPdt = na_px / na / AlphaChar / ndchi;
-
-					cdEdt += 2 * mu * (AlphaLambda0 * E - mu) / (AlphaDeltaLambda2 * E * E * E);
-
-					if constexpr (std::is_same_v<type, double>)
-						cdEdt += 2 * exp(-pow((AlphaVb - V) / AlphaDeltaV, 2.0)) / (AlphaMass * V * AlphaDeltaV * sqrt(pi) * (1 + erf((AlphaVb - V) / AlphaDeltaV)));
-					else
-						cdEdt += 2 * expf(-powf((AlphaVb - V) / AlphaDeltaV, 2.0f)) / (AlphaMass * V * AlphaDeltaV * sqrtf(pi) * (1 + erff((AlphaVb - V) / AlphaDeltaV)));
-
-				}
-
-			}
-			else if constexpr (particle == Beam) {
-
-				dEdt = -BeamChar / cm * (ddt[0] * (APhiApt[4] + APhiApt[7] * bx) + ddt[1] * (APhiApt[5] + APhiApt[7] * by) + ddt[2] * (APhiApt[6] + APhiApt[7] * bz));
-				dPdt = cm * BeamMass * ndchi2JB * (ddt[3] * dPdv + vec1[3] * ddt[0] * dPdx + vec1[3] * ddt[1] * dPdy) - BeamChar * ndchi * ddt[0];
-
-				if constexpr (distribution == Maxwell) {
-
-					cdEdt = mp * va * va / (tb * kev);
-					cdPdt = (nb_px / nb - 3 * tb_px / (2 * tb) + tb_px / (tb * tb) * E * mp * va * va / kev) / BeamChar / ndchi;
-
-				}
-				else if constexpr (distribution == Slowing0) {
-
-					cdEdt = 3 * V / (2 * E * V + BeamMass * BeamVc * BeamVc * BeamVc);
-					cdPdt = nb_px / nb / BeamChar / ndchi;
-
-				}
-				else if constexpr (distribution == Slowing1) {
-
-					cdEdt = 3 * V / (2 * E * V + BeamMass * BeamVc * BeamVc * BeamVc);
-					cdPdt = nb_px / nb / BeamChar / ndchi;
-
-					if constexpr (std::is_same_v<type, double>)
-						cdEdt += 2 * exp(-pow((BeamVb - V) / BeamDeltaV, 2.0)) / (BeamMass * V * BeamDeltaV * sqrt(pi) * (1 + erf((BeamVb - V) / BeamDeltaV)));
-					else
-						cdEdt += 2 * expf(-powf((BeamVb - V) / BeamDeltaV, 2.0f)) / (BeamMass * V * BeamDeltaV * sqrtf(pi) * (1 + erff((BeamVb - V) / BeamDeltaV)));
-
-				}
-				else if constexpr (distribution == Slowing2) {
-
-					cdEdt = 3 * V / (2 * E * V + BeamMass * BeamVc * BeamVc * BeamVc);
-					cdPdt = nb_px / nb / BeamChar / ndchi;
-
-					cdEdt += 2 * mu * (BeamLambda0 * E - mu) / (BeamDeltaLambda2 * E * E * E);
-
-				}
-				else if constexpr (distribution == Slowing3) {
-
-					cdEdt = 3 * V / (2 * E * V + BeamMass * BeamVc * BeamVc * BeamVc);
-					cdPdt = nb_px / nb / BeamChar / ndchi;
-
-					cdEdt += 2 * mu * (BeamLambda0 * E - mu) / (BeamDeltaLambda2 * E * E * E);
-
-					if constexpr (std::is_same_v<type, double>)
-						cdEdt += 2 * exp(-pow((BeamVb - V) / BeamDeltaV, 2.0)) / (BeamMass * V * BeamDeltaV * sqrt(pi) * (1 + erf((BeamVb - V) / BeamDeltaV)));
-					else
-						cdEdt += 2 * expf(-powf((BeamVb - V) / BeamDeltaV, 2.0f)) / (BeamMass * V * BeamDeltaV * sqrtf(pi) * (1 + erff((BeamVb - V) / BeamDeltaV)));
-
-				}
-
-			}
-
-			ddt[4] = (dis - vec1[4]) * (cdEdt * dEdt + cdPdt * dPdt);
-
-		};
-
-		auto dfdt2 = [&]() {
-
-			dPdx = 1 / Bstar * (vec1[3] * cxdxA - dxPhi);
-			dPdy = 1 / Bstar * (vec1[3] * cydyA - dyPhi);
-			dPdv = -1 / m2e * (APhiApt[7] + 1 / Bstar * (Bstarx * APhiApt[4] + Bstary * APhiApt[5] + Bstarz * APhiApt[6] + mu2e * (cxdxA * B_px + cydyA * B_py)));
+			dxdt1 = 1 / Bstar * (vec1[3] * cxdxA - dxPhi);
+			dydt1 = 1 / Bstar * (vec1[3] * cydyA - dyPhi);
+			dvdt1 = -1 / m2e * (APhiApt[7] + 1 / Bstar * (Bstarx * APhiApt[4] + Bstary * APhiApt[5] + Bstarz * APhiApt[6] + mu2e * (cxdxA * B_px + cydyA * B_py)));
 
 			if constexpr (particle == Ion) {
 
 				if constexpr (distribution == Maxwell) {
 
-					cdEdt = mp * va * va / (ti * kev);
+					cdwdt = mp * va * va / (ti * kev);
 
-					ddt[4] = (-ni_px / ni + 3 * ti_px / (2 * ti) + (mu * B_px - ti_px / ti * E) * cdEdt) * dPdx;
-					ddt[4] += mu * B_py * cdEdt * dPdy;
-					ddt[4] += IonMass * vec1[3] * cdEdt * dPdv;
+					ddt[4] = (-ni_px / ni + 3 * ti_px / (2 * ti) + (mu * B_px - ti_px / ti * E) * cdwdt) * dxdt1;
+					ddt[4] += mu * B_py * cdwdt * dydt1;
+					ddt[4] += IonMass * vec1[3] * cdwdt * dvdt1;
 
 				}
 				else {
 
-					cdEdt = 3 * V / (2 * E * V + IonMass * IonVc * IonVc * IonVc);
+					cdwdt = 3 * V / (2 * E * V + IonMass * ti * ti * ti);
 
-					ddt[4] = (-ni_px / ni + mu * B_px * cdEdt) * dPdx;
-					ddt[4] += mu * B_py * cdEdt * dPdy;
-					ddt[4] += IonMass * vec1[3] * cdEdt * dPdv;
+					ddt[4] = (-ni_px / ni + mu * B_px * cdwdt) * dxdt1;
+					ddt[4] += mu * B_py * cdwdt * dydt1;
+					ddt[4] += IonMass * vec1[3] * cdwdt * dvdt1;
+
+					ddt[4] += 3 * ti * ti / (V * V * V + ti * ti * ti) * ti_px * dxdt1;
 
 					if constexpr (distribution == Slowing0) {
 
-						cdPdt = 0;
+						cdwdt = 0;
 
 					}
 					else if constexpr (distribution == Slowing1) {
 
 						if constexpr (std::is_same_v<type, double>)
-							cdPdt = 2 * exp(-pow((IonVb - V) / IonDeltaV, 2.0)) / (IonMass * V * IonDeltaV * sqrt(pi) * (1 + erf((IonVb - V) / IonDeltaV)));
+							cdwdt = 2 * exp(-pow((IonVb - V) / IonDeltaV, 2.0)) / (IonMass * V * IonDeltaV * sqrt(pi) * (1 + erf((IonVb - V) / IonDeltaV)));
 						else
-							cdPdt = 2 * expf(-powf((IonVb - V) / IonDeltaV, 2.0f)) / (IonMass * V * IonDeltaV * sqrtf(pi) * (1 + erff((IonVb - V) / IonDeltaV)));
+							cdwdt = 2 * expf(-powf((IonVb - V) / IonDeltaV, 2.0f)) / (IonMass * V * IonDeltaV * sqrtf(pi) * (1 + erff((IonVb - V) / IonDeltaV)));
 
 					}
 					else if constexpr (distribution == Slowing2) {
 
-						cdPdt = 2 * mu * (IonLambda0 * E - mu) / (IonDeltaLambda2 * E * E * E);
+						cdwdt = 2 * mu * (IonLambda0 * E - mu) / (IonDeltaLambda2 * E * E * E);
 
 					}
 					else if constexpr (distribution == Slowing3) {
 
-						cdPdt = 2 * mu * (IonLambda0 * E - mu) / (IonDeltaLambda2 * E * E * E);
+						cdwdt = 2 * mu * (IonLambda0 * E - mu) / (IonDeltaLambda2 * E * E * E);
 
 						if constexpr (std::is_same_v<type, double>)
-							cdPdt += 2 * exp(-pow((IonVb - V) / IonDeltaV, 2.0)) / (IonMass * V * IonDeltaV * sqrt(pi) * (1 + erf((IonVb - V) / IonDeltaV)));
+							cdwdt += 2 * exp(-pow((IonVb - V) / IonDeltaV, 2.0)) / (IonMass * V * IonDeltaV * sqrt(pi) * (1 + erf((IonVb - V) / IonDeltaV)));
 						else
-							cdPdt += 2 * expf(-powf((IonVb - V) / IonDeltaV, 2.0f)) / (IonMass * V * IonDeltaV * sqrtf(pi) * (1 + erff((IonVb - V) / IonDeltaV)));
+							cdwdt += 2 * expf(-powf((IonVb - V) / IonDeltaV, 2.0f)) / (IonMass * V * IonDeltaV * sqrtf(pi) * (1 + erff((IonVb - V) / IonDeltaV)));
 
 					}
 
-					ddt[4] += mu * B_px * cdPdt * dPdx;
-					ddt[4] += mu * B_py * cdPdt * dPdy;
-					ddt[4] += IonMass * vec1[3] * cdPdt * dPdv;
+					ddt[4] += mu * B_px * cdwdt * dxdt1;
+					ddt[4] += mu * B_py * cdwdt * dydt1;
+					ddt[4] += IonMass * vec1[3] * cdwdt * dvdt1;
 
 				}
 
@@ -4019,53 +3735,55 @@ __global__ void DriftAlignedRK4(type* __restrict__ pic1d, type* __restrict__ pic
 
 				if constexpr (distribution == Maxwell) {
 
-					cdEdt = mp * va * va / (ta * kev);
+					cdwdt = mp * va * va / (ta * kev);
 
-					ddt[4] = (-na_px / na + 3 * ta_px / (2 * ta) + (mu * B_px - ta_px / ta * E) * cdEdt) * dPdx;
-					ddt[4] += mu * B_py * cdEdt * dPdy;
-					ddt[4] += AlphaMass * vec1[3] * cdEdt * dPdv;
+					ddt[4] = (-na_px / na + 3 * ta_px / (2 * ta) + (mu * B_px - ta_px / ta * E) * cdwdt) * dxdt1;
+					ddt[4] += mu * B_py * cdwdt * dydt1;
+					ddt[4] += AlphaMass * vec1[3] * cdwdt * dvdt1;
 
 				}
 				else {
 
-					cdEdt = 3 * V / (2 * E * V + AlphaMass * AlphaVc * AlphaVc * AlphaVc);
+					cdwdt = 3 * V / (2 * E * V + AlphaMass * ta * ta * ta);
 
-					ddt[4] = (-na_px / na + mu * B_px * cdEdt) * dPdx;
-					ddt[4] += mu * B_py * cdEdt * dPdy;
-					ddt[4] += AlphaMass * vec1[3] * cdEdt * dPdv;
+					ddt[4] = (-na_px / na + mu * B_px * cdwdt) * dxdt1;
+					ddt[4] += mu * B_py * cdwdt * dydt1;
+					ddt[4] += AlphaMass * vec1[3] * cdwdt * dvdt1;
+
+					ddt[4] += 3 * ta * ta / (V * V * V + ta * ta * ta) * ta_px * dxdt1;
 
 					if constexpr (distribution == Slowing0) {
 
-						cdPdt = 0;
+						cdwdt = 0;
 
 					}
 					else if constexpr (distribution == Slowing1) {
 
 						if constexpr (std::is_same_v<type, double>)
-							cdPdt = 2 * exp(-pow((AlphaVb - V) / AlphaDeltaV, 2.0)) / (AlphaMass * V * AlphaDeltaV * sqrt(pi) * (1 + erf((AlphaVb - V) / AlphaDeltaV)));
+							cdwdt = 2 * exp(-pow((AlphaVb - V) / AlphaDeltaV, 2.0)) / (AlphaMass * V * AlphaDeltaV * sqrt(pi) * (1 + erf((AlphaVb - V) / AlphaDeltaV)));
 						else
-							cdPdt = 2 * expf(-powf((AlphaVb - V) / AlphaDeltaV, 2.0f)) / (AlphaMass * V * AlphaDeltaV * sqrtf(pi) * (1 + erff((AlphaVb - V) / AlphaDeltaV)));
+							cdwdt = 2 * expf(-powf((AlphaVb - V) / AlphaDeltaV, 2.0f)) / (AlphaMass * V * AlphaDeltaV * sqrtf(pi) * (1 + erff((AlphaVb - V) / AlphaDeltaV)));
 
 					}
 					else if constexpr (distribution == Slowing2) {
 
-						cdPdt = 2 * mu * (AlphaLambda0 * E - mu) / (AlphaDeltaLambda2 * E * E * E);
+						cdwdt = 2 * mu * (AlphaLambda0 * E - mu) / (AlphaDeltaLambda2 * E * E * E);
 
 					}
 					else if constexpr (distribution == Slowing3) {
 
-						cdPdt = 2 * mu * (AlphaLambda0 * E - mu) / (AlphaDeltaLambda2 * E * E * E);
+						cdwdt = 2 * mu * (AlphaLambda0 * E - mu) / (AlphaDeltaLambda2 * E * E * E);
 
 						if constexpr (std::is_same_v<type, double>)
-							cdPdt += 2 * exp(-pow((AlphaVb - V) / AlphaDeltaV, 2.0)) / (AlphaMass * V * AlphaDeltaV * sqrt(pi) * (1 + erf((AlphaVb - V) / AlphaDeltaV)));
+							cdwdt += 2 * exp(-pow((AlphaVb - V) / AlphaDeltaV, 2.0)) / (AlphaMass * V * AlphaDeltaV * sqrt(pi) * (1 + erf((AlphaVb - V) / AlphaDeltaV)));
 						else
-							cdPdt += 2 * expf(-powf((AlphaVb - V) / AlphaDeltaV, 2.0f)) / (AlphaMass * V * AlphaDeltaV * sqrtf(pi) * (1 + erff((AlphaVb - V) / AlphaDeltaV)));
+							cdwdt += 2 * expf(-powf((AlphaVb - V) / AlphaDeltaV, 2.0f)) / (AlphaMass * V * AlphaDeltaV * sqrtf(pi) * (1 + erff((AlphaVb - V) / AlphaDeltaV)));
 
 					}
 
-					ddt[4] += mu * B_px * cdPdt * dPdx;
-					ddt[4] += mu * B_py * cdPdt * dPdy;
-					ddt[4] += AlphaMass * vec1[3] * cdPdt * dPdv;
+					ddt[4] += mu * B_px * cdwdt * dxdt1;
+					ddt[4] += mu * B_py * cdwdt * dydt1;
+					ddt[4] += AlphaMass * vec1[3] * cdwdt * dvdt1;
 
 				}
 
@@ -4074,53 +3792,55 @@ __global__ void DriftAlignedRK4(type* __restrict__ pic1d, type* __restrict__ pic
 
 				if constexpr (distribution == Maxwell) {
 
-					cdEdt = mp * va * va / (tb * kev);
+					cdwdt = mp * va * va / (tb * kev);
 
-					ddt[4] = (-nb_px / nb + 3 * tb_px / (2 * tb) + (mu * B_px - tb_px / tb * E) * cdEdt) * dPdx;
-					ddt[4] += mu * B_py * cdEdt * dPdy;
-					ddt[4] += BeamMass * vec1[3] * cdEdt * dPdv;
+					ddt[4] = (-nb_px / nb + 3 * tb_px / (2 * tb) + (mu * B_px - tb_px / tb * E) * cdwdt) * dxdt1;
+					ddt[4] += mu * B_py * cdwdt * dydt1;
+					ddt[4] += BeamMass * vec1[3] * cdwdt * dvdt1;
 
 				}
 				else {
 
-					cdEdt = 3 * V / (2 * E * V + BeamMass * BeamVc * BeamVc * BeamVc);
+					cdwdt = 3 * V / (2 * E * V + BeamMass * tb * tb * tb);
 
-					ddt[4] = (-nb_px / nb + mu * B_px * cdEdt) * dPdx;
-					ddt[4] += mu * B_py * cdEdt * dPdy;
-					ddt[4] += BeamMass * vec1[3] * cdEdt * dPdv;
+					ddt[4] = (-nb_px / nb + mu * B_px * cdwdt) * dxdt1;
+					ddt[4] += mu * B_py * cdwdt * dydt1;
+					ddt[4] += BeamMass * vec1[3] * cdwdt * dvdt1;
+
+					ddt[4] += 3 * tb * tb / (V * V * V + tb * tb * tb) * tb_px * dxdt1;
 
 					if constexpr (distribution == Slowing0) {
 
-						cdPdt = 0;
+						cdwdt = 0;
 
 					}
 					else if constexpr (distribution == Slowing1) {
 
 						if constexpr (std::is_same_v<type, double>)
-							cdPdt = 2 * exp(-pow((BeamVb - V) / BeamDeltaV, 2.0)) / (BeamMass * V * BeamDeltaV * sqrt(pi) * (1 + erf((BeamVb - V) / BeamDeltaV)));
+							cdwdt = 2 * exp(-pow((BeamVb - V) / BeamDeltaV, 2.0)) / (BeamMass * V * BeamDeltaV * sqrt(pi) * (1 + erf((BeamVb - V) / BeamDeltaV)));
 						else
-							cdPdt = 2 * expf(-powf((BeamVb - V) / BeamDeltaV, 2.0f)) / (BeamMass * V * BeamDeltaV * sqrtf(pi) * (1 + erff((BeamVb - V) / BeamDeltaV)));
+							cdwdt = 2 * expf(-powf((BeamVb - V) / BeamDeltaV, 2.0f)) / (BeamMass * V * BeamDeltaV * sqrtf(pi) * (1 + erff((BeamVb - V) / BeamDeltaV)));
 
 					}
 					else if constexpr (distribution == Slowing2) {
 
-						cdPdt = 2 * mu * (BeamLambda0 * E - mu) / (BeamDeltaLambda2 * E * E * E);
+						cdwdt = 2 * mu * (BeamLambda0 * E - mu) / (BeamDeltaLambda2 * E * E * E);
 
 					}
 					else if constexpr (distribution == Slowing3) {
 
-						cdPdt = 2 * mu * (BeamLambda0 * E - mu) / (BeamDeltaLambda2 * E * E * E);
+						cdwdt = 2 * mu * (BeamLambda0 * E - mu) / (BeamDeltaLambda2 * E * E * E);
 
 						if constexpr (std::is_same_v<type, double>)
-							cdPdt += 2 * exp(-pow((BeamVb - V) / BeamDeltaV, 2.0)) / (BeamMass * V * BeamDeltaV * sqrt(pi) * (1 + erf((BeamVb - V) / BeamDeltaV)));
+							cdwdt += 2 * exp(-pow((BeamVb - V) / BeamDeltaV, 2.0)) / (BeamMass * V * BeamDeltaV * sqrt(pi) * (1 + erf((BeamVb - V) / BeamDeltaV)));
 						else
-							cdPdt += 2 * expf(-powf((BeamVb - V) / BeamDeltaV, 2.0f)) / (BeamMass * V * BeamDeltaV * sqrtf(pi) * (1 + erff((BeamVb - V) / BeamDeltaV)));
+							cdwdt += 2 * expf(-powf((BeamVb - V) / BeamDeltaV, 2.0f)) / (BeamMass * V * BeamDeltaV * sqrtf(pi) * (1 + erff((BeamVb - V) / BeamDeltaV)));
 
 					}
 
-					ddt[4] += mu * B_px * cdPdt * dPdx;
-					ddt[4] += mu * B_py * cdPdt * dPdy;
-					ddt[4] += BeamMass * vec1[3] * cdPdt * dPdv;
+					ddt[4] += mu * B_px * cdwdt * dxdt1;
+					ddt[4] += mu * B_py * cdwdt * dydt1;
+					ddt[4] += BeamMass * vec1[3] * cdwdt * dvdt1;
 
 				}
 
@@ -4135,7 +3855,7 @@ __global__ void DriftAlignedRK4(type* __restrict__ pic1d, type* __restrict__ pic
 #pragma unroll
 			for (int index = 0; index < 2; index++)
 				coes[index] = (hx[index] + sx[index] * dx);
-			FieldGather1d2d<2>(qId, coes, pic1d, q, na, na_px, nb, nb_px, ni, ni_px, ta, ta_px, tb, tb_px, ti, ti_px);
+			FieldGather1d2d<2>(qId, coes, pic1d, q, q_px, na, na_px, nb, nb_px, ni, ni_px, ta, ta_px, tb, tb_px, ti, ti_px);
 
 #pragma unroll
 			for (int index = 0; index < 2; index++)
@@ -4157,10 +3877,6 @@ __global__ void DriftAlignedRK4(type* __restrict__ pic1d, type* __restrict__ pic
 				APhiApt[index] = 0;
 
 			FieldGather3d(i, j, k, cellId, coes, pic3d, APhiApt);
-
-			dPdv = gcovyz;
-			dPdx = gcovyz_px - gcovyz * (J_px / J + B_px / B);
-			dPdy = gcovyz_py - gcovyz * (J_py / J + B_py / B);
 
 			if constexpr (particle == Ion) {
 
@@ -4196,30 +3912,28 @@ __global__ void DriftAlignedRK4(type* __restrict__ pic1d, type* __restrict__ pic
 
 			}
 
-			ndchi2JB = ndchi / (J * B);
-			ndchi2J2B = ndchi / (J * J * B);
+			rho = rho0 + vec1[0] * drho;
+			bcony = 2 * psitmax * drho * rho / (q * J * B);
 
-			bx = ndchi2JB * gcovxy;
-			by = ndchi2JB * gcovyy;
-			bz = ndchi2JB * gcovyz;
+			bx = bcony * gcovxy;
+			by = bcony * gcovyy;
+			bz = bcony * gcovyz;
 
-			cx = ndchi2J2B * (gcovyz_py - gcovyz * (J_py / J + B_py / B));
-			cy = -ndchi2J2B * (gcovyz_px - gcovyz * (J_px / J + B_px / B));
-			cz = ndchi2J2B * (gcovyy_px - gcovyy * (J_px / J + B_px / B) - gcovxy_py + gcovxy * (J_py / J + B_py / B));
+			cx = bcony / J * (gcovyz_py - gcovyz * (J_py / J + B_py / B));
+			cy = -bcony / J * (gcovyz_px - gcovyz * (J_px / J + B_px / B) + gcovyz * (drho / rho - q_px / q));
+			cz = bcony / J * (gcovyy_px - gcovyy * (J_px / J + B_px / B) - gcovxy_py + gcovxy * (J_py / J + B_py / B) + gcovyy * (drho / rho - q_px / q));
 
-			dxy = ndchi2J2B * gcovyz;
-			dxz = ndchi2J2B * gcovyy;
-			dyz = ndchi2J2B * gcovxy;
+			dxy = bcony / J * gcovyz;
+			dxz = bcony / J * gcovyy;
+			dyz = bcony / J * gcovxy;
 
 			dxB = dxy * B_py;
 			dyB = -dxy * B_px;
 			dzB = dxz * B_px - dyz * B_py;
 
 			Bstarx = cx * m2e * vec1[3];
-			Bstary = cy * m2e * vec1[3] + ndchi / J;
+			Bstary = cy * m2e * vec1[3] + B * bcony;
 			Bstarz = cz * m2e * vec1[3];
-
-			Bstar = Bstarx * bx + Bstary * by + Bstarz * bz;
 
 			cxdxA = cx * APhiApt[0] + dxy * APhiApt[2] - dxz * APhiApt[3];
 			cydyA = cy * APhiApt[0] + dyz * APhiApt[3] - dxy * APhiApt[1];
@@ -4239,7 +3953,7 @@ __global__ void DriftAlignedRK4(type* __restrict__ pic1d, type* __restrict__ pic
 			ddt[2] = 1 / Bstar * (vec1[3] * Bstarz - dzPhi - mu2e * dzB);
 			ddt[3] = -1 / m2e * (APhiApt[7] + 1 / Bstar * (Bstarx * (APhiApt[4] + mu2e * B_px) + Bstary * (APhiApt[5] + mu2e * B_py) + Bstarz * APhiApt[6]));
 
-			dfdt1();
+			dfdt_XVpara();
 
 		};
 
@@ -4266,7 +3980,7 @@ __global__ void DriftAlignedRK4(type* __restrict__ pic1d, type* __restrict__ pic
 		else
 			i = __float2int_rd(li);
 		dx = li - i;
-		qId = i * 26;
+		qId = i * 30;
 		coes[0] = hx[0] + sx[0] * dx;
 		coes[1] = hx[1] + sx[1] * dx;
 		FieldGather1d2d<2>(qId, coes, pic1d, q);
@@ -4322,7 +4036,7 @@ __global__ void DriftAlignedRK4(type* __restrict__ pic1d, type* __restrict__ pic
 		else
 			i = __float2int_rd(li);
 		dx = li - i;
-		qId = i * 26;
+		qId = i * 30;
 		coes[0] = hx[0] + sx[0] * dx;
 		coes[1] = hx[1] + sx[1] * dx;
 		FieldGather1d2d<2>(qId, coes, pic1d, q);
@@ -4378,7 +4092,7 @@ __global__ void DriftAlignedRK4(type* __restrict__ pic1d, type* __restrict__ pic
 		else
 			i = __float2int_rd(li);
 		dx = li - i;
-		qId = i * 26;
+		qId = i * 30;
 		coes[0] = hx[0] + sx[0] * dx;
 		coes[1] = hx[1] + sx[1] * dx;
 		FieldGather1d2d<2>(qId, coes, pic1d, q);
@@ -4433,7 +4147,7 @@ __global__ void DriftAlignedRK4(type* __restrict__ pic1d, type* __restrict__ pic
 		else
 			i = __float2int_rd(li);
 		dx = li - i;
-		qId = i * 26;
+		qId = i * 30;
 		coes[0] = hx[0] + sx[0] * dx;
 		coes[1] = hx[1] + sx[1] * dx;
 		FieldGather1d2d<2>(qId, coes, pic1d, q);
@@ -4546,21 +4260,21 @@ __global__ void GyroAlignedRK4(type* __restrict__ pic1d, type* __restrict__ pic2
 	type vec1[5] = {};
 	type vec2[5] = {};
 
-	type q, J, B, J_px, J_py, B_px, B_py;
+	type q, q_px, J, J_px, J_py, B, B_px, B_py;
 	type gcovxy, gcovyy, gcovyz;
 	type gcovxy_py, gcovyy_px, gcovyz_px, gcovyz_py;
 	type APhiApt[8] = {};
 
 	type bx, by, bz;
+	type rho, bcony;
 	type cx, cy, cz;
 	type m2e, mu2e;
 	type dxy, dxz, dyz;
 	type dxB, dyB, dzB;
-	type ndchi2JB, ndchi2J2B;
 	type Bstarx, Bstary, Bstarz, Bstar;
 	type na, na_px, nb, nb_px, ni, ni_px;
 	type ta, ta_px, tb, tb_px, ti, ti_px;
-	type V, E, cdEdt, cdPdt, dEdt, dPdt;
+	type V, E, cdwdt;
 
 	type gyroDx, gyroDy;
 	type gyroX, gyroY, gyroZ;
@@ -4570,7 +4284,7 @@ __global__ void GyroAlignedRK4(type* __restrict__ pic1d, type* __restrict__ pic2
 	type avedxPhi, avedyPhi, avedzPhi;
 	type avePhipx, avePhipy, avePhipz;
 	type aveAptbx, aveAptby, aveAptbz;
-	type dPdv, dPdx, dPdy;
+	type dvdt1, dxdt1, dydt1;
 
 	for (int id = 0; id < pptNums; id++) {
 
@@ -4609,228 +4323,70 @@ __global__ void GyroAlignedRK4(type* __restrict__ pic1d, type* __restrict__ pic2
 			vec2[index] = vec0[index];
 		}
 
-		qId = i * 26;
+		qId = i * 30;
 		tileId = (j * cellNx + i) * 72;
 		cellId *= 64;
 		illegal = 0;
 
-		auto dfdt1 = [&]() {
+		auto dfdt_XVpara = [&]() {
 
-			if constexpr (particle == Ion) {
-
-				dEdt = -IonChar / cm * (ddt[0] * (avePhipx + aveAptbx) + ddt[1] * (avePhipy + aveAptby) + ddt[2] * (avePhipz + aveAptbz));
-				dPdt = cm * IonMass * ndchi2JB * (ddt[3] * dPdv + vec1[3] * ddt[0] * dPdx + vec1[3] * ddt[1] * dPdy) - IonChar * ndchi * ddt[0];
-
-				if constexpr (distribution == Maxwell) {
-
-					cdEdt = mp * va * va / (ti * kev);
-					cdPdt = (ni_px / ni - 3 * ti_px / (2 * ti) + ti_px / (ti * ti) * E * mp * va * va / kev) / IonChar / ndchi;
-
-				}
-				else if constexpr (distribution == Slowing0) {
-
-					cdEdt = 3 * V / (2 * E * V + IonMass * IonVc * IonVc * IonVc);
-					cdPdt = ni_px / ni / IonChar / ndchi;
-
-				}
-				else if constexpr (distribution == Slowing1) {
-
-					cdEdt = 3 * V / (2 * E * V + IonMass * IonVc * IonVc * IonVc);
-					cdPdt = ni_px / ni / IonChar / ndchi;
-
-					if constexpr (std::is_same_v<type, double>)
-						cdEdt += 2 * exp(-pow((IonVb - V) / IonDeltaV, 2.0)) / (IonMass * V * IonDeltaV * sqrt(pi) * (1 + erf((IonVb - V) / IonDeltaV)));
-					else
-						cdEdt += 2 * expf(-powf((IonVb - V) / IonDeltaV, 2.0f)) / (IonMass * V * IonDeltaV * sqrtf(pi) * (1 + erff((IonVb - V) / IonDeltaV)));
-
-				}
-				else if constexpr (distribution == Slowing2) {
-
-					cdEdt = 3 * V / (2 * E * V + IonMass * IonVc * IonVc * IonVc);
-					cdPdt = ni_px / ni / IonChar / ndchi;
-
-					cdEdt += 2 * mu * (IonLambda0 * E - mu) / (IonDeltaLambda2 * E * E * E);
-
-				}
-				else if constexpr (distribution == Slowing3) {
-
-					cdEdt = 3 * V / (2 * E * V + IonMass * IonVc * IonVc * IonVc);
-					cdPdt = ni_px / ni / IonChar / ndchi;
-
-					cdEdt += 2 * mu * (IonLambda0 * E - mu) / (IonDeltaLambda2 * E * E * E);
-
-					if constexpr (std::is_same_v<type, double>)
-						cdEdt += 2 * exp(-pow((IonVb - V) / IonDeltaV, 2.0)) / (IonMass * V * IonDeltaV * sqrt(pi) * (1 + erf((IonVb - V) / IonDeltaV)));
-					else
-						cdEdt += 2 * expf(-powf((IonVb - V) / IonDeltaV, 2.0f)) / (IonMass * V * IonDeltaV * sqrtf(pi) * (1 + erff((IonVb - V) / IonDeltaV)));
-
-				}
-
-			}
-			else if constexpr (particle == Alpha) {
-
-				dEdt = -AlphaChar / cm * (ddt[0] * (avePhipx + aveAptbx) + ddt[1] * (avePhipy + aveAptby) + ddt[2] * (avePhipz + aveAptbz));
-				dPdt = cm * AlphaMass * ndchi2JB * (ddt[3] * dPdv + vec1[3] * ddt[0] * dPdx + vec1[3] * ddt[1] * dPdy) - AlphaChar * ndchi * ddt[0];
-
-				if constexpr (distribution == Maxwell) {
-
-					cdEdt = mp * va * va / (ta * kev);
-					cdPdt = (na_px / na - 3 * ta_px / (2 * ta) + ta_px / (ta * ta) * E * mp * va * va / kev) / AlphaChar / ndchi;
-
-				}
-				else if constexpr (distribution == Slowing0) {
-
-					cdEdt = 3 * V / (2 * E * V + AlphaMass * AlphaVc * AlphaVc * AlphaVc);
-					cdPdt = na_px / na / AlphaChar / ndchi;
-
-				}
-				else if constexpr (distribution == Slowing1) {
-
-					cdEdt = 3 * V / (2 * E * V + AlphaMass * AlphaVc * AlphaVc * AlphaVc);
-					cdPdt = na_px / na / AlphaChar / ndchi;
-
-					if constexpr (std::is_same_v<type, double>)
-						cdEdt += 2 * exp(-pow((AlphaVb - V) / AlphaDeltaV, 2.0)) / (AlphaMass * V * AlphaDeltaV * sqrt(pi) * (1 + erf((AlphaVb - V) / AlphaDeltaV)));
-					else
-						cdEdt += 2 * expf(-powf((AlphaVb - V) / AlphaDeltaV, 2.0f)) / (AlphaMass * V * AlphaDeltaV * sqrtf(pi) * (1 + erff((AlphaVb - V) / AlphaDeltaV)));
-
-				}
-				else if constexpr (distribution == Slowing2) {
-
-					cdEdt = 3 * V / (2 * E * V + AlphaMass * AlphaVc * AlphaVc * AlphaVc);
-					cdPdt = na_px / na / AlphaChar / ndchi;
-
-					cdEdt += 2 * mu * (AlphaLambda0 * E - mu) / (AlphaDeltaLambda2 * E * E * E);
-
-				}
-				else if constexpr (distribution == Slowing3) {
-
-					cdEdt = 3 * V / (2 * E * V + AlphaMass * AlphaVc * AlphaVc * AlphaVc);
-					cdPdt = na_px / na / AlphaChar / ndchi;
-
-					cdEdt += 2 * mu * (AlphaLambda0 * E - mu) / (AlphaDeltaLambda2 * E * E * E);
-
-					if constexpr (std::is_same_v<type, double>)
-						cdEdt += 2 * exp(-pow((AlphaVb - V) / AlphaDeltaV, 2.0)) / (AlphaMass * V * AlphaDeltaV * sqrt(pi) * (1 + erf((AlphaVb - V) / AlphaDeltaV)));
-					else
-						cdEdt += 2 * expf(-powf((AlphaVb - V) / AlphaDeltaV, 2.0f)) / (AlphaMass * V * AlphaDeltaV * sqrtf(pi) * (1 + erff((AlphaVb - V) / AlphaDeltaV)));
-
-				}
-
-			}
-			else if constexpr (particle == Beam) {
-
-				dEdt = -BeamChar / cm * (ddt[0] * (avePhipx + aveAptbx) + ddt[1] * (avePhipy + aveAptby) + ddt[2] * (avePhipz + aveAptbz));
-				dPdt = cm * BeamMass * ndchi2JB * (ddt[3] * dPdv + vec1[3] * ddt[0] * dPdx + vec1[3] * ddt[1] * dPdy) - BeamChar * ndchi * ddt[0];
-
-				if constexpr (distribution == Maxwell) {
-
-					cdEdt = mp * va * va / (tb * kev);
-					cdPdt = (nb_px / nb - 3 * tb_px / (2 * tb) + tb_px / (tb * tb) * E * mp * va * va / kev) / BeamChar / ndchi;
-
-				}
-				else if constexpr (distribution == Slowing0) {
-
-					cdEdt = 3 * V / (2 * E * V + BeamMass * BeamVc * BeamVc * BeamVc);
-					cdPdt = nb_px / nb / BeamChar / ndchi;
-
-				}
-				else if constexpr (distribution == Slowing1) {
-
-					cdEdt = 3 * V / (2 * E * V + BeamMass * BeamVc * BeamVc * BeamVc);
-					cdPdt = nb_px / nb / BeamChar / ndchi;
-
-					if constexpr (std::is_same_v<type, double>)
-						cdEdt += 2 * exp(-pow((BeamVb - V) / BeamDeltaV, 2.0)) / (BeamMass * V * BeamDeltaV * sqrt(pi) * (1 + erf((BeamVb - V) / BeamDeltaV)));
-					else
-						cdEdt += 2 * expf(-powf((BeamVb - V) / BeamDeltaV, 2.0f)) / (BeamMass * V * BeamDeltaV * sqrtf(pi) * (1 + erff((BeamVb - V) / BeamDeltaV)));
-
-				}
-				else if constexpr (distribution == Slowing2) {
-
-					cdEdt = 3 * V / (2 * E * V + BeamMass * BeamVc * BeamVc * BeamVc);
-					cdPdt = nb_px / nb / BeamChar / ndchi;
-
-					cdEdt += 2 * mu * (BeamLambda0 * E - mu) / (BeamDeltaLambda2 * E * E * E);
-
-				}
-				else if constexpr (distribution == Slowing3) {
-
-					cdEdt = 3 * V / (2 * E * V + BeamMass * BeamVc * BeamVc * BeamVc);
-					cdPdt = nb_px / nb / BeamChar / ndchi;
-
-					cdEdt += 2 * mu * (BeamLambda0 * E - mu) / (BeamDeltaLambda2 * E * E * E);
-
-					if constexpr (std::is_same_v<type, double>)
-						cdEdt += 2 * exp(-pow((BeamVb - V) / BeamDeltaV, 2.0)) / (BeamMass * V * BeamDeltaV * sqrt(pi) * (1 + erf((BeamVb - V) / BeamDeltaV)));
-					else
-						cdEdt += 2 * expf(-powf((BeamVb - V) / BeamDeltaV, 2.0f)) / (BeamMass * V * BeamDeltaV * sqrtf(pi) * (1 + erff((BeamVb - V) / BeamDeltaV)));
-
-				}
-
-			}
-
-			ddt[4] = (dis - vec1[4]) * (cdEdt * dEdt + cdPdt * dPdt);
-
-		};
-
-		auto dfdt2 = [&]() {
-
-			dPdx = 1 / Bstar * (vec1[3] * avecxdxA - avedxPhi);
-			dPdy = 1 / Bstar * (vec1[3] * avecydyA - avedyPhi);
-			dPdv = -1 / m2e / Bstar * (Bstarx * (avePhipx + aveAptbx) + Bstary * (avePhipy + aveAptby) + Bstarz * (avePhipz + aveAptbz) + mu2e * (avecxdxA * R0 + avecydyA * Z0));
+			dxdt1 = 1 / Bstar * (vec1[3] * avecxdxA - avedxPhi);
+			dydt1 = 1 / Bstar * (vec1[3] * avecydyA - avedyPhi);
+			dvdt1 = -1 / m2e / Bstar * (Bstarx * (avePhipx + aveAptbx) + Bstary * (avePhipy + aveAptby) + Bstarz * (avePhipz + aveAptbz) + mu2e * (avecxdxA * R0 + avecydyA * Z0));
 
 			if constexpr (particle == Ion) {
 
 				if constexpr (distribution == Maxwell) {
 
-					cdEdt = mp * va * va / (ti * kev);
+					cdwdt = mp * va * va / (ti * kev);
 
-					ddt[4] = (-ni_px / ni + 3 * ti_px / (2 * ti) + (mu * B_px - ti_px / ti * E) * cdEdt) * dPdx;
-					ddt[4] += mu * B_py * cdEdt * dPdy;
-					ddt[4] += IonMass * vec1[3] * cdEdt * dPdv;
+					ddt[4] = (-ni_px / ni + 3 * ti_px / (2 * ti) + (mu * B_px - ti_px / ti * E) * cdwdt) * dxdt1;
+					ddt[4] += mu * B_py * cdwdt * dydt1;
+					ddt[4] += IonMass * vec1[3] * cdwdt * dvdt1;
 
 				}
 				else {
 
-					cdEdt = 3 * V / (2 * E * V + IonMass * IonVc * IonVc * IonVc);
+					cdwdt = 3 * V / (2 * E * V + IonMass * ti * ti * ti);
 
-					ddt[4] = (-ni_px / ni + mu * B_px * cdEdt) * dPdx;
-					ddt[4] += mu * B_py * cdEdt * dPdy;
-					ddt[4] += IonMass * vec1[3] * cdEdt * dPdv;
+					ddt[4] = (-ni_px / ni + mu * B_px * cdwdt) * dxdt1;
+					ddt[4] += mu * B_py * cdwdt * dydt1;
+					ddt[4] += IonMass * vec1[3] * cdwdt * dvdt1;
+
+					ddt[4] += 3 * ti * ti / (V * V * V + ti * ti * ti) * ti_px * dxdt1;
 
 					if constexpr (distribution == Slowing0) {
 
-						cdPdt = 0;
+						cdwdt = 0;
 
 					}
 					else if constexpr (distribution == Slowing1) {
 
 						if constexpr (std::is_same_v<type, double>)
-							cdPdt = 2 * exp(-pow((IonVb - V) / IonDeltaV, 2.0)) / (IonMass * V * IonDeltaV * sqrt(pi) * (1 + erf((IonVb - V) / IonDeltaV)));
+							cdwdt = 2 * exp(-pow((IonVb - V) / IonDeltaV, 2.0)) / (IonMass * V * IonDeltaV * sqrt(pi) * (1 + erf((IonVb - V) / IonDeltaV)));
 						else
-							cdPdt = 2 * expf(-powf((IonVb - V) / IonDeltaV, 2.0f)) / (IonMass * V * IonDeltaV * sqrtf(pi) * (1 + erff((IonVb - V) / IonDeltaV)));
+							cdwdt = 2 * expf(-powf((IonVb - V) / IonDeltaV, 2.0f)) / (IonMass * V * IonDeltaV * sqrtf(pi) * (1 + erff((IonVb - V) / IonDeltaV)));
 
 					}
 					else if constexpr (distribution == Slowing2) {
 
-						cdPdt = 2 * mu * (IonLambda0 * E - mu) / (IonDeltaLambda2 * E * E * E);
+						cdwdt = 2 * mu * (IonLambda0 * E - mu) / (IonDeltaLambda2 * E * E * E);
 
 					}
 					else if constexpr (distribution == Slowing3) {
 
-						cdPdt = 2 * mu * (IonLambda0 * E - mu) / (IonDeltaLambda2 * E * E * E);
+						cdwdt = 2 * mu * (IonLambda0 * E - mu) / (IonDeltaLambda2 * E * E * E);
 
 						if constexpr (std::is_same_v<type, double>)
-							cdPdt += 2 * exp(-pow((IonVb - V) / IonDeltaV, 2.0)) / (IonMass * V * IonDeltaV * sqrt(pi) * (1 + erf((IonVb - V) / IonDeltaV)));
+							cdwdt += 2 * exp(-pow((IonVb - V) / IonDeltaV, 2.0)) / (IonMass * V * IonDeltaV * sqrt(pi) * (1 + erf((IonVb - V) / IonDeltaV)));
 						else
-							cdPdt += 2 * expf(-powf((IonVb - V) / IonDeltaV, 2.0f)) / (IonMass * V * IonDeltaV * sqrtf(pi) * (1 + erff((IonVb - V) / IonDeltaV)));
+							cdwdt += 2 * expf(-powf((IonVb - V) / IonDeltaV, 2.0f)) / (IonMass * V * IonDeltaV * sqrtf(pi) * (1 + erff((IonVb - V) / IonDeltaV)));
 
 					}
 
-					ddt[4] += mu * B_px * cdPdt * dPdx;
-					ddt[4] += mu * B_py * cdPdt * dPdy;
-					ddt[4] += IonMass * vec1[3] * cdPdt * dPdv;
+					ddt[4] += mu * B_px * cdwdt * dxdt1;
+					ddt[4] += mu * B_py * cdwdt * dydt1;
+					ddt[4] += IonMass * vec1[3] * cdwdt * dvdt1;
 
 				}
 
@@ -4839,53 +4395,55 @@ __global__ void GyroAlignedRK4(type* __restrict__ pic1d, type* __restrict__ pic2
 
 				if constexpr (distribution == Maxwell) {
 
-					cdEdt = mp * va * va / (ta * kev);
+					cdwdt = mp * va * va / (ta * kev);
 
-					ddt[4] = (-na_px / na + 3 * ta_px / (2 * ta) + (mu * B_px - ta_px / ta * E) * cdEdt) * dPdx;
-					ddt[4] += mu * B_py * cdEdt * dPdy;
-					ddt[4] += AlphaMass * vec1[3] * cdEdt * dPdv;
+					ddt[4] = (-na_px / na + 3 * ta_px / (2 * ta) + (mu * B_px - ta_px / ta * E) * cdwdt) * dxdt1;
+					ddt[4] += mu * B_py * cdwdt * dydt1;
+					ddt[4] += AlphaMass * vec1[3] * cdwdt * dvdt1;
 
 				}
 				else {
 
-					cdEdt = 3 * V / (2 * E * V + AlphaMass * AlphaVc * AlphaVc * AlphaVc);
+					cdwdt = 3 * V / (2 * E * V + AlphaMass * ta * ta * ta);
 
-					ddt[4] = (-na_px / na + mu * B_px * cdEdt) * dPdx;
-					ddt[4] += mu * B_py * cdEdt * dPdy;
-					ddt[4] += AlphaMass * vec1[3] * cdEdt * dPdv;
+					ddt[4] = (-na_px / na + mu * B_px * cdwdt) * dxdt1;
+					ddt[4] += mu * B_py * cdwdt * dydt1;
+					ddt[4] += AlphaMass * vec1[3] * cdwdt * dvdt1;
+
+					ddt[4] += 3 * ta * ta / (V * V * V + ta * ta * ta) * ta_px * dxdt1;
 
 					if constexpr (distribution == Slowing0) {
 
-						cdPdt = 0;
+						cdwdt = 0;
 
 					}
 					else if constexpr (distribution == Slowing1) {
 
 						if constexpr (std::is_same_v<type, double>)
-							cdPdt = 2 * exp(-pow((AlphaVb - V) / AlphaDeltaV, 2.0)) / (AlphaMass * V * AlphaDeltaV * sqrt(pi) * (1 + erf((AlphaVb - V) / AlphaDeltaV)));
+							cdwdt = 2 * exp(-pow((AlphaVb - V) / AlphaDeltaV, 2.0)) / (AlphaMass * V * AlphaDeltaV * sqrt(pi) * (1 + erf((AlphaVb - V) / AlphaDeltaV)));
 						else
-							cdPdt = 2 * expf(-powf((AlphaVb - V) / AlphaDeltaV, 2.0f)) / (AlphaMass * V * AlphaDeltaV * sqrtf(pi) * (1 + erff((AlphaVb - V) / AlphaDeltaV)));
+							cdwdt = 2 * expf(-powf((AlphaVb - V) / AlphaDeltaV, 2.0f)) / (AlphaMass * V * AlphaDeltaV * sqrtf(pi) * (1 + erff((AlphaVb - V) / AlphaDeltaV)));
 
 					}
 					else if constexpr (distribution == Slowing2) {
 
-						cdPdt = 2 * mu * (AlphaLambda0 * E - mu) / (AlphaDeltaLambda2 * E * E * E);
+						cdwdt = 2 * mu * (AlphaLambda0 * E - mu) / (AlphaDeltaLambda2 * E * E * E);
 
 					}
 					else if constexpr (distribution == Slowing3) {
 
-						cdPdt = 2 * mu * (AlphaLambda0 * E - mu) / (AlphaDeltaLambda2 * E * E * E);
+						cdwdt = 2 * mu * (AlphaLambda0 * E - mu) / (AlphaDeltaLambda2 * E * E * E);
 
 						if constexpr (std::is_same_v<type, double>)
-							cdPdt += 2 * exp(-pow((AlphaVb - V) / AlphaDeltaV, 2.0)) / (AlphaMass * V * AlphaDeltaV * sqrt(pi) * (1 + erf((AlphaVb - V) / AlphaDeltaV)));
+							cdwdt += 2 * exp(-pow((AlphaVb - V) / AlphaDeltaV, 2.0)) / (AlphaMass * V * AlphaDeltaV * sqrt(pi) * (1 + erf((AlphaVb - V) / AlphaDeltaV)));
 						else
-							cdPdt += 2 * expf(-powf((AlphaVb - V) / AlphaDeltaV, 2.0f)) / (AlphaMass * V * AlphaDeltaV * sqrtf(pi) * (1 + erff((AlphaVb - V) / AlphaDeltaV)));
+							cdwdt += 2 * expf(-powf((AlphaVb - V) / AlphaDeltaV, 2.0f)) / (AlphaMass * V * AlphaDeltaV * sqrtf(pi) * (1 + erff((AlphaVb - V) / AlphaDeltaV)));
 
 					}
 
-					ddt[4] += mu * B_px * cdPdt * dPdx;
-					ddt[4] += mu * B_py * cdPdt * dPdy;
-					ddt[4] += AlphaMass * vec1[3] * cdPdt * dPdv;
+					ddt[4] += mu * B_px * cdwdt * dxdt1;
+					ddt[4] += mu * B_py * cdwdt * dydt1;
+					ddt[4] += AlphaMass * vec1[3] * cdwdt * dvdt1;
 
 				}
 
@@ -4894,53 +4452,55 @@ __global__ void GyroAlignedRK4(type* __restrict__ pic1d, type* __restrict__ pic2
 
 				if constexpr (distribution == Maxwell) {
 
-					cdEdt = mp * va * va / (tb * kev);
+					cdwdt = mp * va * va / (tb * kev);
 
-					ddt[4] = (-nb_px / nb + 3 * tb_px / (2 * tb) + (mu * B_px - tb_px / tb * E) * cdEdt) * dPdx;
-					ddt[4] += mu * B_py * cdEdt * dPdy;
-					ddt[4] += BeamMass * vec1[3] * cdEdt * dPdv;
+					ddt[4] = (-nb_px / nb + 3 * tb_px / (2 * tb) + (mu * B_px - tb_px / tb * E) * cdwdt) * dxdt1;
+					ddt[4] += mu * B_py * cdwdt * dydt1;
+					ddt[4] += BeamMass * vec1[3] * cdwdt * dvdt1;
 
 				}
 				else {
 
-					cdEdt = 3 * V / (2 * E * V + BeamMass * BeamVc * BeamVc * BeamVc);
+					cdwdt = 3 * V / (2 * E * V + BeamMass * tb * tb * tb);
 
-					ddt[4] = (-nb_px / nb + mu * B_px * cdEdt) * dPdx;
-					ddt[4] += mu * B_py * cdEdt * dPdy;
-					ddt[4] += BeamMass * vec1[3] * cdEdt * dPdv;
+					ddt[4] = (-nb_px / nb + mu * B_px * cdwdt) * dxdt1;
+					ddt[4] += mu * B_py * cdwdt * dydt1;
+					ddt[4] += BeamMass * vec1[3] * cdwdt * dvdt1;
+
+					ddt[4] += 3 * tb * tb / (V * V * V + tb * tb * tb) * tb_px * dxdt1;
 
 					if constexpr (distribution == Slowing0) {
 
-						cdPdt = 0;
+						cdwdt = 0;
 
 					}
 					else if constexpr (distribution == Slowing1) {
 
 						if constexpr (std::is_same_v<type, double>)
-							cdPdt = 2 * exp(-pow((BeamVb - V) / BeamDeltaV, 2.0)) / (BeamMass * V * BeamDeltaV * sqrt(pi) * (1 + erf((BeamVb - V) / BeamDeltaV)));
+							cdwdt = 2 * exp(-pow((BeamVb - V) / BeamDeltaV, 2.0)) / (BeamMass * V * BeamDeltaV * sqrt(pi) * (1 + erf((BeamVb - V) / BeamDeltaV)));
 						else
-							cdPdt = 2 * expf(-powf((BeamVb - V) / BeamDeltaV, 2.0f)) / (BeamMass * V * BeamDeltaV * sqrtf(pi) * (1 + erff((BeamVb - V) / BeamDeltaV)));
+							cdwdt = 2 * expf(-powf((BeamVb - V) / BeamDeltaV, 2.0f)) / (BeamMass * V * BeamDeltaV * sqrtf(pi) * (1 + erff((BeamVb - V) / BeamDeltaV)));
 
 					}
 					else if constexpr (distribution == Slowing2) {
 
-						cdPdt = 2 * mu * (BeamLambda0 * E - mu) / (BeamDeltaLambda2 * E * E * E);
+						cdwdt = 2 * mu * (BeamLambda0 * E - mu) / (BeamDeltaLambda2 * E * E * E);
 
 					}
 					else if constexpr (distribution == Slowing3) {
 
-						cdPdt = 2 * mu * (BeamLambda0 * E - mu) / (BeamDeltaLambda2 * E * E * E);
+						cdwdt = 2 * mu * (BeamLambda0 * E - mu) / (BeamDeltaLambda2 * E * E * E);
 
 						if constexpr (std::is_same_v<type, double>)
-							cdPdt += 2 * exp(-pow((BeamVb - V) / BeamDeltaV, 2.0)) / (BeamMass * V * BeamDeltaV * sqrt(pi) * (1 + erf((BeamVb - V) / BeamDeltaV)));
+							cdwdt += 2 * exp(-pow((BeamVb - V) / BeamDeltaV, 2.0)) / (BeamMass * V * BeamDeltaV * sqrt(pi) * (1 + erf((BeamVb - V) / BeamDeltaV)));
 						else
-							cdPdt += 2 * expf(-powf((BeamVb - V) / BeamDeltaV, 2.0f)) / (BeamMass * V * BeamDeltaV * sqrtf(pi) * (1 + erff((BeamVb - V) / BeamDeltaV)));
+							cdwdt += 2 * expf(-powf((BeamVb - V) / BeamDeltaV, 2.0f)) / (BeamMass * V * BeamDeltaV * sqrtf(pi) * (1 + erff((BeamVb - V) / BeamDeltaV)));
 
 					}
 
-					ddt[4] += mu * B_px * cdPdt * dPdx;
-					ddt[4] += mu * B_py * cdPdt * dPdy;
-					ddt[4] += BeamMass * vec1[3] * cdPdt * dPdv;
+					ddt[4] += mu * B_px * cdwdt * dxdt1;
+					ddt[4] += mu * B_py * cdwdt * dydt1;
+					ddt[4] += BeamMass * vec1[3] * cdwdt * dvdt1;
 
 				}
 
@@ -4955,7 +4515,7 @@ __global__ void GyroAlignedRK4(type* __restrict__ pic1d, type* __restrict__ pic2
 #pragma unroll
 			for (int index = 0; index < 2; index++)
 				coes[index] = (hx[index] + sx[index] * dx);
-			FieldGather1d2d<2>(qId, coes, pic1d, q, na, na_px, nb, nb_px, ni, ni_px, ta, ta_px, tb, tb_px, ti, ti_px);
+			FieldGather1d2d<2>(qId, coes, pic1d, q, q_px, na, na_px, nb, nb_px, ni, ni_px, ta, ta_px, tb, tb_px, ti, ti_px);
 
 #pragma unroll
 			for (int index = 0; index < 2; index++)
@@ -4966,10 +4526,6 @@ __global__ void GyroAlignedRK4(type* __restrict__ pic1d, type* __restrict__ pic2
 			FieldGather1d2d<4>(tileId, coes, pic2d, J, B, J_px, J_py, B_px, B_py,
 				gcovxy, gcovyy, gcovyz, gcovxy_py, gcovyy_px, gcovyz_px, gcovyz_py,
 				gconxx, gconxy, gconyy, R0, Z0);
-
-			dPdv = gcovyz;
-			dPdx = gcovyz_px - gcovyz * (J_px / J + B_px / B);
-			dPdy = gcovyz_py - gcovyz * (J_py / J + B_py / B);
 
 			if constexpr (particle == Ion) {
 
@@ -5017,27 +4573,27 @@ __global__ void GyroAlignedRK4(type* __restrict__ pic1d, type* __restrict__ pic2
 
 			}
 
-			ndchi2JB = ndchi / (J * B);
-			ndchi2J2B = ndchi / (J * J * B);
+			rho = rho0 + vec1[0] * drho;
+			bcony = 2 * psitmax * drho * rho / (q * J * B);
 
-			bx = ndchi2JB * gcovxy;
-			by = ndchi2JB * gcovyy;
-			bz = ndchi2JB * gcovyz;
+			bx = bcony * gcovxy;
+			by = bcony * gcovyy;
+			bz = bcony * gcovyz;
 
-			cx = ndchi2J2B * (gcovyz_py - gcovyz * (J_py / J + B_py / B));
-			cy = -ndchi2J2B * (gcovyz_px - gcovyz * (J_px / J + B_px / B));
-			cz = ndchi2J2B * (gcovyy_px - gcovyy * (J_px / J + B_px / B) - gcovxy_py + gcovxy * (J_py / J + B_py / B));
+			cx = bcony / J * (gcovyz_py - gcovyz * (J_py / J + B_py / B));
+			cy = -bcony / J * (gcovyz_px - gcovyz * (J_px / J + B_px / B) + gcovyz * (drho / rho - q_px / q));
+			cz = bcony / J * (gcovyy_px - gcovyy * (J_px / J + B_px / B) - gcovxy_py + gcovxy * (J_py / J + B_py / B) + gcovyy * (drho / rho - q_px / q));
 
-			dxy = ndchi2J2B * gcovyz;
-			dxz = ndchi2J2B * gcovyy;
-			dyz = ndchi2J2B * gcovxy;
+			dxy = bcony / J * gcovyz;
+			dxz = bcony / J * gcovyy;
+			dyz = bcony / J * gcovxy;
 
 			dxB = dxy * B_py;
 			dyB = -dxy * B_px;
 			dzB = dxz * B_px - dyz * B_py;
 
 			Bstarx = cx * m2e * vec1[3];
-			Bstary = cy * m2e * vec1[3] + ndchi / J;
+			Bstary = cy * m2e * vec1[3] + B * bcony;
 			Bstarz = cz * m2e * vec1[3];
 
 			Bstar = Bstarx * bx + Bstary * by + Bstarz * bz;
@@ -5098,12 +4654,12 @@ __global__ void GyroAlignedRK4(type* __restrict__ pic1d, type* __restrict__ pic2
 				else
 					i = __float2int_rd(li);
 				dx = li - i;
-				qId = i * 26;
+				qId = i * 30;
 				coes[0] = hx[0] + sx[0] * dx;
 				coes[1] = hx[1] + sx[1] * dx;
 				FieldGather1d2d<2>(qId, coes, pic1d, gyroX);
 
-				gyroZ = vec1[2] - q * (gyroY - vec1[1]) - vec1[1] * (gyroX - q);
+				gyroZ = vec1[2] - q * (gyroY - vec1[1]) - vec1[1] * (gyroX - q) - (gyroY - vec1[1]) * (gyroX - q);
 
 				if constexpr (std::is_same_v<type, double>) {
 					gyroZ = gyroZ + gyroX * floor((gyroY - yori) / yrange) * yrange;
@@ -5195,7 +4751,7 @@ __global__ void GyroAlignedRK4(type* __restrict__ pic1d, type* __restrict__ pic2
 			ddt[2] = 1 / Bstar * (vec1[3] * Bstarz - avedzPhi - mu2e * dzB);
 			ddt[3] = -1 / m2e / Bstar * (Bstarx * (avePhipx + aveAptbx + mu2e * R0) + Bstary * (avePhipy + aveAptby + mu2e * Z0) + Bstarz * (avePhipz + aveAptbz));
 
-			dfdt2();
+			dfdt_XVpara();
 
 		};
 
@@ -5222,7 +4778,7 @@ __global__ void GyroAlignedRK4(type* __restrict__ pic1d, type* __restrict__ pic2
 		else
 			i = __float2int_rd(li);
 		dx = li - i;
-		qId = i * 26;
+		qId = i * 30;
 		coes[0] = hx[0] + sx[0] * dx;
 		coes[1] = hx[1] + sx[1] * dx;
 		FieldGather1d2d<2>(qId, coes, pic1d, q);
@@ -5278,7 +4834,7 @@ __global__ void GyroAlignedRK4(type* __restrict__ pic1d, type* __restrict__ pic2
 		else
 			i = __float2int_rd(li);
 		dx = li - i;
-		qId = i * 26;
+		qId = i * 30;
 		coes[0] = hx[0] + sx[0] * dx;
 		coes[1] = hx[1] + sx[1] * dx;
 		FieldGather1d2d<2>(qId, coes, pic1d, q);
@@ -5334,7 +4890,7 @@ __global__ void GyroAlignedRK4(type* __restrict__ pic1d, type* __restrict__ pic2
 		else
 			i = __float2int_rd(li);
 		dx = li - i;
-		qId = i * 26;
+		qId = i * 30;
 		coes[0] = hx[0] + sx[0] * dx;
 		coes[1] = hx[1] + sx[1] * dx;
 		FieldGather1d2d<2>(qId, coes, pic1d, q);
@@ -5389,7 +4945,7 @@ __global__ void GyroAlignedRK4(type* __restrict__ pic1d, type* __restrict__ pic2
 		else
 			i = __float2int_rd(li);
 		dx = li - i;
-		qId = i * 26;
+		qId = i * 30;
 		coes[0] = hx[0] + sx[0] * dx;
 		coes[1] = hx[1] + sx[1] * dx;
 		FieldGather1d2d<2>(qId, coes, pic1d, q);
@@ -5502,7 +5058,7 @@ __global__ void GyroAlignedRK4(type* __restrict__ pic1d, type* __restrict__ pic2
 			else
 				i = __float2int_rd(li);
 			dx = li - i;
-			qId = i * 26;
+			qId = i * 30;
 			coes[0] = hx[0] + sx[0] * dx;
 			coes[1] = hx[1] + sx[1] * dx;
 			FieldGather1d2d<2>(qId, coes, pic1d, gyroX);
@@ -5608,216 +5164,10 @@ __global__ void PICSetupState(randState* __restrict__ randStates) {
 
 }
 
-template<int ratioDt, picType particle, disType distribution, typename type, typename randState>
-__global__ void PICSlowingDown(type* __restrict__ pic1d, type* __restrict__ pic2d, int* __restrict__ pic_keys_in, type* __restrict__ pic_values_in,
-	int* __restrict__ rand_keys_in, type* __restrict__ rand_values_in, randState* __restrict__ randStates) {
-
-	int i, j;
-	int qId, tileId, cellId, picId;
-	unsigned int stateId, randId;
-
-	type coes[4] = {};
-	type vec0[5] = {};
-	type li, lj, dx, dy, dis, mu;
-	type B, N, V, E, Lambda;
-	type Mass, Vmin, Vmax, Vb, Vc, DeltaV, Lambda0, DeltaLambda2, DragRate;
-	randState localState;
-
-	if constexpr (particle == Ion) {
-
-		Mass = IonMass;
-		Vmin = IonVmin;
-		Vmax = IonVmax;
-		Vb = IonVb;
-		Vc = IonVc;
-		DeltaV = IonDeltaV;
-		Lambda0 = IonLambda0;
-		DeltaLambda2 = IonDeltaLambda2;
-		DragRate = IonDragRate;
-
-	}
-	else if constexpr (particle == Alpha) {
-
-		Mass = AlphaMass;
-		Vmin = AlphaVmin;
-		Vmax = AlphaVmax;
-		Vb = AlphaVb;
-		Vc = AlphaVc;
-		DeltaV = AlphaDeltaV;
-		Lambda0 = AlphaLambda0;
-		DeltaLambda2 = AlphaDeltaLambda2;
-		DragRate = AlphaDragRate;
-
-	}
-	else if constexpr (particle == Beam) {
-
-		Mass = BeamMass;
-		Vmin = BeamVmin;
-		Vmax = BeamVmax;
-		Vb = BeamVb;
-		Vc = BeamVc;
-		DeltaV = BeamDeltaV;
-		Lambda0 = BeamLambda0;
-		DeltaLambda2 = BeamDeltaLambda2;
-		DragRate = BeamDragRate;
-
-	}
-
-	stateId = blockIdx.x * blockDim.x + threadIdx.x;
-	localState = randStates[stateId];
-
-	for (int id = 0; id < pptNums; id++) {
-
-		picId = blockIdx.x * blockDim.x * pptNums + id * blockDim.x + threadIdx.x;
-		cellId = pic_keys_in[picId];
-		vec0[0] = pic_values_in[picId + 0 * picDev];
-		vec0[1] = pic_values_in[picId + 1 * picDev];
-		vec0[2] = pic_values_in[picId + 2 * picDev];
-		vec0[3] = pic_values_in[picId + 3 * picDev];
-		vec0[4] = pic_values_in[picId + 4 * picDev];
-		dis = pic_values_in[picId + 5 * picDev];
-		mu = pic_values_in[picId + 6 * picDev];
-
-		li = (vec0[0] - xbeg) / gridDx;
-		lj = (vec0[1] - ybeg) / gridDy;
-
-		if constexpr (std::is_same_v<type, double>) {
-			i = __double2int_rd(li);
-			j = __double2int_rd(lj);
-		}
-		else {
-			i = __float2int_rd(li);
-			j = __float2int_rd(lj);
-		}
-
-		dx = li - i;
-		dy = lj - j;
-
-		tileId = (j * cellNx + i) * 72 + 4;
-		for (int index = 0; index < 4; index++)
-			coes[index] = (hx[index] + sx[index] * dx) * (hy[index] + sy[index] * dy);
-		FieldGather1d2d<4>(tileId, coes, pic2d, B);
-
-		E = Mass * vec0[3] * vec0[3] / 2 + mu * B;
-		Lambda = mu * B / E;
-		if constexpr (std::is_same_v<type, double>)
-			V = sqrt(2.0 * E / Mass);
-		else
-			V = sqrtf(2.0f * E / Mass);
-
-		V = V - DragRate * (V + Vc * Vc * Vc / (V * V)) * gridDt * ratioDt;
-		E = Mass * V * V / 2;
-		mu = Lambda * E / B;
-		if constexpr (std::is_same_v<type, double>)
-			vec0[3] = sqrt((1.0 - Lambda) * V * V);
-		else
-			vec0[3] = sqrtf((1.0f - Lambda) * V * V);
-
-		if (V < Vmin) {
-
-			randId = curand(&localState);
-			randId = (randMax - 1) & randId;
-
-			cellId = rand_keys_in[randId + 0 * randMax];
-			vec0[0] = rand_values_in[randId + 0 * randMax];
-			vec0[1] = rand_values_in[randId + 1 * randMax];
-			vec0[2] = rand_values_in[randId + 2 * randMax];
-
-			li = (vec0[0] - xbeg) / gridDx;
-			lj = (vec0[1] - ybeg) / gridDy;
-
-			if constexpr (std::is_same_v<type, double>) {
-				i = __double2int_rd(li);
-				j = __double2int_rd(lj);
-			}
-			else {
-				i = __float2int_rd(li);
-				j = __float2int_rd(lj);
-			}
-
-			dx = li - i;
-			dy = lj - j;
-
-			tileId = (j * cellNx + i) * 72 + 4;
-			for (int index = 0; index < 4; index++)
-				coes[index] = (hx[index] + sx[index] * dx) * (hy[index] + sy[index] * dy);
-			FieldGather1d2d<4>(tileId, coes, pic2d, B);
-
-			E = Mass * Vmax * Vmax / 2;
-			mu = Lambda * E / B;
-			if constexpr (std::is_same_v<type, double>)
-				vec0[3] = sqrt((1.0 - Lambda) * Vmax * Vmax);
-			else
-				vec0[3] = sqrtf((1.0f - Lambda) * Vmax * Vmax);
-			vec0[4] = 0;
-
-			if constexpr (particle == Ion)
-				qId = i * 26 + 10;
-			else if constexpr (particle == Alpha)
-				qId = i * 26 + 2;
-			else if constexpr (particle == Beam)
-				qId = i * 26 + 6;
-
-			for (int index = 0; index < 2; index++)
-				coes[index] = (hx[index] + sx[index] * dx);
-			FieldGather1d2d<2>(qId, coes, pic1d, N);
-
-			if constexpr (distribution == 1) {
-
-				if constexpr (std::is_same_v<type, double>)
-					dis = N / (pow(Vmax, 3.0) + pow(Vc, 3.0));
-				else
-					dis = N / (powf(Vmax, 3.0f) + powf(Vc, 3.0f));
-
-			}
-			else if constexpr (distribution == 2) {
-
-				if constexpr (std::is_same_v<type, double>)
-					dis = N / (pow(Vmax, 3.0) + pow(Vc, 3.0)) * (1.0 + erf((Vb - Vmax) / DeltaV));
-				else
-					dis = N / (powf(Vmax, 3.0f) + powf(Vc, 3.0f)) * (1.0f + erff((Vb - Vmax) / DeltaV));
-
-			}
-			else if constexpr (distribution == 3) {
-
-				if constexpr (std::is_same_v<type, double>)
-					dis = N / (pow(Vmax, 3.0) + pow(Vc, 3.0)) * exp(-pow(Lambda - Lambda0, 2.0) / DeltaLambda2);
-				else
-					dis = N / (powf(Vmax, 3.0f) + powf(Vc, 3.0f)) * expf(-powf(Lambda - Lambda0, 2.0f) / DeltaLambda2);
-
-			}
-			else if constexpr (distribution == 4) {
-
-				if constexpr (std::is_same_v<type, double>)
-					dis = N / (pow(Vmax, 3.0) + pow(Vc, 3.0)) * (1.0 + erf((Vb - Vmax) / DeltaV)) * exp(-pow(Lambda - Lambda0, 2.0) / DeltaLambda2);
-				else
-					dis = N / (powf(Vmax, 3.0f) + powf(Vc, 3.0f)) * (1.0f + erff((Vb - Vmax) / DeltaV)) * expf(-powf(Lambda - Lambda0, 2.0f) / DeltaLambda2);
-
-			}
-
-		}
-
-#pragma unroll
-		for (int index = 0; index < 7; index++)
-			pic_keys_in[picId + index * picDev] = cellId;
-		pic_values_in[picId + 0 * picDev] = vec0[0];
-		pic_values_in[picId + 1 * picDev] = vec0[1];
-		pic_values_in[picId + 2 * picDev] = vec0[2];
-		pic_values_in[picId + 3 * picDev] = vec0[3];
-		pic_values_in[picId + 4 * picDev] = vec0[4];
-		pic_values_in[picId + 5 * picDev] = dis;
-		pic_values_in[picId + 6 * picDev] = mu;
-
-	}
-
-	randStates[stateId] = localState;
-
-}
-
 /*-----------------------------------------------------PIC Diagnose-----------------------------------------------------*/
 
 template<picType particle, typename type>
-__global__ void PICDiagDensityProfile(type* __restrict__ pic2d, int* __restrict__ pic_keys_in, type* __restrict__ pic_values_in, type* __restrict__ pic_density) {
+__global__ void PICDiagDensity(type* __restrict__ pic2d, int* __restrict__ pic_keys_in, type* __restrict__ pic_values_in, type* __restrict__ pic_density) {
 
 	int i, j;
 	int tileId, picId;
@@ -5880,7 +5230,734 @@ __global__ void PICDiagDensityProfile(type* __restrict__ pic2d, int* __restrict_
 
 }
 
-__global__ void PICDiagPhaseSpace() {
+template<int gyroNums, picType particle, typename type>
+__global__ void PICDiagDiffusivity(type* __restrict__ pic1d, type* __restrict__ pic2d, type* __restrict__ pic3d, int* __restrict__ pic_keys_in, type* __restrict__ pic_values_in, type* __restrict__ pic_diffusivity) {
+
+	int i, j, k;
+	int qId, tileId, cellId, picId;
+
+	type li, lj, lk;
+	type coes[8] = {};
+
+	type dx, dy, dz, dis, mu, dxdt;
+	type vec0[5] = {};
+
+	type q, q_px, J, J_px, J_py, B, B_px, B_py;
+	type gcovxy, gcovyy, gcovyz;
+	type gcovxy_py, gcovyy_px, gcovyz_px, gcovyz_py;
+	type APhiApt[8] = {};
+
+	type bx, by, bz;
+	type rho, bcony;
+	type cx, cy, cz;
+	type m2e, mu2e;
+	type dxy, dxz, dyz;
+	type dxB, dyB, dzB;
+	type Bstarx, Bstary, Bstarz, Bstar;
+	type na, na_px, nb, nb_px, ni, ni_px;
+
+	type gyroDx, gyroDy;
+	type gyroX, gyroY, gyroZ;
+	type gconxx, gconxy, gconyy;
+	type R0, Z0, R1, Z1, angle, radius;
+	type avecxdxA, avecydyA, aveczdzA;
+	type avedxPhi, avedyPhi, avedzPhi;
+	type avePhipx, avePhipy, avePhipz;
+	type aveAptbx, aveAptby, aveAptbz;
+
+	for (int id = 0; id < pptNums; id++) {
+
+		picId = blockIdx.x * blockDim.x * pptNums + id * blockDim.x + threadIdx.x;
+		cellId = pic_keys_in[picId];
+		vec0[0] = pic_values_in[picId + 0 * picDev];
+		vec0[1] = pic_values_in[picId + 1 * picDev];
+		vec0[2] = pic_values_in[picId + 2 * picDev];
+		vec0[3] = pic_values_in[picId + 3 * picDev];
+		vec0[4] = pic_values_in[picId + 4 * picDev];
+		mu = pic_values_in[picId + 6 * picDev];
+
+		li = (vec0[0] - xbeg) / gridDx;
+		lj = (vec0[1] - ybeg) / gridDy;
+		lk = (vec0[2] - zbeg) / gridDz;
+
+		if constexpr (std::is_same_v<type, double>) {
+			i = __double2int_rd(li);
+			j = __double2int_rd(lj);
+			k = __double2int_rd(lk);
+		}
+		else {
+			i = __float2int_rd(li);
+			j = __float2int_rd(lj);
+			k = __float2int_rd(lk);
+		}
+
+		dx = li - i;
+		dy = lj - j;
+		dz = lk - k;
+
+		qId = i * 30;
+		tileId = (j * cellNx + i) * 72;
+		cellId *= 64;
+
+		auto interpRK4 = [&]() {
+
+#pragma unroll
+			for (int index = 0; index < 2; index++)
+				coes[index] = (hx[index] + sx[index] * dx);
+			FieldGather1d2d<2>(qId, coes, pic1d, q, q_px, na, na_px, nb, nb_px, ni, ni_px);
+
+#pragma unroll
+			for (int index = 0; index < 2; index++)
+				coes[index + 2] = coes[index];
+#pragma unroll
+			for (int index = 0; index < 4; index++)
+				coes[index] *= (hy[index] + sy[index] * dy);
+			FieldGather1d2d<4>(tileId, coes, pic2d, J, B, J_px, J_py, B_px, B_py,
+				gcovxy, gcovyy, gcovyz, gcovxy_py, gcovyy_px, gcovyz_px, gcovyz_py,
+				gconxx, gconxy, gconyy, R0, Z0);
+
+			if constexpr (particle == Ion) {
+
+				m2e = cm * IonMass / IonChar;
+				mu2e = cm * mu / IonChar;
+				if constexpr (std::is_same_v<type, double>)
+					radius = cm / IonChar * sqrt(2.0 * mu * IonMass / B);
+				else
+					radius = cm / IonChar * sqrtf(2.0f * mu * IonMass / B);
+
+			}
+			else if constexpr (particle == Alpha) {
+
+				m2e = cm * AlphaMass / AlphaChar;
+				mu2e = cm * mu / AlphaChar;
+				if constexpr (std::is_same_v<type, double>)
+					radius = cm / AlphaChar * sqrt(2.0 * mu * AlphaMass / B);
+				else
+					radius = cm / AlphaChar * sqrtf(2.0f * mu * AlphaMass / B);
+
+			}
+			else if constexpr (particle == Beam) {
+
+				m2e = cm * BeamMass / BeamChar;
+				mu2e = cm * mu / BeamChar;
+				if constexpr (std::is_same_v<type, double>)
+					radius = cm / BeamChar * sqrt(2.0 * mu * BeamMass / B);
+				else
+					radius = cm / BeamChar * sqrtf(2.0f * mu * BeamMass / B);
+
+			}
+
+			rho = rho0 + vec0[0] * drho;
+			bcony = 2 * psitmax * drho * rho / (q * J * B);
+
+			bx = bcony * gcovxy;
+			by = bcony * gcovyy;
+			bz = bcony * gcovyz;
+
+			cx = bcony / J * (gcovyz_py - gcovyz * (J_py / J + B_py / B));
+			cy = -bcony / J * (gcovyz_px - gcovyz * (J_px / J + B_px / B) + gcovyz * (drho / rho - q_px / q));
+			cz = bcony / J * (gcovyy_px - gcovyy * (J_px / J + B_px / B) - gcovxy_py + gcovxy * (J_py / J + B_py / B) + gcovyy * (drho / rho - q_px / q));
+
+			dxy = bcony / J * gcovyz;
+			dxz = bcony / J * gcovyy;
+			dyz = bcony / J * gcovxy;
+
+			dxB = dxy * B_py;
+			dyB = -dxy * B_px;
+			dzB = dxz * B_px - dyz * B_py;
+
+			Bstarx = cx * m2e * vec0[3];
+			Bstary = cy * m2e * vec0[3] + B * bcony;
+			Bstarz = cz * m2e * vec0[3];
+
+			Bstar = Bstarx * bx + Bstary * by + Bstarz * bz;
+
+			if constexpr (std::is_same_v<type, double>)
+				angle = acos(gconxy / sqrt(gconxx * gconyy));
+			else
+				angle = acosf(gconxy / sqrtf(gconxx * gconyy));
+
+			if (i == gridNx - 2) {
+				tileId = (j * cellNx + i - 1) * 72 + 64;
+				FieldGather1d2d<4>(tileId, coes, pic2d, R1, Z1);
+				if constexpr (std::is_same_v<type, double>)
+					gyroDx = radius / sqrt((R1 - R0) * (R1 - R0) + (Z1 - Z0) * (Z1 - Z0)) * gridDx;
+				else
+					gyroDx = radius / sqrtf((R1 - R0) * (R1 - R0) + (Z1 - Z0) * (Z1 - Z0)) * gridDx;
+			}
+			else {
+				tileId = (j * cellNx + i + 1) * 72 + 64;
+				FieldGather1d2d<4>(tileId, coes, pic2d, R1, Z1);
+				if constexpr (std::is_same_v<type, double>)
+					gyroDx = radius / sqrt((R1 - R0) * (R1 - R0) + (Z1 - Z0) * (Z1 - Z0)) * gridDx;
+				else
+					gyroDx = radius / sqrtf((R1 - R0) * (R1 - R0) + (Z1 - Z0) * (Z1 - Z0)) * gridDx;
+			}
+
+			tileId = ((j + 1) * cellNx + i) * 72 + 64;
+			FieldGather1d2d<4>(tileId, coes, pic2d, R1, Z1);
+			if constexpr (std::is_same_v<type, double>)
+				gyroDy = radius / sqrt((R1 - R0) * (R1 - R0) + (Z1 - Z0) * (Z1 - Z0)) * gridDy;
+			else
+				gyroDy = radius / sqrtf((R1 - R0) * (R1 - R0) + (Z1 - Z0) * (Z1 - Z0)) * gridDy;
+
+			R0 = B_px; Z0 = B_py;
+			avecxdxA = 0; avecydyA = 0; aveczdzA = 0;
+			avedxPhi = 0;  avedyPhi = 0;  avedzPhi = 0;
+			avePhipx = 0;  avePhipy = 0;  avePhipz = 0;
+			aveAptbx = 0;  aveAptby = 0; aveAptbz = 0;
+
+#pragma unroll
+			for (int gyroId = 0; gyroId < gyroNums; gyroId++) {
+
+				if constexpr (std::is_same_v<type, double>) {
+					gyroX = vec0[0] + sin(2.0 * pi * gyroId / gyroNums + angle / 2.0) / sin(angle) * gyroDx;
+					gyroY = vec0[1] + sin(2.0 * pi * gyroId / gyroNums - angle / 2.0) / sin(angle) * gyroDy;
+				}
+				else {
+					gyroX = vec0[0] + sinf(2.0f * pi * gyroId / gyroNums + angle / 2.0f) / sinf(angle) * gyroDx;
+					gyroY = vec0[1] + sinf(2.0f * pi * gyroId / gyroNums - angle / 2.0f) / sinf(angle) * gyroDy;
+				}
+
+				if (gyroX < 0 || gyroX >= 1)
+					continue;
+
+				li = (gyroX - xbeg) / gridDx;
+				if constexpr (std::is_same_v<type, double>)
+					i = __double2int_rd(li);
+				else
+					i = __float2int_rd(li);
+				dx = li - i;
+				qId = i * 30;
+				coes[0] = hx[0] + sx[0] * dx;
+				coes[1] = hx[1] + sx[1] * dx;
+				FieldGather1d2d<2>(qId, coes, pic1d, gyroX);
+
+				gyroZ = vec0[2] - q * (gyroY - vec0[1]) - vec0[1] * (gyroX - q) - (gyroY - vec0[1]) * (gyroX - q);
+
+				if constexpr (std::is_same_v<type, double>) {
+					gyroZ = gyroZ + gyroX * floor((gyroY - yori) / yrange) * yrange;
+					gyroY = gyroY - floor((gyroY - yori) / yrange) * yrange;
+					gyroZ = gyroZ - floor((gyroZ - zori) / zrange) * zrange;
+				}
+				else {
+					gyroZ = gyroZ + gyroX * floorf((gyroY - yori) / yrange) * yrange;
+					gyroY = gyroY - floorf((gyroY - yori) / yrange) * yrange;
+					gyroZ = gyroZ - floorf((gyroZ - zori) / zrange) * zrange;
+				}
+
+				lj = (gyroY - ybeg) / gridDy;
+				lk = (gyroZ - zbeg) / gridDz;
+
+				if constexpr (std::is_same_v<type, double>) {
+					j = __double2int_rd(lj);
+					k = __double2int_rd(lk);
+				}
+				else {
+					j = __float2int_rd(lj);
+					k = __float2int_rd(lk);
+				}
+
+				dy = lj - j;
+				dz = lk - k;
+				tileId = (j * cellNx + i) * 72;
+				cellId = (j * cellNxz + i * cellNz + k) * 64;
+
+#pragma unroll
+				for (int index = 0; index < 2; index++)
+					coes[index + 2] = coes[index];
+#pragma unroll
+				for (int index = 0; index < 4; index++)
+					coes[index] *= (hy[index] + sy[index] * dy);
+#pragma unroll
+				for (int index = 0; index < 4; index++)
+					coes[index + 4] = coes[index];
+#pragma unroll
+				for (int index = 0; index < 8; index++)
+					coes[index] *= (hz[index] + sz[index] * dz);
+#pragma unroll
+				for (int index = 0; index < 8; index++)
+					APhiApt[index] = 0;
+
+				FieldGather3d(i, j, k, cellId, coes, pic3d, APhiApt);
+
+				avecxdxA += cx * APhiApt[0] + dxy * APhiApt[2] - dxz * APhiApt[3];
+				avecydyA += cy * APhiApt[0] + dyz * APhiApt[3] - dxy * APhiApt[1];
+				aveczdzA += cz * APhiApt[0] + dxz * APhiApt[1] - dyz * APhiApt[2];
+
+				avedxPhi += dxy * APhiApt[5] - dxz * APhiApt[6];
+				avedyPhi += dyz * APhiApt[6] - dxy * APhiApt[4];
+				avedzPhi += dxz * APhiApt[4] - dyz * APhiApt[5];
+
+				avePhipx += APhiApt[4];
+				avePhipy += APhiApt[5];
+				avePhipz += APhiApt[6];
+
+				aveAptbx += APhiApt[7] * bx;
+				aveAptby += APhiApt[7] * by;
+				aveAptbz += APhiApt[7] * bz;
+
+			}
+
+			avecxdxA /= gyroNums;
+			avecydyA /= gyroNums;
+			aveczdzA /= gyroNums;
+
+			avedxPhi /= gyroNums;
+			avedyPhi /= gyroNums;
+			avedzPhi /= gyroNums;
+
+			avePhipx /= gyroNums;
+			avePhipy /= gyroNums;
+			avePhipz /= gyroNums;
+
+			aveAptbx /= gyroNums;
+			aveAptby /= gyroNums;
+			aveAptbz /= gyroNums;
+
+			Bstarx += avecxdxA;
+			Bstary += avecydyA;
+			Bstarz += aveczdzA;
+			Bstar = Bstarx * bx + Bstary * by + Bstarz * bz;
+
+			dxdt = 1 / Bstar * (vec0[3] * Bstarx - avedxPhi - mu2e * dxB);
+
+		};
+
+		interpRK4();
+
+		li = (vec0[0] - xbeg) / gridDx;
+		lj = (vec0[1] - ybeg) / gridDy;
+		lk = (vec0[2] - zbeg) / gridDz;
+
+		if constexpr (std::is_same_v<type, double>) {
+			i = __double2int_rd(li);
+			j = __double2int_rd(lj);
+			k = __double2int_rd(lk);
+		}
+		else {
+			i = __float2int_rd(li);
+			j = __float2int_rd(lj);
+			k = __float2int_rd(lk);
+		}
+
+		dx = li - i;
+		dy = lj - j;
+		dz = lk - k;
+
+		/*---------------------------Diag Diffusivity--------------------------*/
+
+#pragma unroll
+		for (int index = 0; index < 4; index++)
+			coes[index] = (hx[index] + sx[index] * dx) * (hy[index] + sy[index] * dy);
+
+		tileId = (j * cellNx + i) * 72;
+		FieldGather1d2d<4>(tileId, coes, pic2d, J);
+		tileId = (j * cellNx + i) * 72 + 52;
+		FieldGather1d2d<4>(tileId, coes, pic2d, gconxx);
+
+		if constexpr (std::is_same_v<type, double>)
+			dxdt /= sqrt(gconxx);
+		else
+			dxdt /= sqrtf(gconxx);
+
+		if constexpr (particle == Ion)
+			dis = -vec0[4] / J * IonConst * pitchB0 * pitchB0 / 2 / mu0 / (mp * va * va) / (gridNy * gridNz) * dxdt * va / (ni_px * l3);
+		else if constexpr (particle == Alpha)
+			dis = -vec0[4] / J * AlphaConst * pitchB0 * pitchB0 / 2 / mu0 / (mp * va * va) / (gridNy * gridNz) * dxdt * va / (na_px * l3);
+		else if constexpr (particle == Beam)
+			dis = -vec0[4] / J * BeamConst * pitchB0 * pitchB0 / 2 / mu0 / (mp * va * va) / (gridNy * gridNz) * dxdt * va / (nb_px * l3);
+
+		coes[0] = hx[0] + sx[0] * dx;
+		coes[1] = hx[1] + sx[1] * dx;
+
+		if (i == 0)
+			coes[0] *= 2;
+		else if (i == gridNx - 2)
+			coes[1] *= 2;
+
+		atomicAdd(&pic_diffusivity[i], coes[0] * dis);
+		atomicAdd(&pic_diffusivity[i + 1], coes[1] * dis);
+
+	}
+
+}
+
+template<int ratioDt, picType particle, typename type>
+__global__ void PICDiagOrbit(type* __restrict__ pic1d, type* __restrict__ pic2d, type* __restrict__ phaseSpaceMapping) {
+
+	int illegal;
+	int i, j;
+	int qId, tileId, picId;
+
+	type flag;
+	type li, lj, dx, dy;
+	type coes[4] = {};
+	type ddt[4] = {};
+	type vec0[4] = {};
+	type vec1[4] = {};
+	type vec2[4] = {};
+
+	type q, q_px, J, J_px, J_py, B, B_px, B_py;
+	type gcovxy, gcovyy, gcovyz;
+	type gcovxy_py, gcovyy_px, gcovyz_px, gcovyz_py;
+
+	type bx, by, bz;
+	type rho, bcony;
+	type cx, cy, cz;
+	type m2e, mu2e;
+	type dxy, dxz, dyz;
+	type dxB, dyB, dzB;
+	type Bstarx, Bstary, Bstarz, Bstar;
+
+	type orbit, mu, q0, frac, psip, E, Pphi, Lambda;
+	type dtheta, dphiTotal, dphiVpara, dT, bounce;
+
+	for (int id = 0; id < pptNums; id++) {
+
+		picId = blockIdx.x * blockDim.x * pptNums + id * blockDim.x + threadIdx.x;
+
+		//orbit x y vp mu dtheta dphiTotal dphiVpara dT bounce E Pphi Lambda
+
+		orbit = phaseSpaceMapping[picId * 13 + 0];
+		vec0[0] = phaseSpaceMapping[picId * 13 + 1];
+		vec0[1] = phaseSpaceMapping[picId * 13 + 2];
+		vec0[3] = phaseSpaceMapping[picId * 13 + 3];
+		mu = phaseSpaceMapping[picId * 13 + 4];
+		dtheta = phaseSpaceMapping[picId * 13 + 5];
+		dphiTotal = phaseSpaceMapping[picId * 13 + 6];
+		dphiVpara = phaseSpaceMapping[picId * 13 + 7];
+		dT = phaseSpaceMapping[picId * 13 + 8];
+		bounce = phaseSpaceMapping[picId * 13 + 9];
+
+		//orbit = 0.5 : pad
+		//orbit = 1.5 : loss
+		//orbit = 2.5 : para
+		//orbit = 3.5 : anti
+		//orbit = 4.5 : trapped
+		//orbit = 5.5 : unknown
+
+		if (orbit < 5)
+			continue;
+
+		vec0[2] = 0;
+		for (int index = 0; index < 4; index++) {
+			vec1[index] = vec0[index];
+			vec2[index] = vec0[index];
+		}
+
+		li = (vec0[0] - xbeg) / gridDx;
+		lj = (vec0[1] - ybeg) / gridDy;
+
+		if constexpr (std::is_same_v<type, double>) {
+			i = __double2int_rd(li);
+			j = __double2int_rd(lj);
+		}
+		else {
+			i = __float2int_rd(li);
+			j = __float2int_rd(lj);
+		}
+
+		dx = li - i;
+		dy = lj - j;
+
+		qId = i * 30;
+		tileId = (j * cellNx + i) * 72;
+		illegal = 0;
+
+		coes[0] = hx[0] + sx[0] * dx;
+		coes[1] = hx[1] + sx[1] * dx;
+		FieldGather1d2d<2>(qId, coes, pic1d, q0);
+
+		auto interpRK4 = [&]() {
+
+#pragma unroll
+			for (int index = 0; index < 2; index++)
+				coes[index] = (hx[index] + sx[index] * dx);
+			FieldGather1d2d<2>(qId, coes, pic1d, q, q_px);
+
+#pragma unroll
+			for (int index = 0; index < 2; index++)
+				coes[index + 2] = coes[index];
+#pragma unroll
+			for (int index = 0; index < 4; index++)
+				coes[index] *= (hy[index] + sy[index] * dy);
+			FieldGather1d2d<4>(tileId, coes, pic2d, J, B, J_px, J_py, B_px, B_py,
+				gcovxy, gcovyy, gcovyz, gcovxy_py, gcovyy_px, gcovyz_px, gcovyz_py);
+
+			if constexpr (particle == Ion) {
+				m2e = cm * IonMass / IonChar;
+				mu2e = cm * mu / IonChar;
+			}
+			else if constexpr (particle == Alpha) {
+				m2e = cm * AlphaMass / AlphaChar;
+				mu2e = cm * mu / AlphaChar;
+			}
+			else if constexpr (particle == Beam) {
+				m2e = cm * BeamMass / BeamChar;
+				mu2e = cm * mu / BeamChar;
+			}
+
+			rho = rho0 + vec1[0] * drho;
+			bcony = 2 * psitmax * drho * rho / (q * J * B);
+
+			bx = bcony * gcovxy;
+			by = bcony * gcovyy;
+			bz = bcony * gcovyz;
+
+			cx = bcony / J * (gcovyz_py - gcovyz * (J_py / J + B_py / B));
+			cy = -bcony / J * (gcovyz_px - gcovyz * (J_px / J + B_px / B) + gcovyz * (drho / rho - q_px / q));
+			cz = bcony / J * (gcovyy_px - gcovyy * (J_px / J + B_px / B) - gcovxy_py + gcovxy * (J_py / J + B_py / B) + gcovyy * (drho / rho - q_px / q));
+
+			dxy = bcony / J * gcovyz;
+			dxz = bcony / J * gcovyy;
+			dyz = bcony / J * gcovxy;
+
+			dxB = dxy * B_py;
+			dyB = -dxy * B_px;
+			dzB = dxz * B_px - dyz * B_py;
+
+			Bstarx = cx * m2e * vec1[3];
+			Bstary = cy * m2e * vec1[3] + B * bcony;
+			Bstarz = cz * m2e * vec1[3];
+
+			Bstar = Bstarx * bx + Bstary * by + Bstarz * bz;
+
+			ddt[0] = 1 / Bstar * (vec1[3] * Bstarx - mu2e * dxB);
+			ddt[1] = 1 / Bstar * (vec1[3] * Bstary - mu2e * dyB);
+			ddt[2] = 1 / Bstar * (vec1[3] * Bstarz - mu2e * dzB);
+			ddt[3] = -1 / m2e / Bstar * mu2e * (Bstarx * B_px + Bstary * B_py);
+
+		};
+
+		/*-----------------------------1st RK4----------------------------*/
+
+		interpRK4();
+
+		for (int index = 0; index < 4; index++)
+			vec2[index] += ddt[index] * gridDt * ratioDt / 6;
+
+		flag = vec0[0] + ddt[0] * gridDt * ratioDt / 2;
+		if (flag < xbeg || flag >= xend)
+			illegal = 1;
+		if (!illegal)
+			for (int index = 0; index < 4; index++)
+				vec1[index] = vec0[index] + ddt[index] * gridDt * ratioDt / 2;
+		else
+			for (int index = 0; index < 4; index++)
+				vec1[index] = vec0[index];
+
+		li = (vec1[0] - xbeg) / gridDx;
+
+		if constexpr (std::is_same_v<type, double>) {
+			i = __double2int_rd(li);
+			vec1[1] = vec1[1] - floor((vec1[1] - yori) / yrange) * yrange;
+			lj = (vec1[1] - ybeg) / gridDy;
+			j = __double2int_rd(lj);
+		}
+		else {
+			i = __float2int_rd(li);
+			vec1[1] = vec1[1] - floorf((vec1[1] - yori) / yrange) * yrange;
+			lj = (vec1[1] - ybeg) / gridDy;
+			j = __float2int_rd(lj);
+		}
+
+		dx = li - i;
+		dy = lj - j;
+		qId = i * 30;
+		tileId = (j * cellNx + i) * 72;
+
+		/*-----------------------------2nd RK4----------------------------*/
+
+		interpRK4();
+
+		for (int index = 0; index < 4; index++)
+			vec2[index] += ddt[index] * gridDt * ratioDt / 3;
+
+		flag = vec0[0] + ddt[0] * gridDt * ratioDt / 2;
+		if (flag < xbeg || flag >= xend)
+			illegal = 1;
+		if (!illegal)
+			for (int index = 0; index < 4; index++)
+				vec1[index] = vec0[index] + ddt[index] * gridDt * ratioDt / 2;
+		else
+			for (int index = 0; index < 4; index++)
+				vec1[index] = vec0[index];
+
+		li = (vec1[0] - xbeg) / gridDx;
+
+		if constexpr (std::is_same_v<type, double>) {
+			i = __double2int_rd(li);
+			vec1[1] = vec1[1] - floor((vec1[1] - yori) / yrange) * yrange;
+			lj = (vec1[1] - ybeg) / gridDy;
+			j = __double2int_rd(lj);
+		}
+		else {
+			i = __float2int_rd(li);
+			vec1[1] = vec1[1] - floorf((vec1[1] - yori) / yrange) * yrange;
+			lj = (vec1[1] - ybeg) / gridDy;
+			j = __float2int_rd(lj);
+		}
+
+		dx = li - i;
+		dy = lj - j;
+		qId = i * 30;
+		tileId = (j * cellNx + i) * 72;
+
+		/*-----------------------------3rd RK4----------------------------*/
+
+		interpRK4();
+
+		for (int index = 0; index < 4; index++)
+			vec2[index] += ddt[index] * gridDt * ratioDt / 3;
+
+		flag = vec0[0] + ddt[0] * gridDt * ratioDt;
+		if (flag < xbeg || flag >= xend)
+			illegal = 1;
+		if (!illegal)
+			for (int index = 0; index < 4; index++)
+				vec1[index] = vec0[index] + ddt[index] * gridDt * ratioDt;
+		else
+			for (int index = 0; index < 4; index++)
+				vec1[index] = vec0[index];
+
+		li = (vec1[0] - xbeg) / gridDx;
+
+		if constexpr (std::is_same_v<type, double>) {
+			i = __double2int_rd(li);
+			vec1[1] = vec1[1] - floor((vec1[1] - yori) / yrange) * yrange;
+			lj = (vec1[1] - ybeg) / gridDy;
+			j = __double2int_rd(lj);
+		}
+		else {
+			i = __float2int_rd(li);
+			vec1[1] = vec1[1] - floorf((vec1[1] - yori) / yrange) * yrange;
+			lj = (vec1[1] - ybeg) / gridDy;
+			j = __float2int_rd(lj);
+		}
+
+		dx = li - i;
+		dy = lj - j;
+		qId = i * 30;
+		tileId = (j * cellNx + i) * 72;
+
+		/*-----------------------------4th RK4----------------------------*/
+
+		interpRK4();
+
+		for (int index = 0; index < 4; index++)
+			vec2[index] += ddt[index] * gridDt * ratioDt / 6;
+
+		if (illegal || vec2[0] < xbeg || vec2[0] >= xend) {
+			orbit = 1.5;
+			for (int index = 0; index < 4; index++)
+				vec2[index] = vec0[index];
+		}
+
+		frac = 1;
+
+		if (orbit > 5 && bounce < 1 && ((dtheta + vec2[1] - vec0[1]) < -2 * pi || (dtheta + vec2[1] - vec0[1]) > 2 * pi)) {
+
+			if (vec2[3] > 0)
+				orbit = 2.5;
+			else
+				orbit = 3.5;
+
+			if ((dtheta + vec2[1] - vec0[1]) < -2 * pi)
+				frac = (-2 * pi - dtheta) / (vec2[1] - vec0[1]);
+			else
+				frac = (2 * pi - dtheta) / (vec2[1] - vec0[1]);
+
+		}
+
+		if (orbit > 5 && (vec0[3] * vec2[3] < 0)) {
+			if (bounce < 1) {
+				dT = 0;
+				dtheta = 0;
+				dphiTotal = 0;
+				dphiVpara = 0;
+				frac = vec2[3] / (vec2[3] - vec0[3]);
+			}
+			else if (bounce > 2) {
+				orbit = 4.5;
+				frac = 1 - vec2[3] / (vec2[3] - vec0[3]);
+			}
+			bounce = bounce + 1;
+		}
+
+		li = (vec2[0] - xbeg) / gridDx;
+		if constexpr (std::is_same_v<type, double>)
+			i = __double2int_rd(li);
+		else
+			i = __float2int_rd(li);
+		dx = li - i;
+		qId = i * 30;
+		coes[0] = hx[0] + sx[0] * dx;
+		coes[1] = hx[1] + sx[1] * dx;
+		FieldGather1d2d<2>(qId, coes, pic1d, q);
+
+		dT = dT + gridDt * ratioDt * frac;
+		dtheta = dtheta + (vec2[1] - vec0[1]) * frac;
+		dphiTotal = dphiTotal + (vec2[2] + q * vec2[1] - (vec0[2] + q0 * vec0[1])) * frac;
+		dphiVpara = dphiVpara + (q + q0) * (vec2[1] - vec0[1]) * frac / 2;
+
+		if constexpr (std::is_same_v<type, double>) {
+			vec2[1] = vec2[1] - floor((vec2[1] - yori) / yrange) * yrange;
+			lj = (vec2[1] - ybeg) / gridDy;
+			j = __double2int_rd(lj);
+		}
+		else {
+			vec2[1] = vec2[1] - floorf((vec2[1] - yori) / yrange) * yrange;
+			lj = (vec2[1] - ybeg) / gridDy;
+			j = __float2int_rd(lj);
+		}
+
+		dy = lj - j;
+		qId = i * 30 + 28;
+		tileId = (j * cellNx + i) * 72;
+
+		FieldGather1d2d<2>(qId, coes, pic1d, psip);
+
+		for (int index = 0; index < 2; index++)
+			coes[index + 2] = coes[index];
+		for (int index = 0; index < 4; index++)
+			coes[index] *= (hy[index] + sy[index] * dy);
+
+		FieldGather1d2d<4>(tileId, coes, pic2d, J, B);
+		tileId = (j * cellNx + i) * 72 + 32;
+		FieldGather1d2d<4>(tileId, coes, pic2d, gcovyz);
+
+		if constexpr (particle == Ion) {
+			E = IonMass * vec2[3] * vec2[3] / 2 + mu * B;
+			Pphi = cm * IonMass * vec2[3] * 2 * psitmax * drho * (RHO0 + vec2[0] * drho) * gcovyz / (q * J * B) - IonChar * psip;
+		}
+		else if constexpr (particle == Alpha) {
+			E = AlphaMass * vec2[3] * vec2[3] / 2 + mu * B;
+			Pphi = cm * AlphaMass * vec2[3] * 2 * psitmax * drho * (RHO0 + vec2[0] * drho) * gcovyz / (q * J * B) - AlphaChar * psip;
+		}
+		else if constexpr (particle == Beam) {
+			E = BeamMass * vec2[3] * vec2[3] / 2 + mu * B;
+			Pphi = cm * BeamMass * vec2[3] * 2 * psitmax * drho * (RHO0 + vec2[0] * drho) * gcovyz / (q * J * B) - BeamChar * psip;
+		}
+
+		Lambda = mu / E;
+
+		//orbit x y vp mu dtheta dphiTotal dphiVpara dT bounce E Pphi Lambda
+
+		phaseSpaceMapping[picId * 13 + 0] = orbit;
+		phaseSpaceMapping[picId * 13 + 1] = vec2[0];
+		phaseSpaceMapping[picId * 13 + 2] = vec2[1];
+		phaseSpaceMapping[picId * 13 + 3] = vec2[3];
+		phaseSpaceMapping[picId * 13 + 5] = dtheta;
+		phaseSpaceMapping[picId * 13 + 6] = dphiTotal;
+		phaseSpaceMapping[picId * 13 + 7] = dphiVpara;
+		phaseSpaceMapping[picId * 13 + 8] = dT;
+		phaseSpaceMapping[picId * 13 + 9] = bounce;
+		phaseSpaceMapping[picId * 13 + 10] = E;
+		phaseSpaceMapping[picId * 13 + 11] = Pphi;
+		phaseSpaceMapping[picId * 13 + 12] = Lambda;
+
+	}
 
 }
 
@@ -5958,19 +6035,19 @@ int main(int argc, char* argv[]) {
 	//initializing cuGMEC
 
 	HybridModel<dataType> cuGMEC(
-		{ devNums, nRanks, myRank, localRank, gridNx, gridNy, gridNz, gridGhost, ppcNums, tubes },
-		{ B0, L0, VA0, CHI0, CHI1, dt },
-		{ ifNablaPerp2A().value, perp2A },
-		{ ifNablaPerp2w().value, perp2w },
-		{ ifNablaPerp2dNe().value, perp2dNe },
-		{ ifNablaPerp2dTe().value, perp2dTe },
-		{ ifNablaPerp2dPi().value, perp2dPi },
-		{ ifNablaPerp2dPa().value, perp2dPa },
-		{ ifNablaPerp2dPb().value, perp2dPb },
-		{ (ifIon().value && ifIonSlowing().value) || (ifAlpha().value && ifAlphaSlowing().value) || (ifBeam().value && ifBeamSlowing().value), randMax },
-		{ ifIon().value, std::vector<double>{IonMass, IonChar, IonBeta, IonVmin, IonVmax, IonVb, IonVc, IonDeltaV, IonLambda0, IonDeltaLambda2} },
-		{ ifAlpha().value, std::vector<double>{AlphaMass, AlphaChar, AlphaBeta, AlphaVmin, AlphaVmax, AlphaVb, AlphaVc, AlphaDeltaV, AlphaLambda0, AlphaDeltaLambda2} },
-		{ ifBeam().value, std::vector<double>{BeamMass, BeamChar, BeamBeta, BeamVmin, BeamVmax, BeamVb, BeamVc, BeamDeltaV, BeamLambda0, BeamDeltaLambda2} });
+		std::vector<int> { devNums, nRanks, myRank, localRank, gridNx, gridNy, gridNz, gridGhost, ppcNums, tubes },
+		std::vector<double> { B0, L0, VA0, RHO0, RHO1, PSITMAX, dt },
+		std::tuple<bool, double> { ifNablaPerp2A().value, perp2A },
+		std::tuple<bool, double> { ifNablaPerp2Phi().value, perp2Phi },
+		std::tuple<bool, double> { ifNablaPerp2dNe().value, perp2dNe },
+		std::tuple<bool, double> { ifNablaPerp2dTe().value, perp2dTe },
+		std::tuple<bool, double> { ifNablaPerp2dPi().value, perp2dPi },
+		std::tuple<bool, double> { ifNablaPerp2dPa().value, perp2dPa },
+		std::tuple<bool, double> { ifNablaPerp2dPb().value, perp2dPb },
+		std::tuple<bool, unsigned int> { (ifIon().value&& ifIonSlowing().value) || (ifAlpha().value && ifAlphaSlowing().value) || (ifBeam().value && ifBeamSlowing().value), randMax },
+		std::tuple<bool, std::vector<double>> { ifIon().value, std::vector<double>{IonMass, IonChar, IonBeta, IonVmin, IonVmax, IonVb, IonDeltaV, IonLambda0, IonDeltaLambda2} },
+		std::tuple<bool, std::vector<double>> { ifAlpha().value, std::vector<double>{AlphaMass, AlphaChar, AlphaBeta, AlphaVmin, AlphaVmax, AlphaVb, AlphaDeltaV, AlphaLambda0, AlphaDeltaLambda2} },
+		std::tuple<bool, std::vector<double>> { ifBeam().value, std::vector<double>{BeamMass, BeamChar, BeamBeta, BeamVmin, BeamVmax, BeamVb, BeamDeltaV, BeamLambda0, BeamDeltaLambda2} });
 
 	cuGMEC.allocateHostMemory();
 	cuGMEC.allocateDeviceMemory();
@@ -5986,8 +6063,8 @@ int main(int argc, char* argv[]) {
 			cuGMEC.computeSparseMatrix<Resistive, trueType, trueType>();
 	}
 
-	if constexpr (std::is_same_v<ifNablaPerp2w, trueType>)
-		cuGMEC.computeSparseMatrix<Perp2w, trueType, trueType>();
+	if constexpr (std::is_same_v<ifNablaPerp2Phi, trueType>)
+		cuGMEC.computeSparseMatrix<Perp2Phi, trueType, trueType>();
 	if constexpr (std::is_same_v<ifNablaPerp2dNe, trueType>)
 		cuGMEC.computeSparseMatrix<Perp2dNe, trueType, trueType>();
 	if constexpr (std::is_same_v<ifNablaPerp2dTe, trueType>)
@@ -5999,6 +6076,91 @@ int main(int argc, char* argv[]) {
 	if constexpr (std::is_same_v<ifNablaPerp2dPb, trueType>)
 		cuGMEC.computeSparseMatrix<Perp2dPb, trueType, trueType>();
 
+	if constexpr (std::is_same_v<ifOutputPhaceSpaceF0, trueType>) {
+		if constexpr (std::is_same_v<ifIon, trueType>)
+			cuGMEC.computePhaseSpaceF0<Ion, IonType, IonMarker, gridE, gridPphi, gridLambda, ppcPhase>();
+		if constexpr (std::is_same_v<ifAlpha, trueType>)
+			cuGMEC.computePhaseSpaceF0<Alpha, AlphaType, AlphaMarker, gridE, gridPphi, gridLambda, ppcPhase>();
+		if constexpr (std::is_same_v<ifBeam, trueType>)
+			cuGMEC.computePhaseSpaceF0<Beam, BeamType, BeamMarker, gridE, gridPphi, gridLambda, ppcPhase>();
+	}
+
+	if constexpr (std::is_same_v<ifOutputPhaceSpaceJacobian, trueType>) {
+		if constexpr (std::is_same_v<ifIon, trueType>)
+			cuGMEC.computePhaseSpaceJacobian<Ion, gridE, gridPphi, gridLambda, ppcPhase>();
+		if constexpr (std::is_same_v<ifAlpha, trueType>)
+			cuGMEC.computePhaseSpaceJacobian<Alpha, gridE, gridPphi, gridLambda, ppcPhase>();
+		if constexpr (std::is_same_v<ifBeam, trueType>)
+			cuGMEC.computePhaseSpaceJacobian<Beam, gridE, gridPphi, gridLambda, ppcPhase>();
+	}
+
+	if constexpr (std::is_same_v<ifOutputPhaceSpaceFrequency, trueType>) {
+
+		if constexpr (std::is_same_v<ifIon, trueType>) {
+			cuGMEC.loadPhaseSpaceMapping<Ion>(IonPhaseSpaceMapping);
+			if (myRank == 0)
+				std::cout << BOLDYELLOW << "Start: Compute equilibrium orbit of thermal ions." << RESET << std::endl;
+			for (int index = 0; index < 20000; index++) {
+				for (int i = 0; i < devNums; i++) {
+					cudaSetDevice(localRank * devNums + i);
+					PICDiagOrbit<1, Ion> << <gridE * gridPphi * gridLambda * 2 / pptNums / PICBlockDimx, PICBlockDimx, 0, 0 >> > (cuGMEC.d_pic1d[i], cuGMEC.d_pic2d[i], cuGMEC.d_IonPhaseSpaceMapping[i]);
+				}
+			}
+			if (myRank == 0) {
+				std::cout << BOLDGREEN << "Done." << RESET << std::endl;
+				std::cout << std::endl;
+			}
+			for (int i = 0; i < devNums; i++) {
+				cudaSetDevice(localRank * devNums + i);
+				cudaMemcpy(cuGMEC.h_IonPhaseSpaceMapping[i], cuGMEC.d_IonPhaseSpaceMapping[i], sizeof(dataType) * gridE * gridPphi * gridLambda * 2 * 13, cudaMemcpyDeviceToHost);
+			}
+			cuGMEC.computePhaseSpaceFrequency<Ion>(IonPhaseSpaceMapping);
+		}
+
+		if constexpr (std::is_same_v<ifAlpha, trueType>) {
+			cuGMEC.loadPhaseSpaceMapping<Alpha>(AlphaPhaseSpaceMapping);
+			if (myRank == 0)
+				std::cout << BOLDYELLOW << "Start: Compute equilibrium orbit of  alpha particles." << RESET << std::endl;
+			for (int index = 0; index < 20000; index++) {
+				for (int i = 0; i < devNums; i++) {
+					cudaSetDevice(localRank * devNums + i);
+					PICDiagOrbit<1, Alpha> << <gridE * gridPphi * gridLambda * 2 / pptNums / PICBlockDimx, PICBlockDimx, 0, 0 >> > (cuGMEC.d_pic1d[i], cuGMEC.d_pic2d[i], cuGMEC.d_AlphaPhaseSpaceMapping[i]);
+				}
+			}
+			if (myRank == 0) {
+				std::cout << BOLDGREEN << "Done." << RESET << std::endl;
+				std::cout << std::endl;
+			}
+			for (int i = 0; i < devNums; i++) {
+				cudaSetDevice(localRank * devNums + i);
+				cudaMemcpy(cuGMEC.h_AlphaPhaseSpaceMapping[i], cuGMEC.d_AlphaPhaseSpaceMapping[i], sizeof(dataType) * gridE * gridPphi * gridLambda * 2 * 13, cudaMemcpyDeviceToHost);
+			}
+			cuGMEC.computePhaseSpaceFrequency<Alpha>(AlphaPhaseSpaceMapping);
+		}
+
+		if constexpr (std::is_same_v<ifBeam, trueType>) {
+			cuGMEC.loadPhaseSpaceMapping<Beam>(BeamPhaseSpaceMapping);
+			if (myRank == 0)
+				std::cout << BOLDYELLOW << "Start: Compute equilibrium orbit of beam particles." << RESET << std::endl;
+			for (int index = 0; index < 20000; index++) {
+				for (int i = 0; i < devNums; i++) {
+					cudaSetDevice(localRank * devNums + i);
+					PICDiagOrbit<1, Beam> << <gridE * gridPphi * gridLambda * 2 / pptNums / PICBlockDimx, PICBlockDimx, 0, 0 >> > (cuGMEC.d_pic1d[i], cuGMEC.d_pic2d[i], cuGMEC.d_BeamPhaseSpaceMapping[i]);
+				}
+			}
+			if (myRank == 0) {
+				std::cout << BOLDGREEN << "Done." << RESET << std::endl;
+				std::cout << std::endl;
+			}
+			for (int i = 0; i < devNums; i++) {
+				cudaSetDevice(localRank * devNums + i);
+				cudaMemcpy(cuGMEC.h_BeamPhaseSpaceMapping[i], cuGMEC.d_BeamPhaseSpaceMapping[i], sizeof(dataType) * gridE * gridPphi * gridLambda * 2 * 13, cudaMemcpyDeviceToHost);
+			}
+			cuGMEC.computePhaseSpaceFrequency<Beam>(BeamPhaseSpaceMapping);
+		}
+
+	}
+
 	if constexpr (std::is_same_v<ifIon, trueType>) {
 		if constexpr (std::is_same_v<ifContinue, trueType>) {
 			std::string file1, file2, file3, file4;
@@ -6007,9 +6169,11 @@ int main(int argc, char* argv[]) {
 			file3 = "../IonKeys_" + std::to_string(myRank) + "_" + std::to_string(continueSteps) + ".bin";
 			file4 = "../IonValues_" + std::to_string(myRank) + "_" + std::to_string(continueSteps) + ".bin";
 			cuGMEC.loadParticles<Ion>(file1, file2, file3, file4);
+			if constexpr (continueSteps == 0)
+				cuGMEC.computeEquilibriumPressure<Ion>();
 		}
 		else {
-			cuGMEC.loadParticles<Ion, IonType>();
+			cuGMEC.loadParticles<Ion, IonType, IonMarker>();
 			cuGMEC.computeEquilibriumPressure<Ion>();
 		}
 	}
@@ -6021,9 +6185,11 @@ int main(int argc, char* argv[]) {
 			file3 = "../AlphaKeys_" + std::to_string(myRank) + "_" + std::to_string(continueSteps) + ".bin";
 			file4 = "../AlphaValues_" + std::to_string(myRank) + "_" + std::to_string(continueSteps) + ".bin";
 			cuGMEC.loadParticles<Alpha>(file1, file2, file3, file4);
+			if constexpr (continueSteps == 0)
+				cuGMEC.computeEquilibriumPressure<Alpha>();
 		}
 		else {
-			cuGMEC.loadParticles<Alpha, AlphaType>();
+			cuGMEC.loadParticles<Alpha, AlphaType, AlphaMarker>();
 			cuGMEC.computeEquilibriumPressure<Alpha>();
 		}
 	}
@@ -6035,9 +6201,11 @@ int main(int argc, char* argv[]) {
 			file3 = "../BeamKeys_" + std::to_string(myRank) + "_" + std::to_string(continueSteps) + ".bin";
 			file4 = "../BeamValues_" + std::to_string(myRank) + "_" + std::to_string(continueSteps) + ".bin";
 			cuGMEC.loadParticles<Beam>(file1, file2, file3, file4);
+			if constexpr (continueSteps == 0)
+				cuGMEC.computeEquilibriumPressure<Beam>();
 		}
 		else {
-			cuGMEC.loadParticles<Beam, BeamType>();
+			cuGMEC.loadParticles<Beam, BeamType, BeamMarker>();
 			cuGMEC.computeEquilibriumPressure<Beam>();
 		}
 	}
@@ -6060,12 +6228,12 @@ int main(int argc, char* argv[]) {
 		if ((access(std::string("./result").c_str(), 0)) == -1)
 			mkdir(std::string("./result").c_str(), S_IRWXU);
 
-	//initializing cuFFT
+	//initializing cuFFT for filtering toroidal mode
 
 	std::vector<cufftHandle> nPlanR2Cs(devNums);
 	std::vector<cufftHandle> nPlanC2Rs(devNums);
-	cufftComplex* nFreqf[devNums];
 	cufftDoubleComplex* nFreqd[devNums];
+	cufftComplex* nFreqf[devNums];
 
 	for (int i = 0; i < devNums; i++) {
 		CUDACHECK(cudaSetDevice(localRank * devNums + i));
@@ -6083,10 +6251,12 @@ int main(int argc, char* argv[]) {
 		CUFFTCHECK(cufftSetStream(nPlanC2Rs[i], 0));
 	}
 
+	//initializing cuFFT for filtering poloidal mode
+
 	std::vector<cufftHandle> mPlanR2Cs(devNums);
 	std::vector<cufftHandle> mPlanC2Rs(devNums);
-	cufftComplex* mFreqf[devNums];
 	cufftDoubleComplex* mFreqd[devNums];
+	cufftComplex* mFreqf[devNums];
 
 	for (int i = 0; i < devNums; i++) {
 		CUDACHECK(cudaSetDevice(localRank * devNums + i));
@@ -6180,8 +6350,6 @@ int main(int argc, char* argv[]) {
 	dataType**& PhiTe_dTe = cuGMEC.d_PhiTe_dTe;
 	dataType**& PhiTeA_dTe = cuGMEC.d_PhiTeA_dTe;
 
-	dataType**& diagnose = cuGMEC.d_diagnose;
-
 	//referencing PIC
 
 	dataType**& pic_APhidNe2A = cuGMEC.dpic_APhidNe2A;
@@ -6235,203 +6403,152 @@ int main(int argc, char* argv[]) {
 			CUDACHECK(cudaMemcpyToSymbol(BeamConst, &cuGMEC.BeamConst, sizeof(dataType)));
 	}
 
-	std::vector<dataType> h_energy((totalSteps / diagSteps + 1));
-	std::vector<dataType> h_frequency((totalSteps / diagSteps + 1) * (diagRightX - diagLeftX + 1));
 	std::vector<dataType> h_amplitude((totalSteps / diagSteps + 1) * (rightN - leftN + 1) * (diagRightX - diagLeftX + 1));
+	std::vector<dataType> h_frequency((totalSteps / diagSteps + 1) * (diagRightX - diagLeftX + 1));
+	std::vector<dataType> h_modeReal((totalSteps / diagSteps + 1) * (rightN - leftN + 1) * (diagRightX - diagLeftX + 1));
+	std::vector<dataType> h_modeImag((totalSteps / diagSteps + 1) * (rightN - leftN + 1) * (diagRightX - diagLeftX + 1));
 	std::vector<dataType> h_Epara((totalSteps / diagSteps + 1) * (diagRightX - diagLeftX + 1));
 	std::vector<dataType> h_EparaES((totalSteps / diagSteps + 1) * (diagRightX - diagLeftX + 1));
 	std::vector<dataType> h_AlphaDensity((totalSteps / diagSteps + 1) * gridNx);
 	std::vector<dataType> h_IonDensity((totalSteps / diagSteps + 1) * gridNx);
 	std::vector<dataType> h_BeamDensity((totalSteps / diagSteps + 1) * gridNx);
-	std::vector<dataType> h_modeReal((totalSteps / diagSteps + 1) * (rightN - leftN + 1) * (diagRightX - diagLeftX + 1));
-	std::vector<dataType> h_modeImag((totalSteps / diagSteps + 1) * (rightN - leftN + 1) * (diagRightX - diagLeftX + 1));
+	std::vector<dataType> h_AlphaDiffusivity((totalSteps / diagSteps + 1) * gridNx);
+	std::vector<dataType> h_IonDiffusivity((totalSteps / diagSteps + 1) * gridNx);
+	std::vector<dataType> h_BeamDiffusivity((totalSteps / diagSteps + 1) * gridNx);
 
-	dataType* d_energy[devNums];
-	dataType* d_frequency[devNums];
 	dataType* d_amplitude[devNums];
+	dataType* d_frequency[devNums];
+	dataType* d_modeReal[devNums];
+	dataType* d_modeImag[devNums];
 	dataType* d_Epara[devNums];
 	dataType* d_EparaES[devNums];
 	dataType* d_AlphaDensity[devNums];
 	dataType* d_IonDensity[devNums];
 	dataType* d_BeamDensity[devNums];
-	dataType* d_modeReal[devNums];
-	dataType* d_modeImag[devNums];
+	dataType* d_AlphaDiffusivity[devNums];
+	dataType* d_IonDiffusivity[devNums];
+	dataType* d_BeamDiffusivity[devNums];
 
 	for (int i = 0; i < devNums; i++) {
 		CUDACHECK(cudaSetDevice(localRank * devNums + i));
-		CUDACHECK(cudaMalloc((void**)&d_energy[i], sizeof(dataType) * h_energy.size()));
-		CUDACHECK(cudaMalloc((void**)&d_frequency[i], sizeof(dataType) * h_frequency.size()));
 		CUDACHECK(cudaMalloc((void**)&d_amplitude[i], sizeof(dataType) * h_amplitude.size()));
+		CUDACHECK(cudaMalloc((void**)&d_frequency[i], sizeof(dataType) * h_frequency.size()));
+		CUDACHECK(cudaMalloc((void**)&d_modeReal[i], sizeof(dataType) * h_modeReal.size()));
+		CUDACHECK(cudaMalloc((void**)&d_modeImag[i], sizeof(dataType) * h_modeImag.size()));
 		CUDACHECK(cudaMalloc((void**)&d_Epara[i], sizeof(dataType) * h_Epara.size()));
 		CUDACHECK(cudaMalloc((void**)&d_EparaES[i], sizeof(dataType) * h_EparaES.size()));
 		CUDACHECK(cudaMalloc((void**)&d_AlphaDensity[i], sizeof(dataType) * h_AlphaDensity.size()));
 		CUDACHECK(cudaMalloc((void**)&d_IonDensity[i], sizeof(dataType) * h_IonDensity.size()));
 		CUDACHECK(cudaMalloc((void**)&d_BeamDensity[i], sizeof(dataType) * h_BeamDensity.size()));
-		CUDACHECK(cudaMalloc((void**)&d_modeReal[i], sizeof(dataType) * h_modeReal.size()));
-		CUDACHECK(cudaMalloc((void**)&d_modeImag[i], sizeof(dataType) * h_modeImag.size()));
-		CUDACHECK(cudaMemcpy(d_energy[i], h_energy.data(), sizeof(dataType) * h_energy.size(), cudaMemcpyHostToDevice));
-		CUDACHECK(cudaMemcpy(d_frequency[i], h_frequency.data(), sizeof(dataType) * h_frequency.size(), cudaMemcpyHostToDevice));
+		CUDACHECK(cudaMalloc((void**)&d_AlphaDiffusivity[i], sizeof(dataType) * h_AlphaDiffusivity.size()));
+		CUDACHECK(cudaMalloc((void**)&d_IonDiffusivity[i], sizeof(dataType) * h_IonDiffusivity.size()));
+		CUDACHECK(cudaMalloc((void**)&d_BeamDiffusivity[i], sizeof(dataType) * h_BeamDiffusivity.size()));
 		CUDACHECK(cudaMemcpy(d_amplitude[i], h_amplitude.data(), sizeof(dataType) * h_amplitude.size(), cudaMemcpyHostToDevice));
+		CUDACHECK(cudaMemcpy(d_frequency[i], h_frequency.data(), sizeof(dataType) * h_frequency.size(), cudaMemcpyHostToDevice));
+		CUDACHECK(cudaMemcpy(d_modeReal[i], h_modeReal.data(), sizeof(dataType) * h_modeReal.size(), cudaMemcpyHostToDevice));
+		CUDACHECK(cudaMemcpy(d_modeImag[i], h_modeImag.data(), sizeof(dataType) * h_modeImag.size(), cudaMemcpyHostToDevice));
 		CUDACHECK(cudaMemcpy(d_Epara[i], h_Epara.data(), sizeof(dataType) * h_Epara.size(), cudaMemcpyHostToDevice));
 		CUDACHECK(cudaMemcpy(d_EparaES[i], h_EparaES.data(), sizeof(dataType) * h_EparaES.size(), cudaMemcpyHostToDevice));
 		CUDACHECK(cudaMemcpy(d_AlphaDensity[i], h_AlphaDensity.data(), sizeof(dataType) * h_AlphaDensity.size(), cudaMemcpyHostToDevice));
 		CUDACHECK(cudaMemcpy(d_IonDensity[i], h_IonDensity.data(), sizeof(dataType) * h_IonDensity.size(), cudaMemcpyHostToDevice));
 		CUDACHECK(cudaMemcpy(d_BeamDensity[i], h_BeamDensity.data(), sizeof(dataType) * h_BeamDensity.size(), cudaMemcpyHostToDevice));
+		CUDACHECK(cudaMemcpy(d_AlphaDiffusivity[i], h_AlphaDiffusivity.data(), sizeof(dataType) * h_AlphaDiffusivity.size(), cudaMemcpyHostToDevice));
+		CUDACHECK(cudaMemcpy(d_IonDiffusivity[i], h_IonDiffusivity.data(), sizeof(dataType) * h_IonDiffusivity.size(), cudaMemcpyHostToDevice));
+		CUDACHECK(cudaMemcpy(d_BeamDiffusivity[i], h_BeamDiffusivity.data(), sizeof(dataType) * h_BeamDiffusivity.size(), cudaMemcpyHostToDevice));
 	}
 
-	std::vector<dataType> h_totalw((size_t)(totalSteps / outputSteps + 1) * (rightN - leftN + 1) * gridNy * gridNxz);
-	std::vector<dataType> h_totalA((size_t)(totalSteps / outputSteps + 1) * (rightN - leftN + 1) * gridNy * gridNxz);
-	std::vector<dataType> h_totaldNe((size_t)(totalSteps / outputSteps + 1) * (rightN - leftN + 1) * gridNy * gridNxz);
-	std::vector<dataType> h_totaldTe((size_t)(totalSteps / outputSteps + 1) * (rightN - leftN + 1) * gridNy * gridNxz);
-	std::vector<dataType> h_totalPhi((size_t)(totalSteps / outputSteps + 1) * (rightN - leftN + 1) * gridNy * gridNxz);
-	std::vector<dataType> h_totaldPi((size_t)(totalSteps / outputSteps + 1) * (rightN - leftN + 1) * gridNy * gridNxz);
-	std::vector<dataType> h_totaldPa((size_t)(totalSteps / outputSteps + 1) * (rightN - leftN + 1) * gridNy * gridNxz);
-	std::vector<dataType> h_totaldPb((size_t)(totalSteps / outputSteps + 1) * (rightN - leftN + 1) * gridNy * gridNxz);
-	dataType* d_eachw[devNums];
-	dataType* d_eachA[devNums];
-	dataType* d_eachdNe[devNums];
-	dataType* d_eachdTe[devNums];
-	dataType* d_eachPhi[devNums];
-	dataType* d_eachdPi[devNums];
-	dataType* d_eachdPa[devNums];
-	dataType* d_eachdPb[devNums];
-	dataType* d_totalw[devNums];
+	std::vector<dataType> h_totalPhi((size_t)(totalSteps / outputSteps + 1) * gridNy * gridNxz);
+	std::vector<dataType> h_totalA((size_t)(totalSteps / outputSteps + 1) * gridNy * gridNxz);
+	std::vector<dataType> h_totaldNe((size_t)(totalSteps / outputSteps + 1) * gridNy * gridNxz);
+	std::vector<dataType> h_totaldTe((size_t)(totalSteps / outputSteps + 1) * gridNy * gridNxz);
+	std::vector<dataType> h_totaldPi((size_t)(totalSteps / outputSteps + 1) * gridNy * gridNxz);
+	std::vector<dataType> h_totaldPa((size_t)(totalSteps / outputSteps + 1) * gridNy * gridNxz);
+	std::vector<dataType> h_totaldPb((size_t)(totalSteps / outputSteps + 1) * gridNy * gridNxz);
+	dataType* d_totalPhi[devNums];
 	dataType* d_totalA[devNums];
 	dataType* d_totaldNe[devNums];
 	dataType* d_totaldTe[devNums];
-	dataType* d_totalPhi[devNums];
 	dataType* d_totaldPi[devNums];
 	dataType* d_totaldPa[devNums];
 	dataType* d_totaldPb[devNums];
 
 	for (int i = 0; i < devNums; i++) {
 		CUDACHECK(cudaSetDevice(localRank * devNums + i));
-		if constexpr (std::is_same_v<ifOutputw, trueType>) {
-			CUDACHECK(cudaMalloc((void**)&d_eachw[i], sizeof(dataType) * (devNy + 2 * gridGhost) * gridNxz));
-			CUDACHECK(cudaMemsetAsync(d_eachw[i], 0, sizeof(dataType) * (devNy + 2 * gridGhost) * gridNxz, 0));
-			CUDACHECK(cudaMalloc((void**)&d_totalw[i], sizeof(dataType) * h_totalw.size()));
-			CUDACHECK(cudaMemsetAsync(d_totalw[i], 0, sizeof(dataType) * h_totalw.size(), 0));
+		if constexpr (std::is_same_v<ifOutputPhi, trueType>) {
+			CUDACHECK(cudaMalloc((void**)&d_totalPhi[i], sizeof(dataType) * h_totalPhi.size()));
+			CUDACHECK(cudaMemsetAsync(d_totalPhi[i], 0, sizeof(dataType) * h_totalPhi.size(), 0));
 		}
 		if constexpr (std::is_same_v<ifOutputA, trueType>) {
-			CUDACHECK(cudaMalloc((void**)&d_eachA[i], sizeof(dataType) * (devNy + 2 * gridGhost) * gridNxz));
-			CUDACHECK(cudaMemsetAsync(d_eachA[i], 0, sizeof(dataType) * (devNy + 2 * gridGhost) * gridNxz, 0));
 			CUDACHECK(cudaMalloc((void**)&d_totalA[i], sizeof(dataType) * h_totalA.size()));
 			CUDACHECK(cudaMemsetAsync(d_totalA[i], 0, sizeof(dataType) * h_totalA.size(), 0));
 		}
 		if constexpr (std::is_same_v<ifOutputdNe, trueType>) {
-			CUDACHECK(cudaMalloc((void**)&d_eachdNe[i], sizeof(dataType) * (devNy + 2 * gridGhost) * gridNxz));
-			CUDACHECK(cudaMemsetAsync(d_eachdNe[i], 0, sizeof(dataType) * (devNy + 2 * gridGhost) * gridNxz, 0));
 			CUDACHECK(cudaMalloc((void**)&d_totaldNe[i], sizeof(dataType) * h_totaldNe.size()));
 			CUDACHECK(cudaMemsetAsync(d_totaldNe[i], 0, sizeof(dataType) * h_totaldNe.size(), 0));
 		}
 		if constexpr (std::is_same_v<ifOutputdTe, trueType>) {
-			CUDACHECK(cudaMalloc((void**)&d_eachdTe[i], sizeof(dataType) * (devNy + 2 * gridGhost) * gridNxz));
-			CUDACHECK(cudaMemsetAsync(d_eachdTe[i], 0, sizeof(dataType) * (devNy + 2 * gridGhost) * gridNxz, 0));
 			CUDACHECK(cudaMalloc((void**)&d_totaldTe[i], sizeof(dataType) * h_totaldTe.size()));
 			CUDACHECK(cudaMemsetAsync(d_totaldTe[i], 0, sizeof(dataType) * h_totaldTe.size(), 0));
 		}
-		if constexpr (std::is_same_v<ifOutputPhi, trueType>) {
-			CUDACHECK(cudaMalloc((void**)&d_eachPhi[i], sizeof(dataType) * (devNy + 2 * gridGhost) * gridNxz));
-			CUDACHECK(cudaMemsetAsync(d_eachPhi[i], 0, sizeof(dataType) * (devNy + 2 * gridGhost) * gridNxz, 0));
-			CUDACHECK(cudaMalloc((void**)&d_totalPhi[i], sizeof(dataType) * h_totalPhi.size()));
-			CUDACHECK(cudaMemsetAsync(d_totalPhi[i], 0, sizeof(dataType) * h_totalPhi.size(), 0));
-		}
 		if constexpr (std::is_same_v<ifOutputdPi, trueType>) {
-			CUDACHECK(cudaMalloc((void**)&d_eachdPi[i], sizeof(dataType) * (devNy + 2 * gridGhost) * gridNxz));
-			CUDACHECK(cudaMemsetAsync(d_eachdPi[i], 0, sizeof(dataType) * (devNy + 2 * gridGhost) * gridNxz, 0));
 			CUDACHECK(cudaMalloc((void**)&d_totaldPi[i], sizeof(dataType) * h_totaldPi.size()));
 			CUDACHECK(cudaMemsetAsync(d_totaldPi[i], 0, sizeof(dataType) * h_totaldPi.size(), 0));
 		}
 		if constexpr (std::is_same_v<ifOutputdPa, trueType>) {
-			CUDACHECK(cudaMalloc((void**)&d_eachdPa[i], sizeof(dataType) * (devNy + 2 * gridGhost) * gridNxz));
-			CUDACHECK(cudaMemsetAsync(d_eachdPa[i], 0, sizeof(dataType) * (devNy + 2 * gridGhost) * gridNxz, 0));
 			CUDACHECK(cudaMalloc((void**)&d_totaldPa[i], sizeof(dataType) * h_totaldPa.size()));
 			CUDACHECK(cudaMemsetAsync(d_totaldPa[i], 0, sizeof(dataType) * h_totaldPa.size(), 0));
 		}
 		if constexpr (std::is_same_v<ifOutputdPb, trueType>) {
-			CUDACHECK(cudaMalloc((void**)&d_eachdPb[i], sizeof(dataType) * (devNy + 2 * gridGhost) * gridNxz));
-			CUDACHECK(cudaMemsetAsync(d_eachdPb[i], 0, sizeof(dataType) * (devNy + 2 * gridGhost) * gridNxz, 0));
 			CUDACHECK(cudaMalloc((void**)&d_totaldPb[i], sizeof(dataType) * h_totaldPb.size()));
 			CUDACHECK(cudaMemsetAsync(d_totaldPb[i], 0, sizeof(dataType) * h_totaldPb.size(), 0));
 		}
 	}
 
-	dataType* Phi_zonal[devNums];
-	dataType* A_zonal[devNums];
-	dataType* dNe_zonal[devNums];
-	dataType* dTe_zonal[devNums];
-	dataType* dPi_zonal[devNums];
-	dataType* dPa_zonal[devNums];
-	dataType* dPb_zonal[devNums];
+	dataType* Phi_yxz[devNums];
+	dataType* Phi_xzy[devNums];
+	dataType* A_yxz[devNums];
+	dataType* A_xzy[devNums];
+	dataType* dNe_yxz[devNums];
+	dataType* dNe_xzy[devNums];
+	dataType* dTe_yxz[devNums];
+	dataType* dTe_xzy[devNums];
+	dataType* dPi_yxz[devNums];
+	dataType* dPi_xzy[devNums];
+	dataType* dPa_yxz[devNums];
+	dataType* dPa_xzy[devNums];
+	dataType* dPb_yxz[devNums];
+	dataType* dPb_xzy[devNums];
 
 	for (int i = 0; i < devNums; i++) {
 		CUDACHECK(cudaSetDevice(localRank * devNums + i));
-		CUDACHECK(cudaMalloc((void**)&Phi_zonal[i], sizeof(dataType) * devNy * gridNx));
-		CUDACHECK(cudaMemsetAsync(Phi_zonal[i], 0, sizeof(dataType) * devNy * gridNx, 0));
-		CUDACHECK(cudaMalloc((void**)&A_zonal[i], sizeof(dataType) * devNy * gridNx));
-		CUDACHECK(cudaMemsetAsync(A_zonal[i], 0, sizeof(dataType) * devNy * gridNx, 0));
-		CUDACHECK(cudaMalloc((void**)&dNe_zonal[i], sizeof(dataType) * devNy * gridNx));
-		CUDACHECK(cudaMemsetAsync(dNe_zonal[i], 0, sizeof(dataType) * devNy * gridNx, 0));
-		CUDACHECK(cudaMalloc((void**)&dTe_zonal[i], sizeof(dataType) * devNy * gridNx));
-		CUDACHECK(cudaMemsetAsync(dTe_zonal[i], 0, sizeof(dataType) * devNy * gridNx, 0));
-		CUDACHECK(cudaMalloc((void**)&dPi_zonal[i], sizeof(dataType) * devNy * gridNx));
-		CUDACHECK(cudaMemsetAsync(dPi_zonal[i], 0, sizeof(dataType) * devNy * gridNx, 0));
-		CUDACHECK(cudaMalloc((void**)&dPa_zonal[i], sizeof(dataType) * devNy * gridNx));
-		CUDACHECK(cudaMemsetAsync(dPa_zonal[i], 0, sizeof(dataType) * devNy * gridNx, 0));
-		CUDACHECK(cudaMalloc((void**)&dPb_zonal[i], sizeof(dataType) * devNy * gridNx));
-		CUDACHECK(cudaMemsetAsync(dPb_zonal[i], 0, sizeof(dataType) * devNy * gridNx, 0));
-	}
-
-	dataType* Phi_zonalxy[devNums];
-	dataType* A_zonalxy[devNums];
-	dataType* dNe_zonalxy[devNums];
-	dataType* dTe_zonalxy[devNums];
-	dataType* dPi_zonalxy[devNums];
-	dataType* dPa_zonalxy[devNums];
-	dataType* dPb_zonalxy[devNums];
-
-	for (int i = 0; i < devNums; i++) {
-		CUDACHECK(cudaSetDevice(localRank * devNums + i));
-		CUDACHECK(cudaMalloc((void**)&Phi_zonalxy[i], sizeof(dataType) * gridNx * gridNy));
-		CUDACHECK(cudaMemsetAsync(Phi_zonalxy[i], 0, sizeof(dataType) * gridNx * gridNy, 0));
-		CUDACHECK(cudaMalloc((void**)&A_zonalxy[i], sizeof(dataType) * gridNx * gridNy));
-		CUDACHECK(cudaMemsetAsync(A_zonalxy[i], 0, sizeof(dataType) * gridNx * gridNy, 0));
-		CUDACHECK(cudaMalloc((void**)&dNe_zonalxy[i], sizeof(dataType) * gridNx * gridNy));
-		CUDACHECK(cudaMemsetAsync(dNe_zonalxy[i], 0, sizeof(dataType) * gridNx * gridNy, 0));
-		CUDACHECK(cudaMalloc((void**)&dTe_zonalxy[i], sizeof(dataType) * gridNx * gridNy));
-		CUDACHECK(cudaMemsetAsync(dTe_zonalxy[i], 0, sizeof(dataType) * gridNx * gridNy, 0));
-		CUDACHECK(cudaMalloc((void**)&dPi_zonalxy[i], sizeof(dataType) * gridNx * gridNy));
-		CUDACHECK(cudaMemsetAsync(dPi_zonalxy[i], 0, sizeof(dataType) * gridNx * gridNy, 0));
-		CUDACHECK(cudaMalloc((void**)&dPa_zonalxy[i], sizeof(dataType) * gridNx * gridNy));
-		CUDACHECK(cudaMemsetAsync(dPa_zonalxy[i], 0, sizeof(dataType) * gridNx * gridNy, 0));
-		CUDACHECK(cudaMalloc((void**)&dPb_zonalxy[i], sizeof(dataType) * gridNx * gridNy));
-		CUDACHECK(cudaMemsetAsync(dPb_zonalxy[i], 0, sizeof(dataType) * gridNx * gridNy, 0));
-	}
-
-	dataType* Phi_zonalyx[devNums];
-	dataType* A_zonalyx[devNums];
-	dataType* dNe_zonalyx[devNums];
-	dataType* dTe_zonalyx[devNums];
-	dataType* dPi_zonalyx[devNums];
-	dataType* dPa_zonalyx[devNums];
-	dataType* dPb_zonalyx[devNums];
-
-	for (int i = 0; i < devNums; i++) {
-		CUDACHECK(cudaSetDevice(localRank * devNums + i));
-		CUDACHECK(cudaMalloc((void**)&Phi_zonalyx[i], sizeof(dataType) * gridNy * gridNx));
-		CUDACHECK(cudaMemsetAsync(Phi_zonalyx[i], 0, sizeof(dataType) * gridNy * gridNx, 0));
-		CUDACHECK(cudaMalloc((void**)&A_zonalyx[i], sizeof(dataType) * gridNy * gridNx));
-		CUDACHECK(cudaMemsetAsync(A_zonalyx[i], 0, sizeof(dataType) * gridNy * gridNx, 0));
-		CUDACHECK(cudaMalloc((void**)&dNe_zonalyx[i], sizeof(dataType) * gridNy * gridNx));
-		CUDACHECK(cudaMemsetAsync(dNe_zonalyx[i], 0, sizeof(dataType) * gridNy * gridNx, 0));
-		CUDACHECK(cudaMalloc((void**)&dTe_zonalyx[i], sizeof(dataType) * gridNy * gridNx));
-		CUDACHECK(cudaMemsetAsync(dTe_zonalyx[i], 0, sizeof(dataType) * gridNy * gridNx, 0));
-		CUDACHECK(cudaMalloc((void**)&dPi_zonalyx[i], sizeof(dataType) * gridNy * gridNx));
-		CUDACHECK(cudaMemsetAsync(dPi_zonalyx[i], 0, sizeof(dataType) * gridNy * gridNx, 0));
-		CUDACHECK(cudaMalloc((void**)&dPa_zonalyx[i], sizeof(dataType) * gridNy * gridNx));
-		CUDACHECK(cudaMemsetAsync(dPa_zonalyx[i], 0, sizeof(dataType) * gridNy * gridNx, 0));
-		CUDACHECK(cudaMalloc((void**)&dPb_zonalyx[i], sizeof(dataType) * gridNy * gridNx));
-		CUDACHECK(cudaMemsetAsync(dPb_zonalyx[i], 0, sizeof(dataType) * gridNy * gridNx, 0));
+		CUDACHECK(cudaMalloc((void**)&Phi_yxz[i], sizeof(dataType) * gridNy * gridNxz));
+		CUDACHECK(cudaMemsetAsync(Phi_yxz[i], 0, sizeof(dataType) * gridNy * gridNxz, 0));
+		CUDACHECK(cudaMalloc((void**)&Phi_xzy[i], sizeof(dataType) * gridNy * gridNxz));
+		CUDACHECK(cudaMemsetAsync(Phi_xzy[i], 0, sizeof(dataType) * gridNy * gridNxz, 0));
+		CUDACHECK(cudaMalloc((void**)&A_yxz[i], sizeof(dataType) * gridNy * gridNxz));
+		CUDACHECK(cudaMemsetAsync(A_yxz[i], 0, sizeof(dataType) * gridNy * gridNxz, 0));
+		CUDACHECK(cudaMalloc((void**)&A_xzy[i], sizeof(dataType) * gridNy * gridNxz));
+		CUDACHECK(cudaMemsetAsync(A_xzy[i], 0, sizeof(dataType) * gridNy * gridNxz, 0));
+		CUDACHECK(cudaMalloc((void**)&dNe_yxz[i], sizeof(dataType) * gridNy * gridNxz));
+		CUDACHECK(cudaMemsetAsync(dNe_yxz[i], 0, sizeof(dataType) * gridNy * gridNxz, 0));
+		CUDACHECK(cudaMalloc((void**)&dNe_xzy[i], sizeof(dataType) * gridNy * gridNxz));
+		CUDACHECK(cudaMemsetAsync(dNe_xzy[i], 0, sizeof(dataType) * gridNy * gridNxz, 0));
+		CUDACHECK(cudaMalloc((void**)&dTe_yxz[i], sizeof(dataType) * gridNy * gridNxz));
+		CUDACHECK(cudaMemsetAsync(dTe_yxz[i], 0, sizeof(dataType) * gridNy * gridNxz, 0));
+		CUDACHECK(cudaMalloc((void**)&dTe_xzy[i], sizeof(dataType) * gridNy * gridNxz));
+		CUDACHECK(cudaMemsetAsync(dTe_xzy[i], 0, sizeof(dataType) * gridNy * gridNxz, 0));
+		CUDACHECK(cudaMalloc((void**)&dPi_yxz[i], sizeof(dataType) * gridNy * gridNxz));
+		CUDACHECK(cudaMemsetAsync(dPi_yxz[i], 0, sizeof(dataType) * gridNy * gridNxz, 0));
+		CUDACHECK(cudaMalloc((void**)&dPi_xzy[i], sizeof(dataType) * gridNy * gridNxz));
+		CUDACHECK(cudaMemsetAsync(dPi_xzy[i], 0, sizeof(dataType) * gridNy * gridNxz, 0));
+		CUDACHECK(cudaMalloc((void**)&dPa_yxz[i], sizeof(dataType) * gridNy * gridNxz));
+		CUDACHECK(cudaMemsetAsync(dPa_yxz[i], 0, sizeof(dataType) * gridNy * gridNxz, 0));
+		CUDACHECK(cudaMalloc((void**)&dPa_xzy[i], sizeof(dataType) * gridNy * gridNxz));
+		CUDACHECK(cudaMemsetAsync(dPa_xzy[i], 0, sizeof(dataType) * gridNy * gridNxz, 0));
+		CUDACHECK(cudaMalloc((void**)&dPb_yxz[i], sizeof(dataType) * gridNy * gridNxz));
+		CUDACHECK(cudaMemsetAsync(dPb_yxz[i], 0, sizeof(dataType) * gridNy * gridNxz, 0));
+		CUDACHECK(cudaMalloc((void**)&dPb_xzy[i], sizeof(dataType) * gridNy * gridNxz));
+		CUDACHECK(cudaMemsetAsync(dPb_xzy[i], 0, sizeof(dataType) * gridNy * gridNxz, 0));
 	}
 
 	void* Ion_storage[devNums] = {};
@@ -6440,6 +6557,9 @@ int main(int argc, char* argv[]) {
 	size_t  Alpha_storage_bytes[devNums];
 	void* Beam_storage[devNums] = {};
 	size_t  Beam_storage_bytes[devNums];
+
+	if (myRank == 0)
+		std::cout << BOLDYELLOW << "Start: Allocate memory for sorting particles." << RESET << std::endl;
 
 	if constexpr (std::is_same_v<ifIon, trueType>) {
 		for (int i = 0; i < devNums; i++) {
@@ -6464,6 +6584,16 @@ int main(int argc, char* argv[]) {
 			CUDACHECK(cudaMalloc(&Beam_storage[i], Beam_storage_bytes[i]));
 			cub::DeviceSegmentedRadixSort::SortPairs(Beam_storage[i], Beam_storage_bytes[i], Beam_keys_out[i], Beam_keys_in[i], Beam_values_out[i], Beam_values_in[i], picDev * 7, 7, Beam_offsets[i], Beam_offsets[i] + 1);
 		}
+	}
+
+	if (myRank == 0) {
+		size_t avail, total, used;
+		cudaSetDevice(localRank * devNums);
+		cudaMemGetInfo(&avail, &total);
+		used = total - avail;
+		std::cout << BOLDYELLOW << "Device memory used: " << (double)used / 1024 / 1024 / 1024 << " GB." << RESET << std::endl;
+		std::cout << BOLDGREEN << "Done." << RESET << std::endl;
+		std::cout << std::endl;
 	}
 
 	std::vector<std::vector<cudssHandle_t>>& cudssHandles = cuGMEC.cudssHandles;
@@ -6516,22 +6646,29 @@ int main(int argc, char* argv[]) {
 	std::vector<std::vector<cudssMatrix_t>>& dPbXs = cuGMEC.dPbXs;
 	std::vector<std::vector<cudssMatrix_t>>& dPbBs = cuGMEC.dPbBs;
 
-	//for (int i = 0; i < devNums; i++) {
-	//	cudaSetDevice(localRank * devNums + i);
-	//	MHD2w<ifLocal> << <MRK4GridSize, MRK4BlockSize, 0, 0 >> > (Phi_midl[i], w_midl[i], Phi2w[i]);
-	//	MHD2dJpBdPePhi<ifNonlinear, ifLocal, ifFLRMHD> << <MRK4GridSize, MRK4BlockSize, 0, 0 >> > (
-	//		A_midl[i], dJpB_midl[i], A2dJpB[i], w_midl[i], Phi_midl[i], w2Phi[i], dNe_midl[i], dTe_midl[i], dPe_midl[i], Ne0[i], Te0[i]);
-	//	cudaMemcpyAsync(w_beg[i], w_midl[i], sizeof(dataType) * (devNy + 2 * gridGhost) * gridNxz, cudaMemcpyDeviceToDevice, 0);
-	//}
+	if constexpr (std::is_same_v<ifContinue, trueType> && continueSteps != 0) {
 
-	for (int i = 0; i < devNums; i++) {
-		cudaSetDevice(localRank * devNums + i);
-		for (int j = 0; j < devNy; j++) {
-			cudssMatrixSetValues(laplacianBs[i][j], w_midl[i] + (j + gridGhost) * gridNxz);
-			cudssExecute(cudssHandles[i][j], CUDSS_PHASE_SOLVE, laplacianConfigs[i][j], laplacianDatas[i][j], laplacianAs[i][j], laplacianXs[i][j], laplacianBs[i][j]);
+		for (int i = 0; i < devNums; i++) {
+			cudaSetDevice(localRank * devNums + i);
+			for (int j = 0; j < devNy; j++) {
+				cudssMatrixSetValues(laplacianBs[i][j], w_midl[i] + (j + gridGhost) * gridNxz);
+				cudssExecute(cudssHandles[i][j], CUDSS_PHASE_SOLVE, laplacianConfigs[i][j], laplacianDatas[i][j], laplacianAs[i][j], laplacianXs[i][j], laplacianBs[i][j]);
+			}
+			MHD2dJpBdPePhi<ifNonlinear, ifLocal, ifFLRMHD> << <MRK4GridSize, MRK4BlockSize, 0, 0 >> > (
+				A_midl[i], dJpB_midl[i], A2dJpB[i], w_midl[i], Phi_midl[i], w2Phi[i], dNe_midl[i], dTe_midl[i], dPe_midl[i], Ne0[i], Te0[i]);
 		}
-		MHD2dJpBdPePhi<ifNonlinear, ifLocal, ifFLRMHD> << <MRK4GridSize, MRK4BlockSize, 0, 0 >> > (
-			A_midl[i], dJpB_midl[i], A2dJpB[i], w_midl[i], Phi_midl[i], w2Phi[i], dNe_midl[i], dTe_midl[i], dPe_midl[i], Ne0[i], Te0[i]);
+
+	}
+	else {
+
+		for (int i = 0; i < devNums; i++) {
+			cudaSetDevice(localRank * devNums + i);
+			MHD2w<ifLocal> << <MRK4GridSize, MRK4BlockSize, 0, 0 >> > (Phi_midl[i], w_midl[i], Phi2w[i]);
+			MHD2dJpBdPePhi<ifNonlinear, ifLocal, ifFLRMHD> << <MRK4GridSize, MRK4BlockSize, 0, 0 >> > (
+				A_midl[i], dJpB_midl[i], A2dJpB[i], w_midl[i], Phi_midl[i], w2Phi[i], dNe_midl[i], dTe_midl[i], dPe_midl[i], Ne0[i], Te0[i]);
+			cudaMemcpyAsync(w_beg[i], w_midl[i], sizeof(dataType) * (devNy + 2 * gridGhost) * gridNxz, cudaMemcpyDeviceToDevice, 0);
+		}
+
 	}
 
 	ncclGroupStart();
@@ -6619,12 +6756,100 @@ int main(int argc, char* argv[]) {
 		cudaEventRecord(start[i]);
 	}
 
+	if (diagIndex % diagSteps == 0) {
+
+		if constexpr (std::is_same_v<ifDiagAmplitude, trueType>) {
+			for (int i = 0; i < devNums; i++) {
+				cudaSetDevice(localRank * devNums + i);
+				if constexpr (std::is_same_v<dataType, double>) {
+					cufftExecD2Z(nPlanR2Cs[i], (double*)Phi_midl[i] + gridGhost * gridNxz, nFreqd[i]);
+					MHDDiagAmplitude << <1, diagRightX - diagLeftX + 1, 0, 0 >> > (nFreqd[i],
+						d_amplitude[i] + diagIndex / diagSteps * (rightN - leftN + 1) * (diagRightX - diagLeftX + 1),
+						d_modeReal[i] + diagIndex / diagSteps * (rightN - leftN + 1) * (diagRightX - diagLeftX + 1),
+						d_modeImag[i] + diagIndex / diagSteps * (rightN - leftN + 1) * (diagRightX - diagLeftX + 1));
+				}
+				else {
+					cufftExecR2C(nPlanR2Cs[i], (float*)Phi_midl[i] + gridGhost * gridNxz, nFreqf[i]);
+					MHDDiagAmplitude << <1, diagRightX - diagLeftX + 1, 0, 0 >> > (nFreqf[i],
+						d_amplitude[i] + diagIndex / diagSteps * (rightN - leftN + 1) * (diagRightX - diagLeftX + 1),
+						d_modeReal[i] + diagIndex / diagSteps * (rightN - leftN + 1) * (diagRightX - diagLeftX + 1),
+						d_modeImag[i] + diagIndex / diagSteps * (rightN - leftN + 1) * (diagRightX - diagLeftX + 1));
+				}
+			}
+		}
+
+		if constexpr (std::is_same_v<ifDiagFrequency, trueType>) {
+			for (int i = 0; i < devNums; i++) {
+				cudaSetDevice(localRank * devNums + i);
+				MHDDiagFrequency << <1, diagRightX - diagLeftX + 1, 0, 0 >> > (Phi_midl[i], d_frequency[i] + diagIndex / diagSteps * (diagRightX - diagLeftX + 1));
+			}
+		}
+
+		if constexpr (std::is_same_v<ifDiagEparallel, trueType>) {
+			for (int i = 0; i < devNums; i++) {
+				cudaSetDevice(localRank * devNums + i);
+				MHDDiagEparallel<ifNonlinear, ifStaggered, ifEparallel> << <8, (diagRightX - diagLeftX + 1) / 8, 0, 0 >> > (qtheta[i],
+					A_midl[i], dNe_midl[i], dTe_midl[i], Phi_midl[i], Ne0[i], Te0[i], Ne0_px[i], APhidNe2A[i], PhiA_A[i], NeA_A[i],
+					d_Epara[i] + diagIndex / diagSteps * (diagRightX - diagLeftX + 1), d_EparaES[i] + diagIndex / diagSteps * (diagRightX - diagLeftX + 1));
+			}
+		}
+
+		if constexpr (std::is_same_v<ifDiagDensity, trueType>) {
+
+			for (int i = 0; i < devNums; i++) {
+				cudaSetDevice(localRank * devNums + i);
+				if constexpr (std::is_same_v<ifIon, trueType>)
+					PICDiagDensity<Ion> << <PICGridSize, PICBlockSize, 0, 0 >> > (pic2d[i], Ion_keys_in[i], Ion_values_in[i], d_IonDensity[i] + diagIndex / diagSteps * gridNx);
+				if constexpr (std::is_same_v<ifAlpha, trueType>)
+					PICDiagDensity<Alpha> << <PICGridSize, PICBlockSize, 0, 0 >> > (pic2d[i], Alpha_keys_in[i], Alpha_values_in[i], d_AlphaDensity[i] + diagIndex / diagSteps * gridNx);
+				if constexpr (std::is_same_v<ifBeam, trueType>)
+					PICDiagDensity<Beam> << <PICGridSize, PICBlockSize, 0, 0 >> > (pic2d[i], Beam_keys_in[i], Beam_values_in[i], d_BeamDensity[i] + diagIndex / diagSteps * gridNx);
+			}
+
+		}
+
+	}
+
+	if (outputIndex % outputSteps == 0) {
+
+		ncclGroupStart();
+		for (int i = 0; i < devNums; i++) {
+			if constexpr (std::is_same_v<ifOutputPhi, trueType>)
+				ncclAllGather(Phi_midl[i] + gridGhost * gridNxz, d_totalPhi[i] + (size_t)outputIndex / outputSteps * gridNy * gridNxz, devNy * gridNxz, ncclType, comms[i], 0);
+			if constexpr (std::is_same_v<ifOutputA, trueType>)
+				ncclAllGather(A_midl[i] + gridGhost * gridNxz, d_totalA[i] + (size_t)outputIndex / outputSteps * gridNy * gridNxz, devNy * gridNxz, ncclType, comms[i], 0);
+			if constexpr (std::is_same_v<ifOutputdNe, trueType>)
+				ncclAllGather(dNe_midl[i] + gridGhost * gridNxz, d_totaldNe[i] + (size_t)outputIndex / outputSteps * gridNy * gridNxz, devNy * gridNxz, ncclType, comms[i], 0);
+			if constexpr (std::is_same_v<ifOutputdTe, trueType>)
+				ncclAllGather(dTe_midl[i] + gridGhost * gridNxz, d_totaldTe[i] + (size_t)outputIndex / outputSteps * gridNy * gridNxz, devNy * gridNxz, ncclType, comms[i], 0);
+			if constexpr (std::is_same_v<ifOutputdPi, trueType>)
+				ncclAllGather(dPi_midl[i] + gridGhost * gridNxz, d_totaldPi[i] + (size_t)outputIndex / outputSteps * gridNy * gridNxz, devNy * gridNxz, ncclType, comms[i], 0);
+			if constexpr (std::is_same_v<ifOutputdPa, trueType>)
+				ncclAllGather(dPa_midl[i] + gridGhost * gridNxz, d_totaldPa[i] + (size_t)outputIndex / outputSteps * gridNy * gridNxz, devNy * gridNxz, ncclType, comms[i], 0);
+			if constexpr (std::is_same_v<ifOutputdPb, trueType>)
+				ncclAllGather(dPb_midl[i] + gridGhost * gridNxz, d_totaldPb[i] + (size_t)outputIndex / outputSteps * gridNy * gridNxz, devNy * gridNxz, ncclType, comms[i], 0);
+		}
+		ncclGroupEnd();
+
+	}
+
 	for (int outerLoop = 0; outerLoop < outerLoopMax; outerLoop++) {
 
-		if (outerLoop % (outerLoopMax / 10) == 0) {
+		if constexpr (outerLoopMax / 10 != 0) {
+
+			if (outerLoop % (outerLoopMax / 10) == 0) {
+				if (myRank == 0) {
+					std::cout << BOLDGREEN << 100 * outerLoop / outerLoopMax << "%" << RESET << std::endl;
+				}
+			}
+
+		}
+		else {
+
 			if (myRank == 0) {
 				std::cout << BOLDGREEN << 100 * outerLoop / outerLoopMax << "%" << RESET << std::endl;
 			}
+
 		}
 
 		for (int innerLoop = 0; innerLoop < innerLoopMax; innerLoop++) {
@@ -6832,48 +7057,21 @@ int main(int argc, char* argv[]) {
 							Phi_midl[i], dJpB_midl[i], dPe_midl[i], Ne0[i], Te0[i], Ne0_px[i], Te0_px[i],
 							APhidNe2A[i], wPhi_w[i], AdJpB_w[i], PhiA_A[i], NeA_A[i], dNePhi_dNe[i], PhiTe_dTe[i], PhiTeA_dTe[i]);
 					}
-				}
-
-				if constexpr (leftN == 0) {
-
-					for (int i = 0; i < devNums; i++) {
-						cudaSetDevice(localRank * devNums + i);
-						if constexpr (std::is_same_v<dataType, double>) {
-							cufftExecD2Z(nPlanR2Cs[i], (double*)w_midl[i] + gridGhost * gridNxz, nFreqd[i]);
-							MHDFilterModeN << <devNy, gridNx, 0, 0 >> > (nFreqd[i], 0);
-							cufftExecZ2D(nPlanC2Rs[i], nFreqd[i], (double*)w_midr[i] + gridGhost * gridNxz);
-							MHDFilterResizeN << <MRK4GridSize, MRK4BlockSize, 0, 0 >> > (w_midr[i]);
-
-							cufftExecD2Z(nPlanR2Cs[i], (double*)w_midl[i] + gridGhost * gridNxz, nFreqd[i]);
-							MHDFilterMode1N << <devNy, gridNx, 0, 0 >> > (nFreqd[i]);
-							cufftExecZ2D(nPlanC2Rs[i], nFreqd[i], (double*)w_midl[i] + gridGhost * gridNxz);
-							MHDFilterResizeN << <MRK4GridSize, MRK4BlockSize, 0, 0 >> > (w_midl[i]);
-						}
-						else {
-							cufftExecR2C(nPlanR2Cs[i], (float*)w_midl[i] + gridGhost * gridNxz, nFreqf[i]);
-							MHDFilterModeN << <devNy, gridNx, 0, 0 >> > (nFreqf[i], 0);
-							cufftExecC2R(nPlanC2Rs[i], nFreqf[i], (float*)w_midr[i] + gridGhost * gridNxz);
-							MHDFilterResizeN << <MRK4GridSize, MRK4BlockSize, 0, 0 >> > (w_midr[i]);
-
-							cufftExecR2C(nPlanR2Cs[i], (float*)w_midl[i] + gridGhost * gridNxz, nFreqf[i]);
-							MHDFilterMode1N << <devNy, gridNx, 0, 0 >> > (nFreqf[i]);
-							cufftExecC2R(nPlanC2Rs[i], nFreqf[i], (float*)w_midl[i] + gridGhost * gridNxz);
-							MHDFilterResizeN << <MRK4GridSize, MRK4BlockSize, 0, 0 >> > (w_midl[i]);
-						}
-						MHDDecayZonal << <MRK4GridSize, MRK4BlockSize, 0, 0 >> > (w_midr[i], w_midl[i]);
+					for (int j = 0; j < devNy; j++) {
+						cudssMatrixSetValues(laplacianBs[i][j], w_midl[i] + (j + gridGhost) * gridNxz);
+						cudssExecute(cudssHandles[i][j], CUDSS_PHASE_SOLVE, laplacianConfigs[i][j], laplacianDatas[i][j], laplacianAs[i][j], laplacianXs[i][j], laplacianBs[i][j]);
 					}
-
 				}
 
-				if constexpr (std::is_same_v<ifNablaPerp2w, trueType> || std::is_same_v<ifNablaPerp2A, trueType>
+				if constexpr (std::is_same_v<ifNablaPerp2Phi, trueType> || std::is_same_v<ifNablaPerp2A, trueType>
 					|| std::is_same_v<ifNablaPerp2dNe, trueType> || std::is_same_v<ifNablaPerp2dTe, trueType>) {
 
 					for (int i = 0; i < devNums; i++) {
 						cudaSetDevice(localRank * devNums + i);
-						if constexpr (std::is_same_v<ifNablaPerp2w, trueType>) {
+						if constexpr (std::is_same_v<ifNablaPerp2Phi, trueType>) {
 							for (int j = 0; j < devNy; j++)
 								cudssExecute(cudssHandles[i][j], CUDSS_PHASE_SOLVE, wConfigs[i][j], wDatas[i][j], wAs[i][j], wXs[i][j], wBs[i][j]);
-							cudaMemcpyAsync(w_midl[i], w_midr[i], sizeof(dataType) * (devNy + 2 * gridGhost) * gridNxz, cudaMemcpyDeviceToDevice, 0);
+							cudaMemcpyAsync(Phi_midl[i], Phi_midr[i], sizeof(dataType) * (devNy + 2 * gridGhost) * gridNxz, cudaMemcpyDeviceToDevice, 0);
 						}
 						if constexpr (std::is_same_v<ifNablaPerp2A, trueType>) {
 							for (int j = 0; j < devNy; j++)
@@ -6894,17 +7092,17 @@ int main(int argc, char* argv[]) {
 
 				}
 
-				if constexpr (std::is_same_v<ifNablaPara4w, trueType> || std::is_same_v<ifNablaPara4A, trueType>
+				if constexpr (std::is_same_v<ifNablaPara4Phi, trueType> || std::is_same_v<ifNablaPara4A, trueType>
 					|| std::is_same_v<ifNablaPara4dNe, trueType> || std::is_same_v<ifNablaPara4dTe, trueType>) {
 
 					ncclGroupStart();
 					for (int i = 0; i < devNums; i++) {
 
-						if constexpr (std::is_same_v<ifNablaPara4w, trueType>) {
-							ncclSend(w_midl[i] + ncclLeftSend, gridGhost * gridNxz, ncclType, ncclLeftNei[i], comms[i], 0);
-							ncclRecv(w_midl[i] + ncclRightRecv, gridGhost * gridNxz, ncclType, ncclRightNei[i], comms[i], 0);
-							ncclSend(w_midl[i] + ncclRightSend, gridGhost * gridNxz, ncclType, ncclRightNei[i], comms[i], 0);
-							ncclRecv(w_midl[i] + ncclLeftRecv, gridGhost * gridNxz, ncclType, ncclLeftNei[i], comms[i], 0);
+						if constexpr (std::is_same_v<ifNablaPara4Phi, trueType>) {
+							ncclSend(Phi_midl[i] + ncclLeftSend, gridGhost * gridNxz, ncclType, ncclLeftNei[i], comms[i], 0);
+							ncclRecv(Phi_midl[i] + ncclRightRecv, gridGhost * gridNxz, ncclType, ncclRightNei[i], comms[i], 0);
+							ncclSend(Phi_midl[i] + ncclRightSend, gridGhost * gridNxz, ncclType, ncclRightNei[i], comms[i], 0);
+							ncclRecv(Phi_midl[i] + ncclLeftRecv, gridGhost * gridNxz, ncclType, ncclLeftNei[i], comms[i], 0);
 						}
 
 						if constexpr (std::is_same_v<ifNablaPara4A, trueType>) {
@@ -6933,8 +7131,8 @@ int main(int argc, char* argv[]) {
 
 					for (int i = 0; i < devNums; i++) {
 						cudaSetDevice(localRank * devNums + i);
-						if constexpr (std::is_same_v<ifNablaPara4w, trueType>)
-							MHDNablaPara2<ifLocal> << <MRK4GridSize, MRK4BlockSize, 0, 0 >> > (qtheta[i], w_midl[i], w_midr[i]);
+						if constexpr (std::is_same_v<ifNablaPara4Phi, trueType>)
+							MHDNablaPara2<ifLocal> << <MRK4GridSize, MRK4BlockSize, 0, 0 >> > (qtheta[i], Phi_midl[i], Phi_midr[i]);
 						if constexpr (std::is_same_v<ifNablaPara4A, trueType>)
 							MHDNablaPara2<ifLocal> << <MRK4GridSize, MRK4BlockSize, 0, 0 >> > (qtheta[i], A_midl[i], A_midr[i]);
 						if constexpr (std::is_same_v<ifNablaPara4dNe, trueType>)
@@ -6946,11 +7144,11 @@ int main(int argc, char* argv[]) {
 					ncclGroupStart();
 					for (int i = 0; i < devNums; i++) {
 
-						if constexpr (std::is_same_v<ifNablaPara4w, trueType>) {
-							ncclSend(w_midr[i] + ncclLeftSend, gridGhost * gridNxz, ncclType, ncclLeftNei[i], comms[i], 0);
-							ncclRecv(w_midr[i] + ncclRightRecv, gridGhost * gridNxz, ncclType, ncclRightNei[i], comms[i], 0);
-							ncclSend(w_midr[i] + ncclRightSend, gridGhost * gridNxz, ncclType, ncclRightNei[i], comms[i], 0);
-							ncclRecv(w_midr[i] + ncclLeftRecv, gridGhost * gridNxz, ncclType, ncclLeftNei[i], comms[i], 0);
+						if constexpr (std::is_same_v<ifNablaPara4Phi, trueType>) {
+							ncclSend(Phi_midr[i] + ncclLeftSend, gridGhost * gridNxz, ncclType, ncclLeftNei[i], comms[i], 0);
+							ncclRecv(Phi_midr[i] + ncclRightRecv, gridGhost * gridNxz, ncclType, ncclRightNei[i], comms[i], 0);
+							ncclSend(Phi_midr[i] + ncclRightSend, gridGhost * gridNxz, ncclType, ncclRightNei[i], comms[i], 0);
+							ncclRecv(Phi_midr[i] + ncclLeftRecv, gridGhost * gridNxz, ncclType, ncclLeftNei[i], comms[i], 0);
 						}
 
 						if constexpr (std::is_same_v<ifNablaPara4A, trueType>) {
@@ -6979,8 +7177,8 @@ int main(int argc, char* argv[]) {
 
 					for (int i = 0; i < devNums; i++) {
 						cudaSetDevice(localRank * devNums + i);
-						if constexpr (std::is_same_v<ifNablaPara4w, trueType>)
-							MHDNablaPara4<0, ifLocal> << <MRK4GridSize, MRK4BlockSize, 0, 0 >> > (qtheta[i], w_midl[i], w_midr[i]);
+						if constexpr (std::is_same_v<ifNablaPara4Phi, trueType>)
+							MHDNablaPara4<0, ifLocal> << <MRK4GridSize, MRK4BlockSize, 0, 0 >> > (qtheta[i], Phi_midl[i], Phi_midr[i]);
 						if constexpr (std::is_same_v<ifNablaPara4A, trueType>)
 							MHDNablaPara4<1, ifLocal> << <MRK4GridSize, MRK4BlockSize, 0, 0 >> > (qtheta[i], A_midl[i], A_midr[i]);
 						if constexpr (std::is_same_v<ifNablaPara4dNe, trueType>)
@@ -6991,237 +7189,387 @@ int main(int argc, char* argv[]) {
 
 				}
 
-				if constexpr (leftN == 0) {
+				if constexpr (std::is_same_v<ifFilterN_Phi, trueType> || std::is_same_v<ifFilterN_A, trueType>
+					|| std::is_same_v<ifFilterN_dNe, trueType> || std::is_same_v<ifFilterN_dTe, trueType>) {
 
 					for (int i = 0; i < devNums; i++) {
 						cudaSetDevice(localRank * devNums + i);
 						if constexpr (std::is_same_v<dataType, double>) {
 
-							cufftExecD2Z(nPlanR2Cs[i], (double*)A_midl[i] + gridGhost * gridNxz, nFreqd[i]);
-							MHDFilterModeN << <devNy, gridNx, 0, 0 >> > (nFreqd[i], 0);
-							cufftExecZ2D(nPlanC2Rs[i], nFreqd[i], (double*)A_midr[i] + gridGhost * gridNxz);
-							MHDFilterResizeN << <MRK4GridSize, MRK4BlockSize, 0, 0 >> > (A_midr[i]);
+							if constexpr (std::is_same_v<ifFilterN_Phi, trueType>) {
+								cufftExecD2Z(nPlanR2Cs[i], (double*)Phi_midl[i] + gridGhost * gridNxz, nFreqd[i]);
+								MHDFilterModeN << <devNy, gridNx, 0, 0 >> > (nFreqd[i], leftN, rightN);
+								cufftExecZ2D(nPlanC2Rs[i], nFreqd[i], (double*)Phi_midl[i] + gridGhost * gridNxz);
+							}
 
-							cufftExecD2Z(nPlanR2Cs[i], (double*)dNe_midl[i] + gridGhost * gridNxz, nFreqd[i]);
-							MHDFilterModeN << <devNy, gridNx, 0, 0 >> > (nFreqd[i], 0);
-							cufftExecZ2D(nPlanC2Rs[i], nFreqd[i], (double*)dNe_midr[i] + gridGhost * gridNxz);
-							MHDFilterResizeN << <MRK4GridSize, MRK4BlockSize, 0, 0 >> > (dNe_midr[i]);
+							if constexpr (std::is_same_v<ifFilterN_A, trueType>) {
+								cufftExecD2Z(nPlanR2Cs[i], (double*)A_midl[i] + gridGhost * gridNxz, nFreqd[i]);
+								MHDFilterModeN << <devNy, gridNx, 0, 0 >> > (nFreqd[i], leftN, rightN);
+								cufftExecZ2D(nPlanC2Rs[i], nFreqd[i], (double*)A_midl[i] + gridGhost * gridNxz);
+							}
 
-							cufftExecD2Z(nPlanR2Cs[i], (double*)dTe_midl[i] + gridGhost * gridNxz, nFreqd[i]);
-							MHDFilterModeN << <devNy, gridNx, 0, 0 >> > (nFreqd[i], 0);
-							cufftExecZ2D(nPlanC2Rs[i], nFreqd[i], (double*)dTe_midr[i] + gridGhost * gridNxz);
-							MHDFilterResizeN << <MRK4GridSize, MRK4BlockSize, 0, 0 >> > (dTe_midr[i]);
+							if constexpr (std::is_same_v<ifFilterN_dNe, trueType>) {
+								cufftExecD2Z(nPlanR2Cs[i], (double*)dNe_midl[i] + gridGhost * gridNxz, nFreqd[i]);
+								MHDFilterModeN << <devNy, gridNx, 0, 0 >> > (nFreqd[i], leftN, rightN);
+								cufftExecZ2D(nPlanC2Rs[i], nFreqd[i], (double*)dNe_midl[i] + gridGhost * gridNxz);
+							}
+
+							if constexpr (std::is_same_v<ifFilterN_dTe, trueType>) {
+								cufftExecD2Z(nPlanR2Cs[i], (double*)dTe_midl[i] + gridGhost * gridNxz, nFreqd[i]);
+								MHDFilterModeN << <devNy, gridNx, 0, 0 >> > (nFreqd[i], leftN, rightN);
+								cufftExecZ2D(nPlanC2Rs[i], nFreqd[i], (double*)dTe_midl[i] + gridGhost * gridNxz);
+							}
 
 						}
 						else {
 
-							cufftExecR2C(nPlanR2Cs[i], (float*)A_midl[i] + gridGhost * gridNxz, nFreqf[i]);
-							MHDFilterModeN << <devNy, gridNx, 0, 0 >> > (nFreqf[i], 0);
-							cufftExecC2R(nPlanC2Rs[i], nFreqf[i], (float*)A_midr[i] + gridGhost * gridNxz);
-							MHDFilterResizeN << <MRK4GridSize, MRK4BlockSize, 0, 0 >> > (A_midr[i]);
+							if constexpr (std::is_same_v<ifFilterN_Phi, trueType>) {
+								cufftExecR2C(nPlanR2Cs[i], (float*)Phi_midl[i] + gridGhost * gridNxz, nFreqf[i]);
+								MHDFilterModeN << <devNy, gridNx, 0, 0 >> > (nFreqf[i], leftN, rightN);
+								cufftExecC2R(nPlanC2Rs[i], nFreqf[i], (float*)Phi_midl[i] + gridGhost * gridNxz);
+							}
 
-							cufftExecR2C(nPlanR2Cs[i], (float*)dNe_midl[i] + gridGhost * gridNxz, nFreqf[i]);
-							MHDFilterModeN << <devNy, gridNx, 0, 0 >> > (nFreqf[i], 0);
-							cufftExecC2R(nPlanC2Rs[i], nFreqf[i], (float*)dNe_midr[i] + gridGhost * gridNxz);
-							MHDFilterResizeN << <MRK4GridSize, MRK4BlockSize, 0, 0 >> > (dNe_midr[i]);
+							if constexpr (std::is_same_v<ifFilterN_A, trueType>) {
+								cufftExecR2C(nPlanR2Cs[i], (float*)A_midl[i] + gridGhost * gridNxz, nFreqf[i]);
+								MHDFilterModeN << <devNy, gridNx, 0, 0 >> > (nFreqf[i], leftN, rightN);
+								cufftExecC2R(nPlanC2Rs[i], nFreqf[i], (float*)A_midl[i] + gridGhost * gridNxz);
+							}
 
-							cufftExecR2C(nPlanR2Cs[i], (float*)dTe_midl[i] + gridGhost * gridNxz, nFreqf[i]);
-							MHDFilterModeN << <devNy, gridNx, 0, 0 >> > (nFreqf[i], 0);
-							cufftExecC2R(nPlanC2Rs[i], nFreqf[i], (float*)dTe_midr[i] + gridGhost * gridNxz);
-							MHDFilterResizeN << <MRK4GridSize, MRK4BlockSize, 0, 0 >> > (dTe_midr[i]);
+							if constexpr (std::is_same_v<ifFilterN_dNe, trueType>) {
+								cufftExecR2C(nPlanR2Cs[i], (float*)dNe_midl[i] + gridGhost * gridNxz, nFreqf[i]);
+								MHDFilterModeN << <devNy, gridNx, 0, 0 >> > (nFreqf[i], leftN, rightN);
+								cufftExecC2R(nPlanC2Rs[i], nFreqf[i], (float*)dNe_midl[i] + gridGhost * gridNxz);
+							}
+
+							if constexpr (std::is_same_v<ifFilterN_dTe, trueType>) {
+								cufftExecR2C(nPlanR2Cs[i], (float*)dTe_midl[i] + gridGhost * gridNxz, nFreqf[i]);
+								MHDFilterModeN << <devNy, gridNx, 0, 0 >> > (nFreqf[i], leftN, rightN);
+								cufftExecC2R(nPlanC2Rs[i], nFreqf[i], (float*)dTe_midl[i] + gridGhost * gridNxz);
+							}
 
 						}
-						MHDExtractZonal << <devNy, gridNx, 0, 0 >> > (A_midr[i], A_zonal[i], dNe_midr[i], dNe_zonal[i], dTe_midr[i], dTe_zonal[i]);
+						if constexpr (std::is_same_v<ifFilterN_Phi, trueType>)
+							MHDFilterResizeN << <MRK4GridSize, MRK4BlockSize, 0, 0 >> > (Phi_midl[i]);
+						if constexpr (std::is_same_v<ifFilterN_A, trueType>)
+							MHDFilterResizeN << <MRK4GridSize, MRK4BlockSize, 0, 0 >> > (A_midl[i]);
+						if constexpr (std::is_same_v<ifFilterN_dNe, trueType>)
+							MHDFilterResizeN << <MRK4GridSize, MRK4BlockSize, 0, 0 >> > (dNe_midl[i]);
+						if constexpr (std::is_same_v<ifFilterN_dTe, trueType>)
+							MHDFilterResizeN << <MRK4GridSize, MRK4BlockSize, 0, 0 >> > (dTe_midl[i]);
 					}
 
-					ncclGroupStart();
-					for (int i = 0; i < devNums; i++) {
-						ncclAllGather(A_zonal[i], A_zonalyx[i], devNy * gridNx, ncclType, comms[i], 0);
-						ncclAllGather(dNe_zonal[i], dNe_zonalyx[i], devNy * gridNx, ncclType, comms[i], 0);
-						ncclAllGather(dTe_zonal[i], dTe_zonalyx[i], devNy * gridNx, ncclType, comms[i], 0);
-					}
-					ncclGroupEnd();
+				}
+
+				if constexpr (removeN_Phi.size() > 0 || removeN_A.size() > 0 || removeN_dNe.size() > 0 || removeN_dTe.size() > 0) {
 
 					for (int i = 0; i < devNums; i++) {
 						cudaSetDevice(localRank * devNums + i);
-						MHDTransposeZonal << <gridNy, gridNx, 0, 0 >> > (A_zonalyx[i], A_zonalxy[i], dNe_zonalyx[i], dNe_zonalxy[i], dTe_zonalyx[i], dTe_zonalxy[i]);
-						if constexpr (std::is_same_v<dataType, double>) {
+						for (int toroidal : removeN_Phi) {
 
-							cufftExecD2Z(mPlanR2Cs[i], (double*)A_zonalxy[i], mFreqd[i]);
-							MHDFilterMode0M << <1, gridNx, 0, 0 >> > (mFreqd[i]);
-							cufftExecZ2D(mPlanC2Rs[i], mFreqd[i], (double*)A_zonalxy[i]);
-							MHDFilterResizeM << <gridNy, gridNx, 0, 0 >> > (A_zonalxy[i]);
+							if constexpr (std::is_same_v<dataType, double>) {
 
-							cufftExecD2Z(mPlanR2Cs[i], (double*)dNe_zonalxy[i], mFreqd[i]);
-							MHDFilterMode0M << <1, gridNx, 0, 0 >> > (mFreqd[i]);
-							cufftExecZ2D(mPlanC2Rs[i], mFreqd[i], (double*)dNe_zonalxy[i]);
-							MHDFilterResizeM << <gridNy, gridNx, 0, 0 >> > (dNe_zonalxy[i]);
+								cufftExecD2Z(nPlanR2Cs[i], (double*)Phi_midl[i] + gridGhost * gridNxz, nFreqd[i]);
+								MHDFilterModeN << <devNy, gridNx, 0, 0 >> > (nFreqd[i], toroidal);
+								cufftExecZ2D(nPlanC2Rs[i], nFreqd[i], (double*)Phi_midr[i] + gridGhost * gridNxz);
 
-							cufftExecD2Z(mPlanR2Cs[i], (double*)dTe_zonalxy[i], mFreqd[i]);
-							MHDFilterMode0M << <1, gridNx, 0, 0 >> > (mFreqd[i]);
-							cufftExecZ2D(mPlanC2Rs[i], mFreqd[i], (double*)dTe_zonalxy[i]);
-							MHDFilterResizeM << <gridNy, gridNx, 0, 0 >> > (dTe_zonalxy[i]);
+							}
+							else {
 
-						}
-						else {
+								cufftExecR2C(nPlanR2Cs[i], (float*)Phi_midl[i] + gridGhost * gridNxz, nFreqf[i]);
+								MHDFilterModeN << <devNy, gridNx, 0, 0 >> > (nFreqf[i], toroidal);
+								cufftExecC2R(nPlanC2Rs[i], nFreqf[i], (float*)Phi_midr[i] + gridGhost * gridNxz);
 
-							cufftExecR2C(mPlanR2Cs[i], (float*)A_zonalxy[i], mFreqf[i]);
-							MHDFilterMode0M << <1, gridNx, 0, 0 >> > (mFreqf[i]);
-							cufftExecC2R(mPlanC2Rs[i], mFreqf[i], (float*)A_zonalxy[i]);
-							MHDFilterResizeM << <gridNy, gridNx, 0, 0 >> > (A_zonalxy[i]);
-
-							cufftExecR2C(mPlanR2Cs[i], (float*)dNe_zonalxy[i], mFreqf[i]);
-							MHDFilterMode0M << <1, gridNx, 0, 0 >> > (mFreqf[i]);
-							cufftExecC2R(mPlanC2Rs[i], mFreqf[i], (float*)dNe_zonalxy[i]);
-							MHDFilterResizeM << <gridNy, gridNx, 0, 0 >> > (dNe_zonalxy[i]);
-
-							cufftExecR2C(mPlanR2Cs[i], (float*)dTe_zonalxy[i], mFreqf[i]);
-							MHDFilterMode0M << <1, gridNx, 0, 0 >> > (mFreqf[i]);
-							cufftExecC2R(mPlanC2Rs[i], mFreqf[i], (float*)dTe_zonalxy[i]);
-							MHDFilterResizeM << <gridNy, gridNx, 0, 0 >> > (dTe_zonalxy[i]);
+							}
+							MHDFilterResizeN << <MRK4GridSize, MRK4BlockSize, 0, 0 >> > (Phi_midr[i]);
+							MHDSubtractMode << <MRK4GridSize, MRK4BlockSize, 0, 0 >> > (Phi_midr[i], Phi_midl[i]);
 
 						}
+						for (int toroidal : removeN_A) {
+
+							if constexpr (std::is_same_v<dataType, double>) {
+
+								cufftExecD2Z(nPlanR2Cs[i], (double*)A_midl[i] + gridGhost * gridNxz, nFreqd[i]);
+								MHDFilterModeN << <devNy, gridNx, 0, 0 >> > (nFreqd[i], toroidal);
+								cufftExecZ2D(nPlanC2Rs[i], nFreqd[i], (double*)A_midr[i] + gridGhost * gridNxz);
+
+							}
+							else {
+
+								cufftExecR2C(nPlanR2Cs[i], (float*)A_midl[i] + gridGhost * gridNxz, nFreqf[i]);
+								MHDFilterModeN << <devNy, gridNx, 0, 0 >> > (nFreqf[i], toroidal);
+								cufftExecC2R(nPlanC2Rs[i], nFreqf[i], (float*)A_midr[i] + gridGhost * gridNxz);
+
+							}
+							MHDFilterResizeN << <MRK4GridSize, MRK4BlockSize, 0, 0 >> > (A_midr[i]);
+							MHDSubtractMode << <MRK4GridSize, MRK4BlockSize, 0, 0 >> > (A_midr[i], A_midl[i]);
+
+						}
+						for (int toroidal : removeN_dNe) {
+
+							if constexpr (std::is_same_v<dataType, double>) {
+
+								cufftExecD2Z(nPlanR2Cs[i], (double*)dNe_midl[i] + gridGhost * gridNxz, nFreqd[i]);
+								MHDFilterModeN << <devNy, gridNx, 0, 0 >> > (nFreqd[i], toroidal);
+								cufftExecZ2D(nPlanC2Rs[i], nFreqd[i], (double*)dNe_midr[i] + gridGhost * gridNxz);
+
+							}
+							else {
+
+								cufftExecR2C(nPlanR2Cs[i], (float*)dNe_midl[i] + gridGhost * gridNxz, nFreqf[i]);
+								MHDFilterModeN << <devNy, gridNx, 0, 0 >> > (nFreqf[i], toroidal);
+								cufftExecC2R(nPlanC2Rs[i], nFreqf[i], (float*)dNe_midr[i] + gridGhost * gridNxz);
+
+							}
+							MHDFilterResizeN << <MRK4GridSize, MRK4BlockSize, 0, 0 >> > (dNe_midr[i]);
+							MHDSubtractMode << <MRK4GridSize, MRK4BlockSize, 0, 0 >> > (dNe_midr[i], dNe_midl[i]);
+
+						}
+						for (int toroidal : removeN_dTe) {
+
+							if constexpr (std::is_same_v<dataType, double>) {
+
+								cufftExecD2Z(nPlanR2Cs[i], (double*)dTe_midl[i] + gridGhost * gridNxz, nFreqd[i]);
+								MHDFilterModeN << <devNy, gridNx, 0, 0 >> > (nFreqd[i], toroidal);
+								cufftExecZ2D(nPlanC2Rs[i], nFreqd[i], (double*)dTe_midr[i] + gridGhost * gridNxz);
+
+							}
+							else {
+
+								cufftExecR2C(nPlanR2Cs[i], (float*)dTe_midl[i] + gridGhost * gridNxz, nFreqf[i]);
+								MHDFilterModeN << <devNy, gridNx, 0, 0 >> > (nFreqf[i], toroidal);
+								cufftExecC2R(nPlanC2Rs[i], nFreqf[i], (float*)dTe_midr[i] + gridGhost * gridNxz);
+
+							}
+							MHDFilterResizeN << <MRK4GridSize, MRK4BlockSize, 0, 0 >> > (dTe_midr[i]);
+							MHDSubtractMode << <MRK4GridSize, MRK4BlockSize, 0, 0 >> > (dTe_midr[i], dTe_midl[i]);
+
+						}
+					}
+
+				}
+
+				if constexpr (selectNM_Phi.size() > 0 || selectNM_A.size() > 0 || selectNM_dNe.size() > 0 || selectNM_dTe.size() > 0) {
+
+					for (const auto& [toroidal, poloidalLeft, poloidalRight] : selectNM_Phi) {
+
+						for (int i = 0; i < devNums; i++) {
+							cudaSetDevice(localRank * devNums + i);
+							if constexpr (std::is_same_v<dataType, double>) {
+
+								cufftExecD2Z(nPlanR2Cs[i], (double*)Phi_midl[i] + gridGhost * gridNxz, nFreqd[i]);
+								MHDFilterModeN << <devNy, gridNx, 0, 0 >> > (nFreqd[i], toroidal);
+								cufftExecZ2D(nPlanC2Rs[i], nFreqd[i], (double*)Phi_midr[i] + gridGhost * gridNxz);
+
+							}
+							else {
+
+								cufftExecR2C(nPlanR2Cs[i], (float*)Phi_midl[i] + gridGhost * gridNxz, nFreqf[i]);
+								MHDFilterModeN << <devNy, gridNx, 0, 0 >> > (nFreqf[i], toroidal);
+								cufftExecC2R(nPlanC2Rs[i], nFreqf[i], (float*)Phi_midr[i] + gridGhost * gridNxz);
+
+							}
+							MHDFilterResizeN << <MRK4GridSize, MRK4BlockSize, 0, 0 >> > (Phi_midr[i]);
+							MHDSubtractMode << <MRK4GridSize, MRK4BlockSize, 0, 0 >> > (Phi_midr[i], Phi_midl[i]);
+						}
+
+						ncclGroupStart();
+						for (int i = 0; i < devNums; i++) {
+							ncclAllGather(Phi_midr[i] + gridGhost * gridNxz, Phi_yxz[i], devNy * gridNxz, ncclType, comms[i], 0);
+						}
+						ncclGroupEnd();
+
+						for (int i = 0; i < devNums; i++) {
+							cudaSetDevice(localRank * devNums + i);
+							MHDTransposeLeft << <gridNy, gridNx, 0, 0 >> > (Phi_yxz[i], Phi_xzy[i]);
+							if constexpr (std::is_same_v<dataType, double>) {
+
+								cufftExecD2Z(mPlanR2Cs[i], (double*)Phi_xzy[i], mFreqd[i]);
+								MHDFilterModeM << <gridNx, gridNz, 0, 0 >> > (mFreqd[i], poloidalLeft, poloidalRight);
+								cufftExecZ2D(mPlanC2Rs[i], mFreqd[i], (double*)Phi_xzy[i]);
+
+							}
+							else {
+
+								cufftExecR2C(mPlanR2Cs[i], (float*)Phi_xzy[i], mFreqf[i]);
+								MHDFilterModeM << <gridNx, gridNz, 0, 0 >> > (mFreqf[i], poloidalLeft, poloidalRight);
+								cufftExecC2R(mPlanC2Rs[i], mFreqf[i], (float*)Phi_xzy[i]);
+
+							}
+							MHDTransposeRight << <gridNx, gridNz, 0, 0 >> > (Phi_xzy[i], Phi_yxz[i]);
+							cudaMemcpyAsync(Phi_midr[i] + gridGhost * gridNxz, Phi_yxz[i] + (myRank * hostNy + i * devNy) * gridNxz, sizeof(dataType) * devNy * gridNxz, cudaMemcpyDeviceToDevice, 0);
+							MHDFilterResizeM << <MRK4GridSize, MRK4BlockSize, 0, 0 >> > (Phi_midr[i]);
+							MHDAddMode << <MRK4GridSize, MRK4BlockSize, 0, 0 >> > (Phi_midr[i], Phi_midl[i]);
+
+						}
+
+					}
+					for (const auto& [toroidal, poloidalLeft, poloidalRight] : selectNM_A) {
+
+						for (int i = 0; i < devNums; i++) {
+							cudaSetDevice(localRank * devNums + i);
+							if constexpr (std::is_same_v<dataType, double>) {
+
+								cufftExecD2Z(nPlanR2Cs[i], (double*)A_midl[i] + gridGhost * gridNxz, nFreqd[i]);
+								MHDFilterModeN << <devNy, gridNx, 0, 0 >> > (nFreqd[i], toroidal);
+								cufftExecZ2D(nPlanC2Rs[i], nFreqd[i], (double*)A_midr[i] + gridGhost * gridNxz);
+
+							}
+							else {
+
+								cufftExecR2C(nPlanR2Cs[i], (float*)A_midl[i] + gridGhost * gridNxz, nFreqf[i]);
+								MHDFilterModeN << <devNy, gridNx, 0, 0 >> > (nFreqf[i], toroidal);
+								cufftExecC2R(nPlanC2Rs[i], nFreqf[i], (float*)A_midr[i] + gridGhost * gridNxz);
+
+							}
+							MHDFilterResizeN << <MRK4GridSize, MRK4BlockSize, 0, 0 >> > (A_midr[i]);
+							MHDSubtractMode << <MRK4GridSize, MRK4BlockSize, 0, 0 >> > (A_midr[i], A_midl[i]);
+						}
+
+						ncclGroupStart();
+						for (int i = 0; i < devNums; i++) {
+							ncclAllGather(A_midr[i] + gridGhost * gridNxz, A_yxz[i], devNy * gridNxz, ncclType, comms[i], 0);
+						}
+						ncclGroupEnd();
+
+						for (int i = 0; i < devNums; i++) {
+							cudaSetDevice(localRank * devNums + i);
+							MHDTransposeLeft << <gridNy, gridNx, 0, 0 >> > (A_yxz[i], A_xzy[i]);
+							if constexpr (std::is_same_v<dataType, double>) {
+
+								cufftExecD2Z(mPlanR2Cs[i], (double*)A_xzy[i], mFreqd[i]);
+								MHDFilterModeM << <gridNx, gridNz, 0, 0 >> > (mFreqd[i], poloidalLeft, poloidalRight);
+								cufftExecZ2D(mPlanC2Rs[i], mFreqd[i], (double*)A_xzy[i]);
+
+							}
+							else {
+
+								cufftExecR2C(mPlanR2Cs[i], (float*)A_xzy[i], mFreqf[i]);
+								MHDFilterModeM << <gridNx, gridNz, 0, 0 >> > (mFreqf[i], poloidalLeft, poloidalRight);
+								cufftExecC2R(mPlanC2Rs[i], mFreqf[i], (float*)A_xzy[i]);
+
+							}
+							MHDTransposeRight << <gridNx, gridNz, 0, 0 >> > (A_xzy[i], A_yxz[i]);
+							cudaMemcpyAsync(A_midr[i] + gridGhost * gridNxz, A_yxz[i] + (myRank * hostNy + i * devNy) * gridNxz, sizeof(dataType) * devNy * gridNxz, cudaMemcpyDeviceToDevice, 0);
+							MHDFilterResizeM << <MRK4GridSize, MRK4BlockSize, 0, 0 >> > (A_midr[i]);
+							MHDAddMode << <MRK4GridSize, MRK4BlockSize, 0, 0 >> > (A_midr[i], A_midl[i]);
+
+						}
+
+					}
+					for (const auto& [toroidal, poloidalLeft, poloidalRight] : selectNM_dNe) {
+
+						for (int i = 0; i < devNums; i++) {
+							cudaSetDevice(localRank * devNums + i);
+							if constexpr (std::is_same_v<dataType, double>) {
+
+								cufftExecD2Z(nPlanR2Cs[i], (double*)dNe_midl[i] + gridGhost * gridNxz, nFreqd[i]);
+								MHDFilterModeN << <devNy, gridNx, 0, 0 >> > (nFreqd[i], toroidal);
+								cufftExecZ2D(nPlanC2Rs[i], nFreqd[i], (double*)dNe_midr[i] + gridGhost * gridNxz);
+
+							}
+							else {
+
+								cufftExecR2C(nPlanR2Cs[i], (float*)dNe_midl[i] + gridGhost * gridNxz, nFreqf[i]);
+								MHDFilterModeN << <devNy, gridNx, 0, 0 >> > (nFreqf[i], toroidal);
+								cufftExecC2R(nPlanC2Rs[i], nFreqf[i], (float*)dNe_midr[i] + gridGhost * gridNxz);
+
+							}
+							MHDFilterResizeN << <MRK4GridSize, MRK4BlockSize, 0, 0 >> > (dNe_midr[i]);
+							MHDSubtractMode << <MRK4GridSize, MRK4BlockSize, 0, 0 >> > (dNe_midr[i], dNe_midl[i]);
+						}
+
+						ncclGroupStart();
+						for (int i = 0; i < devNums; i++) {
+							ncclAllGather(dNe_midr[i] + gridGhost * gridNxz, dNe_yxz[i], devNy * gridNxz, ncclType, comms[i], 0);
+						}
+						ncclGroupEnd();
+
+						for (int i = 0; i < devNums; i++) {
+							cudaSetDevice(localRank * devNums + i);
+							MHDTransposeLeft << <gridNy, gridNx, 0, 0 >> > (dNe_yxz[i], dNe_xzy[i]);
+							if constexpr (std::is_same_v<dataType, double>) {
+
+								cufftExecD2Z(mPlanR2Cs[i], (double*)dNe_xzy[i], mFreqd[i]);
+								MHDFilterModeM << <gridNx, gridNz, 0, 0 >> > (mFreqd[i], poloidalLeft, poloidalRight);
+								cufftExecZ2D(mPlanC2Rs[i], mFreqd[i], (double*)dNe_xzy[i]);
+
+							}
+							else {
+
+								cufftExecR2C(mPlanR2Cs[i], (float*)dNe_xzy[i], mFreqf[i]);
+								MHDFilterModeM << <gridNx, gridNz, 0, 0 >> > (mFreqf[i], poloidalLeft, poloidalRight);
+								cufftExecC2R(mPlanC2Rs[i], mFreqf[i], (float*)dNe_xzy[i]);
+
+							}
+							MHDTransposeRight << <gridNx, gridNz, 0, 0 >> > (dNe_xzy[i], dNe_yxz[i]);
+							cudaMemcpyAsync(dNe_midr[i] + gridGhost * gridNxz, dNe_yxz[i] + (myRank * hostNy + i * devNy) * gridNxz, sizeof(dataType) * devNy * gridNxz, cudaMemcpyDeviceToDevice, 0);
+							MHDFilterResizeM << <MRK4GridSize, MRK4BlockSize, 0, 0 >> > (dNe_midr[i]);
+							MHDAddMode << <MRK4GridSize, MRK4BlockSize, 0, 0 >> > (dNe_midr[i], dNe_midl[i]);
+
+						}
+
+					}
+					for (const auto& [toroidal, poloidalLeft, poloidalRight] : selectNM_dTe) {
+
+						for (int i = 0; i < devNums; i++) {
+							cudaSetDevice(localRank * devNums + i);
+							if constexpr (std::is_same_v<dataType, double>) {
+
+								cufftExecD2Z(nPlanR2Cs[i], (double*)dTe_midl[i] + gridGhost * gridNxz, nFreqd[i]);
+								MHDFilterModeN << <devNy, gridNx, 0, 0 >> > (nFreqd[i], toroidal);
+								cufftExecZ2D(nPlanC2Rs[i], nFreqd[i], (double*)dTe_midr[i] + gridGhost * gridNxz);
+
+							}
+							else {
+
+								cufftExecR2C(nPlanR2Cs[i], (float*)dTe_midl[i] + gridGhost * gridNxz, nFreqf[i]);
+								MHDFilterModeN << <devNy, gridNx, 0, 0 >> > (nFreqf[i], toroidal);
+								cufftExecC2R(nPlanC2Rs[i], nFreqf[i], (float*)dTe_midr[i] + gridGhost * gridNxz);
+
+							}
+							MHDFilterResizeN << <MRK4GridSize, MRK4BlockSize, 0, 0 >> > (dTe_midr[i]);
+							MHDSubtractMode << <MRK4GridSize, MRK4BlockSize, 0, 0 >> > (dTe_midr[i], dTe_midl[i]);
+						}
+
+						ncclGroupStart();
+						for (int i = 0; i < devNums; i++) {
+							ncclAllGather(dTe_midr[i] + gridGhost * gridNxz, dTe_yxz[i], devNy * gridNxz, ncclType, comms[i], 0);
+						}
+						ncclGroupEnd();
+
+						for (int i = 0; i < devNums; i++) {
+							cudaSetDevice(localRank * devNums + i);
+							MHDTransposeLeft << <gridNy, gridNx, 0, 0 >> > (dTe_yxz[i], dTe_xzy[i]);
+							if constexpr (std::is_same_v<dataType, double>) {
+
+								cufftExecD2Z(mPlanR2Cs[i], (double*)dTe_xzy[i], mFreqd[i]);
+								MHDFilterModeM << <gridNx, gridNz, 0, 0 >> > (mFreqd[i], poloidalLeft, poloidalRight);
+								cufftExecZ2D(mPlanC2Rs[i], mFreqd[i], (double*)dTe_xzy[i]);
+
+							}
+							else {
+
+								cufftExecR2C(mPlanR2Cs[i], (float*)dTe_xzy[i], mFreqf[i]);
+								MHDFilterModeM << <gridNx, gridNz, 0, 0 >> > (mFreqf[i], poloidalLeft, poloidalRight);
+								cufftExecC2R(mPlanC2Rs[i], mFreqf[i], (float*)dTe_xzy[i]);
+
+							}
+							MHDTransposeRight << <gridNx, gridNz, 0, 0 >> > (dTe_xzy[i], dTe_yxz[i]);
+							cudaMemcpyAsync(dTe_midr[i] + gridGhost * gridNxz, dTe_yxz[i] + (myRank * hostNy + i * devNy) * gridNxz, sizeof(dataType) * devNy * gridNxz, cudaMemcpyDeviceToDevice, 0);
+							MHDFilterResizeM << <MRK4GridSize, MRK4BlockSize, 0, 0 >> > (dTe_midr[i]);
+							MHDAddMode << <MRK4GridSize, MRK4BlockSize, 0, 0 >> > (dTe_midr[i], dTe_midl[i]);
+
+						}
+
 					}
 
 				}
 
 				for (int i = 0; i < devNums; i++) {
 					cudaSetDevice(localRank * devNums + i);
-					if constexpr (std::is_same_v<dataType, double>) {
-
-						cufftExecD2Z(nPlanR2Cs[i], (double*)w_midl[i] + gridGhost * gridNxz, nFreqd[i]);
-						if constexpr (leftN == 0)
-							MHDFilterMode0N << <devNy, gridNx, 0, 0 >> > (nFreqd[i]);
-						else
-							MHDFilterMode1N << <devNy, gridNx, 0, 0 >> > (nFreqd[i]);
-						cufftExecZ2D(nPlanC2Rs[i], nFreqd[i], (double*)w_midl[i] + gridGhost * gridNxz);
-						MHDFilterResizeN << <MRK4GridSize, MRK4BlockSize, 0, 0 >> > (w_midl[i]);
-
-						cufftExecD2Z(nPlanR2Cs[i], (double*)A_midl[i] + gridGhost * gridNxz, nFreqd[i]);
-						MHDFilterMode1N << <devNy, gridNx, 0, 0 >> > (nFreqd[i]);
-						cufftExecZ2D(nPlanC2Rs[i], nFreqd[i], (double*)A_midl[i] + gridGhost * gridNxz);
-						MHDFilterResizeN << <MRK4GridSize, MRK4BlockSize, 0, 0 >> > (A_midl[i]);
-
-						cufftExecD2Z(nPlanR2Cs[i], (double*)dNe_midl[i] + gridGhost * gridNxz, nFreqd[i]);
-						MHDFilterMode1N << <devNy, gridNx, 0, 0 >> > (nFreqd[i]);
-						cufftExecZ2D(nPlanC2Rs[i], nFreqd[i], (double*)dNe_midl[i] + gridGhost * gridNxz);
-						MHDFilterResizeN << <MRK4GridSize, MRK4BlockSize, 0, 0 >> > (dNe_midl[i]);
-
-						cufftExecD2Z(nPlanR2Cs[i], (double*)dTe_midl[i] + gridGhost * gridNxz, nFreqd[i]);
-						MHDFilterMode1N << <devNy, gridNx, 0, 0 >> > (nFreqd[i]);
-						cufftExecZ2D(nPlanC2Rs[i], nFreqd[i], (double*)dTe_midl[i] + gridGhost * gridNxz);
-						MHDFilterResizeN << <MRK4GridSize, MRK4BlockSize, 0, 0 >> > (dTe_midl[i]);
-
-					}
-					else {
-
-						cufftExecR2C(nPlanR2Cs[i], (float*)w_midl[i] + gridGhost * gridNxz, nFreqf[i]);
-						if constexpr (leftN == 0)
-							MHDFilterMode0N << <devNy, gridNx, 0, 0 >> > (nFreqf[i]);
-						else
-							MHDFilterMode1N << <devNy, gridNx, 0, 0 >> > (nFreqf[i]);
-						cufftExecC2R(nPlanC2Rs[i], nFreqf[i], (float*)w_midl[i] + gridGhost * gridNxz);
-						MHDFilterResizeN << <MRK4GridSize, MRK4BlockSize, 0, 0 >> > (w_midl[i]);
-
-						cufftExecR2C(nPlanR2Cs[i], (float*)A_midl[i] + gridGhost * gridNxz, nFreqf[i]);
-						MHDFilterMode1N << <devNy, gridNx, 0, 0 >> > (nFreqf[i]);
-						cufftExecC2R(nPlanC2Rs[i], nFreqf[i], (float*)A_midl[i] + gridGhost * gridNxz);
-						MHDFilterResizeN << <MRK4GridSize, MRK4BlockSize, 0, 0 >> > (A_midl[i]);
-
-						cufftExecR2C(nPlanR2Cs[i], (float*)dNe_midl[i] + gridGhost * gridNxz, nFreqf[i]);
-						MHDFilterMode1N << <devNy, gridNx, 0, 0 >> > (nFreqf[i]);
-						cufftExecC2R(nPlanC2Rs[i], nFreqf[i], (float*)dNe_midl[i] + gridGhost * gridNxz);
-						MHDFilterResizeN << <MRK4GridSize, MRK4BlockSize, 0, 0 >> > (dNe_midl[i]);
-
-						cufftExecR2C(nPlanR2Cs[i], (float*)dTe_midl[i] + gridGhost * gridNxz, nFreqf[i]);
-						MHDFilterMode1N << <devNy, gridNx, 0, 0 >> > (nFreqf[i]);
-						cufftExecC2R(nPlanC2Rs[i], nFreqf[i], (float*)dTe_midl[i] + gridGhost * gridNxz);
-						MHDFilterResizeN << <MRK4GridSize, MRK4BlockSize, 0, 0 >> > (dTe_midl[i]);
-
-					}
-				}
-
-				if constexpr (leftN == 0) {
-
-					for (int i = 0; i < devNums; i++) {
-						cudaSetDevice(localRank * devNums + i);
-						MHDAddZonal << <devNy, gridNx, 0, 0 >> > (myRank * hostNy + i * devNy, A_zonalxy[i], A_midl[i], dNe_zonalxy[i], dNe_midl[i], dTe_zonalxy[i], dTe_midl[i]);
-					}
-
-				}
-
-				for (int i = 0; i < devNums; i++) {
-					cudaSetDevice(localRank * devNums + i);
-					for (int j = 0; j < devNy; j++) {
-						cudssMatrixSetValues(laplacianBs[i][j], w_midl[i] + (j + gridGhost) * gridNxz);
-						cudssExecute(cudssHandles[i][j], CUDSS_PHASE_SOLVE, laplacianConfigs[i][j], laplacianDatas[i][j], laplacianAs[i][j], laplacianXs[i][j], laplacianBs[i][j]);
-					}
+					MHD2w<ifLocal> << <MRK4GridSize, MRK4BlockSize, 0, 0 >> > (Phi_midl[i], w_midl[i], Phi2w[i]);
 					MHD2dJpBdPePhi<ifNonlinear, ifLocal, ifFLRMHD> << <MRK4GridSize, MRK4BlockSize, 0, 0 >> > (
 						A_midl[i], dJpB_midl[i], A2dJpB[i], w_midl[i], Phi_midl[i], w2Phi[i], dNe_midl[i], dTe_midl[i], dPe_midl[i], Ne0[i], Te0[i]);
-				}
-
-				if constexpr (leftN == 0) {
-
-					for (int i = 0; i < devNums; i++) {
-						cudaSetDevice(localRank * devNums + i);
-						if constexpr (std::is_same_v<dataType, double>) {
-
-							cufftExecD2Z(nPlanR2Cs[i], (double*)Phi_midl[i] + gridGhost * gridNxz, nFreqd[i]);
-							MHDFilterModeN << <devNy, gridNx, 0, 0 >> > (nFreqd[i], 0);
-							cufftExecZ2D(nPlanC2Rs[i], nFreqd[i], (double*)Phi_midr[i] + gridGhost * gridNxz);
-							MHDFilterResizeN << <MRK4GridSize, MRK4BlockSize, 0, 0 >> > (Phi_midr[i]);
-
-						}
-						else {
-
-							cufftExecR2C(nPlanR2Cs[i], (float*)Phi_midl[i] + gridGhost * gridNxz, nFreqf[i]);
-							MHDFilterModeN << <devNy, gridNx, 0, 0 >> > (nFreqf[i], 0);
-							cufftExecC2R(nPlanC2Rs[i], nFreqf[i], (float*)Phi_midr[i] + gridGhost * gridNxz);
-							MHDFilterResizeN << <MRK4GridSize, MRK4BlockSize, 0, 0 >> > (Phi_midr[i]);
-
-						}
-						MHDExtractZonal << <devNy, gridNx, 0, 0 >> > (Phi_midr[i], Phi_zonal[i]);
-					}
-
-					ncclGroupStart();
-					for (int i = 0; i < devNums; i++) {
-						ncclAllGather(Phi_zonal[i], Phi_zonalyx[i], devNy * gridNx, ncclType, comms[i], 0);
-					}
-					ncclGroupEnd();
-
-					for (int i = 0; i < devNums; i++) {
-						cudaSetDevice(localRank * devNums + i);
-						MHDTransposeZonal << <gridNy, gridNx, 0, 0 >> > (Phi_zonalyx[i], Phi_zonalxy[i]);
-						if constexpr (std::is_same_v<dataType, double>) {
-
-							cufftExecD2Z(mPlanR2Cs[i], (double*)Phi_zonalxy[i], mFreqd[i]);
-							MHDFilterModeM << <1, gridNx, 0, 0 >> > (mFreqd[i], 0);
-							cufftExecZ2D(mPlanC2Rs[i], mFreqd[i], (double*)Phi_zonalxy[i]);
-							MHDFilterResizeM << <gridNy, gridNx, 0, 0 >> > (Phi_zonalxy[i]);
-
-							cufftExecD2Z(nPlanR2Cs[i], (double*)Phi_midl[i] + gridGhost * gridNxz, nFreqd[i]);
-							MHDFilterMode1N << <devNy, gridNx, 0, 0 >> > (nFreqd[i]);
-							cufftExecZ2D(nPlanC2Rs[i], nFreqd[i], (double*)Phi_midl[i] + gridGhost * gridNxz);
-							MHDFilterResizeN << <MRK4GridSize, MRK4BlockSize, 0, 0 >> > (Phi_midl[i]);
-
-						}
-						else {
-
-							cufftExecR2C(mPlanR2Cs[i], (float*)Phi_zonalxy[i], mFreqf[i]);
-							MHDFilterModeM << <1, gridNx, 0, 0 >> > (mFreqf[i], 0);
-							cufftExecC2R(mPlanC2Rs[i], mFreqf[i], (float*)Phi_zonalxy[i]);
-							MHDFilterResizeM << <gridNy, gridNx, 0, 0 >> > (Phi_zonalxy[i]);
-
-							cufftExecR2C(nPlanR2Cs[i], (float*)Phi_midl[i] + gridGhost * gridNxz, nFreqf[i]);
-							MHDFilterMode1N << <devNy, gridNx, 0, 0 >> > (nFreqf[i]);
-							cufftExecC2R(nPlanC2Rs[i], nFreqf[i], (float*)Phi_midl[i] + gridGhost * gridNxz);
-							MHDFilterResizeN << <MRK4GridSize, MRK4BlockSize, 0, 0 >> > (Phi_midl[i]);
-
-						}
-						MHDAddZonal << <devNy, gridNx, 0, 0 >> > (myRank * hostNy + i * devNy, Phi_zonalxy[i], Phi_midl[i]);
-						MHD2w<ifLocal> << <MRK4GridSize, MRK4BlockSize, 0, 0 >> > (Phi_midl[i], w_midl[i], Phi2w[i]);
-					}
-
 				}
 
 				for (int i = 0; i < devNums; i++) {
@@ -7275,14 +7623,11 @@ int main(int argc, char* argv[]) {
 
 				/*----------------------------------------diagnose----------------------------------------*/
 
-				if (diagIndex % diagSteps == 0) {
+				diagIndex++;
 
-					if constexpr (std::is_same_v<ifDiagEnergy, trueType>) {
-						for (int i = 0; i < devNums; i++) {
-							cudaSetDevice(localRank * devNums + i);
-							MHDDiagEnergy<ifLocal> << <MRK4GridSize, MRK4BlockSize, 0, 0 >> > (diagnose[i], qtheta[i], Phi_midl[i], d_energy[i] + diagIndex / diagSteps);
-						}
-					}
+				outputIndex++;
+
+				if (diagIndex % diagSteps == 0) {
 
 					if constexpr (std::is_same_v<ifDiagAmplitude, trueType>) {
 						for (int i = 0; i < devNums; i++) {
@@ -7314,7 +7659,7 @@ int main(int argc, char* argv[]) {
 					if constexpr (std::is_same_v<ifDiagEparallel, trueType>) {
 						for (int i = 0; i < devNums; i++) {
 							cudaSetDevice(localRank * devNums + i);
-							MHDDiagEparallel<ifNonlinear, ifStaggered, ifEparallel> << <1, diagRightX - diagLeftX + 1, 0, 0 >> > (qtheta[i],
+							MHDDiagEparallel<ifNonlinear, ifStaggered, ifEparallel> << <8, (diagRightX - diagLeftX + 1) / 8, 0, 0 >> > (qtheta[i],
 								A_midl[i], dNe_midl[i], dTe_midl[i], Phi_midl[i], Ne0[i], Te0[i], Ne0_px[i], APhidNe2A[i], PhiA_A[i], NeA_A[i],
 								d_Epara[i] + diagIndex / diagSteps * (diagRightX - diagLeftX + 1), d_EparaES[i] + diagIndex / diagSteps * (diagRightX - diagLeftX + 1));
 						}
@@ -7325,11 +7670,25 @@ int main(int argc, char* argv[]) {
 						for (int i = 0; i < devNums; i++) {
 							cudaSetDevice(localRank * devNums + i);
 							if constexpr (std::is_same_v<ifIon, trueType>)
-								PICDiagDensityProfile<Ion> << <PICGridSize, PICBlockSize, 0, 0 >> > (pic2d[i], Ion_keys_in[i], Ion_values_in[i], d_IonDensity[i] + diagIndex / diagSteps * gridNx);
+								PICDiagDensity<Ion> << <PICGridSize, PICBlockSize, 0, 0 >> > (pic2d[i], Ion_keys_in[i], Ion_values_in[i], d_IonDensity[i] + diagIndex / diagSteps * gridNx);
 							if constexpr (std::is_same_v<ifAlpha, trueType>)
-								PICDiagDensityProfile<Alpha> << <PICGridSize, PICBlockSize, 0, 0 >> > (pic2d[i], Alpha_keys_in[i], Alpha_values_in[i], d_AlphaDensity[i] + diagIndex / diagSteps * gridNx);
+								PICDiagDensity<Alpha> << <PICGridSize, PICBlockSize, 0, 0 >> > (pic2d[i], Alpha_keys_in[i], Alpha_values_in[i], d_AlphaDensity[i] + diagIndex / diagSteps * gridNx);
 							if constexpr (std::is_same_v<ifBeam, trueType>)
-								PICDiagDensityProfile<Beam> << <PICGridSize, PICBlockSize, 0, 0 >> > (pic2d[i], Beam_keys_in[i], Beam_values_in[i], d_BeamDensity[i] + diagIndex / diagSteps * gridNx);
+								PICDiagDensity<Beam> << <PICGridSize, PICBlockSize, 0, 0 >> > (pic2d[i], Beam_keys_in[i], Beam_values_in[i], d_BeamDensity[i] + diagIndex / diagSteps * gridNx);
+						}
+
+					}
+
+					if constexpr (std::is_same_v<ifDiagDiffusivity, trueType>) {
+
+						for (int i = 0; i < devNums; i++) {
+							cudaSetDevice(localRank * devNums + i);
+							if constexpr (std::is_same_v<ifIon, trueType>)
+								PICDiagDiffusivity<gyroNums, Ion> << <PICGridSize, PICBlockSize, 0, 0 >> > (pic1d[i], pic2d[i], pic3d[i], Ion_keys_in[i], Ion_values_in[i], d_IonDiffusivity[i] + diagIndex / diagSteps * gridNx);
+							if constexpr (std::is_same_v<ifAlpha, trueType>)
+								PICDiagDiffusivity<gyroNums, Alpha> << <PICGridSize, PICBlockSize, 0, 0 >> > (pic1d[i], pic2d[i], pic3d[i], Alpha_keys_in[i], Alpha_values_in[i], d_AlphaDiffusivity[i] + diagIndex / diagSteps * gridNx);
+							if constexpr (std::is_same_v<ifBeam, trueType>)
+								PICDiagDiffusivity<gyroNums, Beam> << <PICGridSize, PICBlockSize, 0, 0 >> > (pic1d[i], pic2d[i], pic3d[i], Beam_keys_in[i], Beam_values_in[i], d_BeamDiffusivity[i] + diagIndex / diagSteps * gridNx);
 						}
 
 					}
@@ -7338,283 +7697,518 @@ int main(int argc, char* argv[]) {
 
 				if (outputIndex % outputSteps == 0) {
 
-					for (int mode = leftN; mode <= rightN; mode++) {
-
-						for (int i = 0; i < devNums; i++) {
-							cudaSetDevice(localRank * devNums + i);
-							if constexpr (std::is_same_v<dataType, double>) {
-								if constexpr (std::is_same_v<ifOutputw, trueType>) {
-									cufftExecD2Z(nPlanR2Cs[i], (double*)w_midl[i] + gridGhost * gridNxz, nFreqd[i]);
-									MHDFilterModeN << <devNy, gridNx, 0, 0 >> > (nFreqd[i], mode);
-									cufftExecZ2D(nPlanC2Rs[i], nFreqd[i], (double*)d_eachw[i] + gridGhost * gridNxz);
-									MHDFilterResizeN << <MRK4GridSize, MRK4BlockSize, 0, 0 >> > (d_eachw[i]);
-								}
-								if constexpr (std::is_same_v<ifOutputA, trueType>) {
-									cufftExecD2Z(nPlanR2Cs[i], (double*)A_midl[i] + gridGhost * gridNxz, nFreqd[i]);
-									MHDFilterModeN << <devNy, gridNx, 0, 0 >> > (nFreqd[i], mode);
-									cufftExecZ2D(nPlanC2Rs[i], nFreqd[i], (double*)d_eachA[i] + gridGhost * gridNxz);
-									MHDFilterResizeN << <MRK4GridSize, MRK4BlockSize, 0, 0 >> > (d_eachA[i]);
-								}
-								if constexpr (std::is_same_v<ifOutputdNe, trueType>) {
-									cufftExecD2Z(nPlanR2Cs[i], (double*)dNe_midl[i] + gridGhost * gridNxz, nFreqd[i]);
-									MHDFilterModeN << <devNy, gridNx, 0, 0 >> > (nFreqd[i], mode);
-									cufftExecZ2D(nPlanC2Rs[i], nFreqd[i], (double*)d_eachdNe[i] + gridGhost * gridNxz);
-									MHDFilterResizeN << <MRK4GridSize, MRK4BlockSize, 0, 0 >> > (d_eachdNe[i]);
-								}
-								if constexpr (std::is_same_v<ifOutputdTe, trueType>) {
-									cufftExecD2Z(nPlanR2Cs[i], (double*)dTe_midl[i] + gridGhost * gridNxz, nFreqd[i]);
-									MHDFilterModeN << <devNy, gridNx, 0, 0 >> > (nFreqd[i], mode);
-									cufftExecZ2D(nPlanC2Rs[i], nFreqd[i], (double*)d_eachdTe[i] + gridGhost * gridNxz);
-									MHDFilterResizeN << <MRK4GridSize, MRK4BlockSize, 0, 0 >> > (d_eachdTe[i]);
-								}
-								if constexpr (std::is_same_v<ifOutputPhi, trueType>) {
-									cufftExecD2Z(nPlanR2Cs[i], (double*)Phi_midl[i] + gridGhost * gridNxz, nFreqd[i]);
-									MHDFilterModeN << <devNy, gridNx, 0, 0 >> > (nFreqd[i], mode);
-									cufftExecZ2D(nPlanC2Rs[i], nFreqd[i], (double*)d_eachPhi[i] + gridGhost * gridNxz);
-									MHDFilterResizeN << <MRK4GridSize, MRK4BlockSize, 0, 0 >> > (d_eachPhi[i]);
-								}
-								if constexpr (std::is_same_v<ifOutputdPi, trueType>) {
-									cufftExecD2Z(nPlanR2Cs[i], (double*)dPi_midl[i] + gridGhost * gridNxz, nFreqd[i]);
-									MHDFilterModeN << <devNy, gridNx, 0, 0 >> > (nFreqd[i], mode);
-									cufftExecZ2D(nPlanC2Rs[i], nFreqd[i], (double*)d_eachdPi[i] + gridGhost * gridNxz);
-									MHDFilterResizeN << <MRK4GridSize, MRK4BlockSize, 0, 0 >> > (d_eachdPi[i]);
-								}
-								if constexpr (std::is_same_v<ifOutputdPa, trueType>) {
-									cufftExecD2Z(nPlanR2Cs[i], (double*)dPa_midl[i] + gridGhost * gridNxz, nFreqd[i]);
-									MHDFilterModeN << <devNy, gridNx, 0, 0 >> > (nFreqd[i], mode);
-									cufftExecZ2D(nPlanC2Rs[i], nFreqd[i], (double*)d_eachdPa[i] + gridGhost * gridNxz);
-									MHDFilterResizeN << <MRK4GridSize, MRK4BlockSize, 0, 0 >> > (d_eachdPa[i]);
-								}
-								if constexpr (std::is_same_v<ifOutputdPb, trueType>) {
-									cufftExecD2Z(nPlanR2Cs[i], (double*)dPb_midl[i] + gridGhost * gridNxz, nFreqd[i]);
-									MHDFilterModeN << <devNy, gridNx, 0, 0 >> > (nFreqd[i], mode);
-									cufftExecZ2D(nPlanC2Rs[i], nFreqd[i], (double*)d_eachdPb[i] + gridGhost * gridNxz);
-									MHDFilterResizeN << <MRK4GridSize, MRK4BlockSize, 0, 0 >> > (d_eachdPb[i]);
-								}
-							}
-							else {
-								if constexpr (std::is_same_v<ifOutputw, trueType>) {
-									cufftExecR2C(nPlanR2Cs[i], (float*)w_midl[i] + gridGhost * gridNxz, nFreqf[i]);
-									MHDFilterModeN << <devNy, gridNx, 0, 0 >> > (nFreqf[i], mode);
-									cufftExecC2R(nPlanC2Rs[i], nFreqf[i], (float*)d_eachw[i] + gridGhost * gridNxz);
-									MHDFilterResizeN << <MRK4GridSize, MRK4BlockSize, 0, 0 >> > (d_eachw[i]);
-								}
-								if constexpr (std::is_same_v<ifOutputA, trueType>) {
-									cufftExecR2C(nPlanR2Cs[i], (float*)A_midl[i] + gridGhost * gridNxz, nFreqf[i]);
-									MHDFilterModeN << <devNy, gridNx, 0, 0 >> > (nFreqf[i], mode);
-									cufftExecC2R(nPlanC2Rs[i], nFreqf[i], (float*)d_eachA[i] + gridGhost * gridNxz);
-									MHDFilterResizeN << <MRK4GridSize, MRK4BlockSize, 0, 0 >> > (d_eachA[i]);
-								}
-								if constexpr (std::is_same_v<ifOutputdNe, trueType>) {
-									cufftExecR2C(nPlanR2Cs[i], (float*)dNe_midl[i] + gridGhost * gridNxz, nFreqf[i]);
-									MHDFilterModeN << <devNy, gridNx, 0, 0 >> > (nFreqf[i], mode);
-									cufftExecC2R(nPlanC2Rs[i], nFreqf[i], (float*)d_eachdNe[i] + gridGhost * gridNxz);
-									MHDFilterResizeN << <MRK4GridSize, MRK4BlockSize, 0, 0 >> > (d_eachdNe[i]);
-								}
-								if constexpr (std::is_same_v<ifOutputdTe, trueType>) {
-									cufftExecR2C(nPlanR2Cs[i], (float*)dTe_midl[i] + gridGhost * gridNxz, nFreqf[i]);
-									MHDFilterModeN << <devNy, gridNx, 0, 0 >> > (nFreqf[i], mode);
-									cufftExecC2R(nPlanC2Rs[i], nFreqf[i], (float*)d_eachdTe[i] + gridGhost * gridNxz);
-									MHDFilterResizeN << <MRK4GridSize, MRK4BlockSize, 0, 0 >> > (d_eachdTe[i]);
-								}
-								if constexpr (std::is_same_v<ifOutputPhi, trueType>) {
-									cufftExecR2C(nPlanR2Cs[i], (float*)Phi_midl[i] + gridGhost * gridNxz, nFreqf[i]);
-									MHDFilterModeN << <devNy, gridNx, 0, 0 >> > (nFreqf[i], mode);
-									cufftExecC2R(nPlanC2Rs[i], nFreqf[i], (float*)d_eachPhi[i] + gridGhost * gridNxz);
-									MHDFilterResizeN << <MRK4GridSize, MRK4BlockSize, 0, 0 >> > (d_eachPhi[i]);
-								}
-								if constexpr (std::is_same_v<ifOutputdPi, trueType>) {
-									cufftExecR2C(nPlanR2Cs[i], (float*)dPi_midl[i] + gridGhost * gridNxz, nFreqf[i]);
-									MHDFilterModeN << <devNy, gridNx, 0, 0 >> > (nFreqf[i], mode);
-									cufftExecC2R(nPlanC2Rs[i], nFreqf[i], (float*)d_eachdPi[i] + gridGhost * gridNxz);
-									MHDFilterResizeN << <MRK4GridSize, MRK4BlockSize, 0, 0 >> > (d_eachdPi[i]);
-								}
-								if constexpr (std::is_same_v<ifOutputdPa, trueType>) {
-									cufftExecR2C(nPlanR2Cs[i], (float*)dPa_midl[i] + gridGhost * gridNxz, nFreqf[i]);
-									MHDFilterModeN << <devNy, gridNx, 0, 0 >> > (nFreqf[i], mode);
-									cufftExecC2R(nPlanC2Rs[i], nFreqf[i], (float*)d_eachdPa[i] + gridGhost * gridNxz);
-									MHDFilterResizeN << <MRK4GridSize, MRK4BlockSize, 0, 0 >> > (d_eachdPa[i]);
-								}
-								if constexpr (std::is_same_v<ifOutputdPb, trueType>) {
-									cufftExecR2C(nPlanR2Cs[i], (float*)dPb_midl[i] + gridGhost * gridNxz, nFreqf[i]);
-									MHDFilterModeN << <devNy, gridNx, 0, 0 >> > (nFreqf[i], mode);
-									cufftExecC2R(nPlanC2Rs[i], nFreqf[i], (float*)d_eachdPb[i] + gridGhost * gridNxz);
-									MHDFilterResizeN << <MRK4GridSize, MRK4BlockSize, 0, 0 >> > (d_eachdPb[i]);
-								}
-							}
-						}
-
-						ncclGroupStart();
-						for (int i = 0; i < devNums; i++) {
-							if constexpr (std::is_same_v<ifOutputw, trueType>)
-								ncclAllGather(d_eachw[i] + gridGhost * gridNxz, d_totalw[i]
-									+ (size_t)outputIndex / outputSteps * (rightN - leftN + 1) * gridNy * gridNxz + (mode - leftN) * gridNy * gridNxz, devNy * gridNxz, ncclType, comms[i], 0);
-							if constexpr (std::is_same_v<ifOutputA, trueType>)
-								ncclAllGather(d_eachA[i] + gridGhost * gridNxz, d_totalA[i]
-									+ (size_t)outputIndex / outputSteps * (rightN - leftN + 1) * gridNy * gridNxz + (mode - leftN) * gridNy * gridNxz, devNy * gridNxz, ncclType, comms[i], 0);
-							if constexpr (std::is_same_v<ifOutputdNe, trueType>)
-								ncclAllGather(d_eachdNe[i] + gridGhost * gridNxz, d_totaldNe[i]
-									+ (size_t)outputIndex / outputSteps * (rightN - leftN + 1) * gridNy * gridNxz + (mode - leftN) * gridNy * gridNxz, devNy * gridNxz, ncclType, comms[i], 0);
-							if constexpr (std::is_same_v<ifOutputdTe, trueType>)
-								ncclAllGather(d_eachdTe[i] + gridGhost * gridNxz, d_totaldTe[i]
-									+ (size_t)outputIndex / outputSteps * (rightN - leftN + 1) * gridNy * gridNxz + (mode - leftN) * gridNy * gridNxz, devNy * gridNxz, ncclType, comms[i], 0);
-							if constexpr (std::is_same_v<ifOutputPhi, trueType>)
-								ncclAllGather(d_eachPhi[i] + gridGhost * gridNxz, d_totalPhi[i]
-									+ (size_t)outputIndex / outputSteps * (rightN - leftN + 1) * gridNy * gridNxz + (mode - leftN) * gridNy * gridNxz, devNy * gridNxz, ncclType, comms[i], 0);
-							if constexpr (std::is_same_v<ifOutputdPi, trueType>)
-								ncclAllGather(d_eachdPi[i] + gridGhost * gridNxz, d_totaldPi[i]
-									+ (size_t)outputIndex / outputSteps * (rightN - leftN + 1) * gridNy * gridNxz + (mode - leftN) * gridNy * gridNxz, devNy * gridNxz, ncclType, comms[i], 0);
-							if constexpr (std::is_same_v<ifOutputdPa, trueType>)
-								ncclAllGather(d_eachdPa[i] + gridGhost * gridNxz, d_totaldPa[i]
-									+ (size_t)outputIndex / outputSteps * (rightN - leftN + 1) * gridNy * gridNxz + (mode - leftN) * gridNy * gridNxz, devNy * gridNxz, ncclType, comms[i], 0);
-							if constexpr (std::is_same_v<ifOutputdPb, trueType>)
-								ncclAllGather(d_eachdPb[i] + gridGhost * gridNxz, d_totaldPb[i]
-									+ (size_t)outputIndex / outputSteps * (rightN - leftN + 1) * gridNy * gridNxz + (mode - leftN) * gridNy * gridNxz, devNy * gridNxz, ncclType, comms[i], 0);
-						}
-						ncclGroupEnd();
-
+					ncclGroupStart();
+					for (int i = 0; i < devNums; i++) {
+						if constexpr (std::is_same_v<ifOutputPhi, trueType>)
+							ncclAllGather(Phi_midl[i] + gridGhost * gridNxz, d_totalPhi[i] + (size_t)outputIndex / outputSteps * gridNy * gridNxz, devNy * gridNxz, ncclType, comms[i], 0);
+						if constexpr (std::is_same_v<ifOutputA, trueType>)
+							ncclAllGather(A_midl[i] + gridGhost * gridNxz, d_totalA[i] + (size_t)outputIndex / outputSteps * gridNy * gridNxz, devNy * gridNxz, ncclType, comms[i], 0);
+						if constexpr (std::is_same_v<ifOutputdNe, trueType>)
+							ncclAllGather(dNe_midl[i] + gridGhost * gridNxz, d_totaldNe[i] + (size_t)outputIndex / outputSteps * gridNy * gridNxz, devNy * gridNxz, ncclType, comms[i], 0);
+						if constexpr (std::is_same_v<ifOutputdTe, trueType>)
+							ncclAllGather(dTe_midl[i] + gridGhost * gridNxz, d_totaldTe[i] + (size_t)outputIndex / outputSteps * gridNy * gridNxz, devNy * gridNxz, ncclType, comms[i], 0);
+						if constexpr (std::is_same_v<ifOutputdPi, trueType>)
+							ncclAllGather(dPi_midl[i] + gridGhost * gridNxz, d_totaldPi[i] + (size_t)outputIndex / outputSteps * gridNy * gridNxz, devNy * gridNxz, ncclType, comms[i], 0);
+						if constexpr (std::is_same_v<ifOutputdPa, trueType>)
+							ncclAllGather(dPa_midl[i] + gridGhost * gridNxz, d_totaldPa[i] + (size_t)outputIndex / outputSteps * gridNy * gridNxz, devNy * gridNxz, ncclType, comms[i], 0);
+						if constexpr (std::is_same_v<ifOutputdPb, trueType>)
+							ncclAllGather(dPb_midl[i] + gridGhost * gridNxz, d_totaldPb[i] + (size_t)outputIndex / outputSteps * gridNy * gridNxz, devNy * gridNxz, ncclType, comms[i], 0);
 					}
+					ncclGroupEnd();
 
 				}
-
-				diagIndex++;
-
-				outputIndex++;
 
 			}
 
 			/*---------------------------------------PIC RK4---------------------------------------*/
 
-			for (int i = 0; i < devNums; i++) {
-				cudaSetDevice(localRank * devNums + i);
-				MHD2Apt<ifNonlinear, ifLocal, ifStaggered, ifEparallel> << <MRK4GridSize, MRK4BlockSize, 0, 0 >> > (qtheta[i],
-					A_midl[i], dNe_midl[i], dTe_midl[i], Phi_midl[i], Ne0[i], Te0[i], Ne0_px[i], pic_APhidNe2A[i], pic_PhiA_A[i], pic_NeA_A[i], Apt_midl[i]);
-				if constexpr (std::is_same_v<ifStaggered, trueType>) {
-					MHDStaggered2C<ifLocal> << <MRK4GridSize, MRK4BlockSize, 0, 0 >> > (qtheta[i], A_midl[i], A_midr[i]);
-					MHDShifted2A<0, ifLocal> << <MRK4GridSize, MRK4BlockSize, 0, 0 >> > (qtheta[i], A_midr[i], dJpB_midr[i], Phi_midl[i], Phi_midr[i], Apt_midl[i], Apt_midr[i]);
-				}
-				else {
-					MHDShifted2A<0, ifLocal> << <MRK4GridSize, MRK4BlockSize, 0, 0 >> > (qtheta[i], A_midl[i], A_midr[i], Phi_midl[i], Phi_midr[i], Apt_midl[i], Apt_midr[i]);
-				}
-			}
-
-			ncclGroupStart();
-			for (int i = 0; i < devNums; i++) {
-				if constexpr (std::is_same_v<ifStaggered, trueType>)
-					ncclAllGather(dJpB_midr[i] + gridGhost * gridNxz, globalA[i] + gridGhost * gridNxz, devNy * gridNxz, ncclType, comms[i], 0);
-				else
-					ncclAllGather(A_midr[i] + gridGhost * gridNxz, globalA[i] + gridGhost * gridNxz, devNy * gridNxz, ncclType, comms[i], 0);
-				ncclAllGather(Phi_midr[i] + gridGhost * gridNxz, globalPhi[i] + gridGhost * gridNxz, devNy * gridNxz, ncclType, comms[i], 0);
-				ncclAllGather(Apt_midr[i] + gridGhost * gridNxz, globalApt[i] + gridGhost * gridNxz, devNy * gridNxz, ncclType, comms[i], 0);
-			}
-			ncclGroupEnd();
-
-			for (int i = 0; i < devNums; i++) {
-				cudaSetDevice(localRank * devNums + i);
-				MHDAlignedGhost<ifLocal> << <GhostGridSize, GhostBlockSize, 0, 0 >> > (qtheta[i], globalA[i], globalPhi[i], globalApt[i]);
-				MHD2PIC<ifLocal> << <M2PGridSize, M2PBlockSize, 0, 0 >> > (pic3d[i], globalA[i], globalPhi[i], globalApt[i]);
-				if constexpr (std::is_same_v<ifFLRPIC, trueType>) {
-					if constexpr (std::is_same_v<ifIon, trueType>)
-						GyroAlignedRK4<ratioDt, gyroNums, Ion, IonType> << <PICGridSize, PICBlockSize, 0, 0 >> > (pic1d[i], pic2d[i], pic3d[i], Ion_keys_in[i], Ion_values_in[i], globalPi[i]);
-					if constexpr (std::is_same_v<ifAlpha, trueType>)
-						GyroAlignedRK4<ratioDt, gyroNums, Alpha, AlphaType> << <PICGridSize, PICBlockSize, 0, 0 >> > (pic1d[i], pic2d[i], pic3d[i], Alpha_keys_in[i], Alpha_values_in[i], globalPa[i]);
-					if constexpr (std::is_same_v<ifBeam, trueType>)
-						GyroAlignedRK4<ratioDt, gyroNums, Beam, BeamType> << <PICGridSize, PICBlockSize, 0, 0 >> > (pic1d[i], pic2d[i], pic3d[i], Beam_keys_in[i], Beam_values_in[i], globalPb[i]);
-				}
-				else {
-					if constexpr (std::is_same_v<ifIon, trueType>)
-						DriftAlignedRK4<ratioDt, Ion, IonType> << <PICGridSize, PICBlockSize, 0, 0 >> > (pic1d[i], pic2d[i], pic3d[i], Ion_keys_in[i], Ion_values_in[i], globalPi[i]);
-					if constexpr (std::is_same_v<ifAlpha, trueType>)
-						DriftAlignedRK4<ratioDt, Alpha, AlphaType> << <PICGridSize, PICBlockSize, 0, 0 >> > (pic1d[i], pic2d[i], pic3d[i], Alpha_keys_in[i], Alpha_values_in[i], globalPa[i]);
-					if constexpr (std::is_same_v<ifBeam, trueType>)
-						DriftAlignedRK4<ratioDt, Beam, BeamType> << <PICGridSize, PICBlockSize, 0, 0 >> > (pic1d[i], pic2d[i], pic3d[i], Beam_keys_in[i], Beam_values_in[i], globalPb[i]);
-				}
-			}
-
-			ncclGroupStart();
-			for (int i = 0; i < devNums; i++) {
-				if constexpr (std::is_same_v<ifIon, trueType>)
-					ncclAllReduce(globalPi[i], globalPi[i], (gridNy + 2 * gridGhost) * gridNxz, ncclType, ncclSum, comms[i], 0);
-				if constexpr (std::is_same_v<ifAlpha, trueType>)
-					ncclAllReduce(globalPa[i], globalPa[i], (gridNy + 2 * gridGhost) * gridNxz, ncclType, ncclSum, comms[i], 0);
-				if constexpr (std::is_same_v<ifBeam, trueType>)
-					ncclAllReduce(globalPb[i], globalPb[i], (gridNy + 2 * gridGhost) * gridNxz, ncclType, ncclSum, comms[i], 0);
-			}
-			ncclGroupEnd();
-
-			for (int i = 0; i < devNums; i++) {
-				cudaSetDevice(localRank * devNums + i);
-				if constexpr (std::is_same_v<ifIon, trueType>) {
-					PICAlignedGhost<ifLocal> << <GhostGridSize, GhostBlockSize, 0, 0 >> > (qtheta[i], globalPi[i]);
-					cudaMemcpyAsync(dPi_midl[i], globalPi[i] + (myRank * hostNy + i * devNy) * gridNxz, sizeof(dataType) * (devNy + 2 * gridGhost) * gridNxz, cudaMemcpyDeviceToDevice, 0);
-					cudaMemsetAsync(globalPi[i], 0, sizeof(dataType) * (gridNy + 2 * gridGhost) * gridNxz, 0);
-				}
-				if constexpr (std::is_same_v<ifAlpha, trueType>) {
-					PICAlignedGhost<ifLocal> << <GhostGridSize, GhostBlockSize, 0, 0 >> > (qtheta[i], globalPa[i]);
-					cudaMemcpyAsync(dPa_midl[i], globalPa[i] + (myRank * hostNy + i * devNy) * gridNxz, sizeof(dataType) * (devNy + 2 * gridGhost) * gridNxz, cudaMemcpyDeviceToDevice, 0);
-					cudaMemsetAsync(globalPa[i], 0, sizeof(dataType) * (gridNy + 2 * gridGhost) * gridNxz, 0);
-				}
-				if constexpr (std::is_same_v<ifBeam, trueType>) {
-					PICAlignedGhost<ifLocal> << <GhostGridSize, GhostBlockSize, 0, 0 >> > (qtheta[i], globalPb[i]);
-					cudaMemcpyAsync(dPb_midl[i], globalPb[i] + (myRank * hostNy + i * devNy) * gridNxz, sizeof(dataType) * (devNy + 2 * gridGhost) * gridNxz, cudaMemcpyDeviceToDevice, 0);
-					cudaMemsetAsync(globalPb[i], 0, sizeof(dataType) * (gridNy + 2 * gridGhost) * gridNxz, 0);
-				}
-			}
-
-			for (int i = 0; i < devNums; i++) {
-				cudaSetDevice(localRank * devNums + i);
-				MHDShifted2A<1, ifLocal> << <MRK4GridSize, MRK4BlockSize, 0, 0 >> > (qtheta[i], dPi_midl[i], dPi_midr[i], dPa_midl[i], dPa_midr[i], dPb_midl[i], dPb_midr[i]);
-				if constexpr (std::is_same_v<ifIon, trueType>)
-					cudaMemcpyAsync(dPi_midl[i], dPi_midr[i], sizeof(dataType) * (devNy + 2 * gridGhost) * gridNxz, cudaMemcpyDeviceToDevice, 0);
-				if constexpr (std::is_same_v<ifAlpha, trueType>)
-					cudaMemcpyAsync(dPa_midl[i], dPa_midr[i], sizeof(dataType) * (devNy + 2 * gridGhost) * gridNxz, cudaMemcpyDeviceToDevice, 0);
-				if constexpr (std::is_same_v<ifBeam, trueType>)
-					cudaMemcpyAsync(dPb_midl[i], dPb_midr[i], sizeof(dataType) * (devNy + 2 * gridGhost) * gridNxz, cudaMemcpyDeviceToDevice, 0);
-			}
-
-			if constexpr (std::is_same_v<ifNablaPerp2dPi, trueType> || std::is_same_v<ifNablaPerp2dPa, trueType> || std::is_same_v<ifNablaPerp2dPb, trueType>) {
+			if constexpr (std::is_same_v<ifIon, trueType> || std::is_same_v<ifAlpha, trueType> || std::is_same_v<ifBeam, trueType>) {
 
 				for (int i = 0; i < devNums; i++) {
 					cudaSetDevice(localRank * devNums + i);
-					if constexpr (std::is_same_v<ifNablaPerp2dPi, trueType>) {
-						for (int j = 0; j < devNy; j++)
-							cudssExecute(cudssHandles[i][j], CUDSS_PHASE_SOLVE, dPiConfigs[i][j], dPiDatas[i][j], dPiAs[i][j], dPiXs[i][j], dPiBs[i][j]);
-						cudaMemcpyAsync(dPi_midl[i], dPi_midr[i], sizeof(dataType) * (devNy + 2 * gridGhost) * gridNxz, cudaMemcpyDeviceToDevice, 0);
+					MHD2Apt<ifNonlinear, ifLocal, ifStaggered, ifEparallel> << <MRK4GridSize, MRK4BlockSize, 0, 0 >> > (qtheta[i],
+						A_midl[i], dNe_midl[i], dTe_midl[i], Phi_midl[i], Ne0[i], Te0[i], Ne0_px[i], pic_APhidNe2A[i], pic_PhiA_A[i], pic_NeA_A[i], Apt_midl[i]);
+					if constexpr (std::is_same_v<ifStaggered, trueType>) {
+						MHDStaggered2C<ifLocal> << <MRK4GridSize, MRK4BlockSize, 0, 0 >> > (qtheta[i], A_midl[i], A_midr[i]);
+						MHDShifted2A<0, ifLocal> << <MRK4GridSize, MRK4BlockSize, 0, 0 >> > (qtheta[i], A_midr[i], dJpB_midr[i], Phi_midl[i], Phi_midr[i], Apt_midl[i], Apt_midr[i]);
 					}
-					if constexpr (std::is_same_v<ifNablaPerp2dPa, trueType>) {
-						for (int j = 0; j < devNy; j++)
-							cudssExecute(cudssHandles[i][j], CUDSS_PHASE_SOLVE, dPaConfigs[i][j], dPaDatas[i][j], dPaAs[i][j], dPaXs[i][j], dPaBs[i][j]);
-						cudaMemcpyAsync(dPa_midl[i], dPa_midr[i], sizeof(dataType) * (devNy + 2 * gridGhost) * gridNxz, cudaMemcpyDeviceToDevice, 0);
-					}
-					if constexpr (std::is_same_v<ifNablaPerp2dPb, trueType>) {
-						for (int j = 0; j < devNy; j++)
-							cudssExecute(cudssHandles[i][j], CUDSS_PHASE_SOLVE, dPbConfigs[i][j], dPbDatas[i][j], dPbAs[i][j], dPbXs[i][j], dPbBs[i][j]);
-						cudaMemcpyAsync(dPb_midl[i], dPb_midr[i], sizeof(dataType) * (devNy + 2 * gridGhost) * gridNxz, cudaMemcpyDeviceToDevice, 0);
+					else {
+						MHDShifted2A<0, ifLocal> << <MRK4GridSize, MRK4BlockSize, 0, 0 >> > (qtheta[i], A_midl[i], A_midr[i], Phi_midl[i], Phi_midr[i], Apt_midl[i], Apt_midr[i]);
 					}
 				}
 
-			}
+				ncclGroupStart();
+				for (int i = 0; i < devNums; i++) {
+					if constexpr (std::is_same_v<ifStaggered, trueType>)
+						ncclAllGather(dJpB_midr[i] + gridGhost * gridNxz, globalA[i] + gridGhost * gridNxz, devNy * gridNxz, ncclType, comms[i], 0);
+					else
+						ncclAllGather(A_midr[i] + gridGhost * gridNxz, globalA[i] + gridGhost * gridNxz, devNy * gridNxz, ncclType, comms[i], 0);
+					ncclAllGather(Phi_midr[i] + gridGhost * gridNxz, globalPhi[i] + gridGhost * gridNxz, devNy * gridNxz, ncclType, comms[i], 0);
+					ncclAllGather(Apt_midr[i] + gridGhost * gridNxz, globalApt[i] + gridGhost * gridNxz, devNy * gridNxz, ncclType, comms[i], 0);
+				}
+				ncclGroupEnd();
 
-			if constexpr (std::is_same_v<ifNablaPara4dPi, trueType> || std::is_same_v<ifNablaPara4dPa, trueType> || std::is_same_v<ifNablaPara4dPb, trueType>) {
+				for (int i = 0; i < devNums; i++) {
+					cudaSetDevice(localRank * devNums + i);
+					MHDAlignedGhost<ifLocal> << <GhostGridSize, GhostBlockSize, 0, 0 >> > (qtheta[i], globalA[i], globalPhi[i], globalApt[i]);
+					MHD2PIC<ifLocal> << <M2PGridSize, M2PBlockSize, 0, 0 >> > (pic3d[i], globalA[i], globalPhi[i], globalApt[i]);
+					if constexpr (std::is_same_v<ifFLRPIC, trueType>) {
+						if constexpr (std::is_same_v<ifIon, trueType>)
+							GyroAlignedRK4<ratioDt, gyroNums, Ion, IonType> << <PICGridSize, PICBlockSize, 0, 0 >> > (pic1d[i], pic2d[i], pic3d[i], Ion_keys_in[i], Ion_values_in[i], globalPi[i]);
+						if constexpr (std::is_same_v<ifAlpha, trueType>)
+							GyroAlignedRK4<ratioDt, gyroNums, Alpha, AlphaType> << <PICGridSize, PICBlockSize, 0, 0 >> > (pic1d[i], pic2d[i], pic3d[i], Alpha_keys_in[i], Alpha_values_in[i], globalPa[i]);
+						if constexpr (std::is_same_v<ifBeam, trueType>)
+							GyroAlignedRK4<ratioDt, gyroNums, Beam, BeamType> << <PICGridSize, PICBlockSize, 0, 0 >> > (pic1d[i], pic2d[i], pic3d[i], Beam_keys_in[i], Beam_values_in[i], globalPb[i]);
+					}
+					else {
+						if constexpr (std::is_same_v<ifIon, trueType>)
+							DriftAlignedRK4<ratioDt, Ion, IonType> << <PICGridSize, PICBlockSize, 0, 0 >> > (pic1d[i], pic2d[i], pic3d[i], Ion_keys_in[i], Ion_values_in[i], globalPi[i]);
+						if constexpr (std::is_same_v<ifAlpha, trueType>)
+							DriftAlignedRK4<ratioDt, Alpha, AlphaType> << <PICGridSize, PICBlockSize, 0, 0 >> > (pic1d[i], pic2d[i], pic3d[i], Alpha_keys_in[i], Alpha_values_in[i], globalPa[i]);
+						if constexpr (std::is_same_v<ifBeam, trueType>)
+							DriftAlignedRK4<ratioDt, Beam, BeamType> << <PICGridSize, PICBlockSize, 0, 0 >> > (pic1d[i], pic2d[i], pic3d[i], Beam_keys_in[i], Beam_values_in[i], globalPb[i]);
+					}
+				}
+
+				ncclGroupStart();
+				for (int i = 0; i < devNums; i++) {
+					if constexpr (std::is_same_v<ifIon, trueType>)
+						ncclAllReduce(globalPi[i], globalPi[i], (gridNy + 2 * gridGhost) * gridNxz, ncclType, ncclSum, comms[i], 0);
+					if constexpr (std::is_same_v<ifAlpha, trueType>)
+						ncclAllReduce(globalPa[i], globalPa[i], (gridNy + 2 * gridGhost) * gridNxz, ncclType, ncclSum, comms[i], 0);
+					if constexpr (std::is_same_v<ifBeam, trueType>)
+						ncclAllReduce(globalPb[i], globalPb[i], (gridNy + 2 * gridGhost) * gridNxz, ncclType, ncclSum, comms[i], 0);
+				}
+				ncclGroupEnd();
+
+				for (int i = 0; i < devNums; i++) {
+					cudaSetDevice(localRank * devNums + i);
+					if constexpr (std::is_same_v<ifIon, trueType>) {
+						PICAlignedGhost<ifLocal> << <GhostGridSize, GhostBlockSize, 0, 0 >> > (qtheta[i], globalPi[i]);
+						cudaMemcpyAsync(dPi_midl[i], globalPi[i] + (myRank * hostNy + i * devNy) * gridNxz, sizeof(dataType) * (devNy + 2 * gridGhost) * gridNxz, cudaMemcpyDeviceToDevice, 0);
+						cudaMemsetAsync(globalPi[i], 0, sizeof(dataType) * (gridNy + 2 * gridGhost) * gridNxz, 0);
+					}
+					if constexpr (std::is_same_v<ifAlpha, trueType>) {
+						PICAlignedGhost<ifLocal> << <GhostGridSize, GhostBlockSize, 0, 0 >> > (qtheta[i], globalPa[i]);
+						cudaMemcpyAsync(dPa_midl[i], globalPa[i] + (myRank * hostNy + i * devNy) * gridNxz, sizeof(dataType) * (devNy + 2 * gridGhost) * gridNxz, cudaMemcpyDeviceToDevice, 0);
+						cudaMemsetAsync(globalPa[i], 0, sizeof(dataType) * (gridNy + 2 * gridGhost) * gridNxz, 0);
+					}
+					if constexpr (std::is_same_v<ifBeam, trueType>) {
+						PICAlignedGhost<ifLocal> << <GhostGridSize, GhostBlockSize, 0, 0 >> > (qtheta[i], globalPb[i]);
+						cudaMemcpyAsync(dPb_midl[i], globalPb[i] + (myRank * hostNy + i * devNy) * gridNxz, sizeof(dataType) * (devNy + 2 * gridGhost) * gridNxz, cudaMemcpyDeviceToDevice, 0);
+						cudaMemsetAsync(globalPb[i], 0, sizeof(dataType) * (gridNy + 2 * gridGhost) * gridNxz, 0);
+					}
+				}
+
+				for (int i = 0; i < devNums; i++) {
+					cudaSetDevice(localRank * devNums + i);
+					MHDShifted2A<1, ifLocal> << <MRK4GridSize, MRK4BlockSize, 0, 0 >> > (qtheta[i], dPi_midl[i], dPi_midr[i], dPa_midl[i], dPa_midr[i], dPb_midl[i], dPb_midr[i]);
+					if constexpr (std::is_same_v<ifIon, trueType>)
+						cudaMemcpyAsync(dPi_midl[i], dPi_midr[i], sizeof(dataType) * (devNy + 2 * gridGhost) * gridNxz, cudaMemcpyDeviceToDevice, 0);
+					if constexpr (std::is_same_v<ifAlpha, trueType>)
+						cudaMemcpyAsync(dPa_midl[i], dPa_midr[i], sizeof(dataType) * (devNy + 2 * gridGhost) * gridNxz, cudaMemcpyDeviceToDevice, 0);
+					if constexpr (std::is_same_v<ifBeam, trueType>)
+						cudaMemcpyAsync(dPb_midl[i], dPb_midr[i], sizeof(dataType) * (devNy + 2 * gridGhost) * gridNxz, cudaMemcpyDeviceToDevice, 0);
+				}
+
+				if constexpr (std::is_same_v<ifNablaPerp2dPi, trueType> || std::is_same_v<ifNablaPerp2dPa, trueType> || std::is_same_v<ifNablaPerp2dPb, trueType>) {
+
+					for (int i = 0; i < devNums; i++) {
+						cudaSetDevice(localRank * devNums + i);
+						if constexpr (std::is_same_v<ifNablaPerp2dPi, trueType>) {
+							for (int j = 0; j < devNy; j++)
+								cudssExecute(cudssHandles[i][j], CUDSS_PHASE_SOLVE, dPiConfigs[i][j], dPiDatas[i][j], dPiAs[i][j], dPiXs[i][j], dPiBs[i][j]);
+							cudaMemcpyAsync(dPi_midl[i], dPi_midr[i], sizeof(dataType) * (devNy + 2 * gridGhost) * gridNxz, cudaMemcpyDeviceToDevice, 0);
+						}
+						if constexpr (std::is_same_v<ifNablaPerp2dPa, trueType>) {
+							for (int j = 0; j < devNy; j++)
+								cudssExecute(cudssHandles[i][j], CUDSS_PHASE_SOLVE, dPaConfigs[i][j], dPaDatas[i][j], dPaAs[i][j], dPaXs[i][j], dPaBs[i][j]);
+							cudaMemcpyAsync(dPa_midl[i], dPa_midr[i], sizeof(dataType) * (devNy + 2 * gridGhost) * gridNxz, cudaMemcpyDeviceToDevice, 0);
+						}
+						if constexpr (std::is_same_v<ifNablaPerp2dPb, trueType>) {
+							for (int j = 0; j < devNy; j++)
+								cudssExecute(cudssHandles[i][j], CUDSS_PHASE_SOLVE, dPbConfigs[i][j], dPbDatas[i][j], dPbAs[i][j], dPbXs[i][j], dPbBs[i][j]);
+							cudaMemcpyAsync(dPb_midl[i], dPb_midr[i], sizeof(dataType) * (devNy + 2 * gridGhost) * gridNxz, cudaMemcpyDeviceToDevice, 0);
+						}
+					}
+
+				}
+
+				if constexpr (std::is_same_v<ifNablaPara4dPi, trueType> || std::is_same_v<ifNablaPara4dPa, trueType> || std::is_same_v<ifNablaPara4dPb, trueType>) {
+
+					ncclGroupStart();
+					for (int i = 0; i < devNums; i++) {
+
+						if constexpr (std::is_same_v<ifNablaPara4dPi, trueType>) {
+							ncclSend(dPi_midl[i] + ncclLeftSend, gridGhost * gridNxz, ncclType, ncclLeftNei[i], comms[i], 0);
+							ncclRecv(dPi_midl[i] + ncclRightRecv, gridGhost * gridNxz, ncclType, ncclRightNei[i], comms[i], 0);
+							ncclSend(dPi_midl[i] + ncclRightSend, gridGhost * gridNxz, ncclType, ncclRightNei[i], comms[i], 0);
+							ncclRecv(dPi_midl[i] + ncclLeftRecv, gridGhost * gridNxz, ncclType, ncclLeftNei[i], comms[i], 0);
+						}
+
+						if constexpr (std::is_same_v<ifNablaPara4dPa, trueType>) {
+							ncclSend(dPa_midl[i] + ncclLeftSend, gridGhost * gridNxz, ncclType, ncclLeftNei[i], comms[i], 0);
+							ncclRecv(dPa_midl[i] + ncclRightRecv, gridGhost * gridNxz, ncclType, ncclRightNei[i], comms[i], 0);
+							ncclSend(dPa_midl[i] + ncclRightSend, gridGhost * gridNxz, ncclType, ncclRightNei[i], comms[i], 0);
+							ncclRecv(dPa_midl[i] + ncclLeftRecv, gridGhost * gridNxz, ncclType, ncclLeftNei[i], comms[i], 0);
+						}
+
+						if constexpr (std::is_same_v<ifNablaPara4dPb, trueType>) {
+							ncclSend(dPb_midl[i] + ncclLeftSend, gridGhost * gridNxz, ncclType, ncclLeftNei[i], comms[i], 0);
+							ncclRecv(dPb_midl[i] + ncclRightRecv, gridGhost * gridNxz, ncclType, ncclRightNei[i], comms[i], 0);
+							ncclSend(dPb_midl[i] + ncclRightSend, gridGhost * gridNxz, ncclType, ncclRightNei[i], comms[i], 0);
+							ncclRecv(dPb_midl[i] + ncclLeftRecv, gridGhost * gridNxz, ncclType, ncclLeftNei[i], comms[i], 0);
+						}
+
+					}
+					ncclGroupEnd();
+
+					for (int i = 0; i < devNums; i++) {
+						cudaSetDevice(localRank * devNums + i);
+						if constexpr (std::is_same_v<ifNablaPara4dPi, trueType>)
+							MHDNablaPara2<ifLocal> << <MRK4GridSize, MRK4BlockSize, 0, 0 >> > (qtheta[i], dPi_midl[i], dPi_midr[i]);
+						if constexpr (std::is_same_v<ifNablaPara4dPa, trueType>)
+							MHDNablaPara2<ifLocal> << <MRK4GridSize, MRK4BlockSize, 0, 0 >> > (qtheta[i], dPa_midl[i], dPa_midr[i]);
+						if constexpr (std::is_same_v<ifNablaPara4dPb, trueType>)
+							MHDNablaPara2<ifLocal> << <MRK4GridSize, MRK4BlockSize, 0, 0 >> > (qtheta[i], dPb_midl[i], dPb_midr[i]);
+					}
+
+					ncclGroupStart();
+					for (int i = 0; i < devNums; i++) {
+
+						if constexpr (std::is_same_v<ifNablaPara4dPi, trueType>) {
+							ncclSend(dPi_midr[i] + ncclLeftSend, gridGhost * gridNxz, ncclType, ncclLeftNei[i], comms[i], 0);
+							ncclRecv(dPi_midr[i] + ncclRightRecv, gridGhost * gridNxz, ncclType, ncclRightNei[i], comms[i], 0);
+							ncclSend(dPi_midr[i] + ncclRightSend, gridGhost * gridNxz, ncclType, ncclRightNei[i], comms[i], 0);
+							ncclRecv(dPi_midr[i] + ncclLeftRecv, gridGhost * gridNxz, ncclType, ncclLeftNei[i], comms[i], 0);
+						}
+
+						if constexpr (std::is_same_v<ifNablaPara4dPa, trueType>) {
+							ncclSend(dPa_midr[i] + ncclLeftSend, gridGhost * gridNxz, ncclType, ncclLeftNei[i], comms[i], 0);
+							ncclRecv(dPa_midr[i] + ncclRightRecv, gridGhost * gridNxz, ncclType, ncclRightNei[i], comms[i], 0);
+							ncclSend(dPa_midr[i] + ncclRightSend, gridGhost * gridNxz, ncclType, ncclRightNei[i], comms[i], 0);
+							ncclRecv(dPa_midr[i] + ncclLeftRecv, gridGhost * gridNxz, ncclType, ncclLeftNei[i], comms[i], 0);
+						}
+
+						if constexpr (std::is_same_v<ifNablaPara4dPb, trueType>) {
+							ncclSend(dPb_midr[i] + ncclLeftSend, gridGhost * gridNxz, ncclType, ncclLeftNei[i], comms[i], 0);
+							ncclRecv(dPb_midr[i] + ncclRightRecv, gridGhost * gridNxz, ncclType, ncclRightNei[i], comms[i], 0);
+							ncclSend(dPb_midr[i] + ncclRightSend, gridGhost * gridNxz, ncclType, ncclRightNei[i], comms[i], 0);
+							ncclRecv(dPb_midr[i] + ncclLeftRecv, gridGhost * gridNxz, ncclType, ncclLeftNei[i], comms[i], 0);
+						}
+
+					}
+					ncclGroupEnd();
+
+					for (int i = 0; i < devNums; i++) {
+						cudaSetDevice(localRank * devNums + i);
+						if constexpr (std::is_same_v<ifNablaPara4dPi, trueType>)
+							MHDNablaPara4<4, ifLocal> << <MRK4GridSize, MRK4BlockSize, 0, 0 >> > (qtheta[i], dPi_midl[i], dPi_midr[i]);
+						if constexpr (std::is_same_v<ifNablaPara4dPa, trueType>)
+							MHDNablaPara4<5, ifLocal> << <MRK4GridSize, MRK4BlockSize, 0, 0 >> > (qtheta[i], dPa_midl[i], dPa_midr[i]);
+						if constexpr (std::is_same_v<ifNablaPara4dPb, trueType>)
+							MHDNablaPara4<6, ifLocal> << <MRK4GridSize, MRK4BlockSize, 0, 0 >> > (qtheta[i], dPb_midl[i], dPb_midr[i]);
+					}
+
+				}
+
+				if constexpr (std::is_same_v<ifFilterN_dP, trueType>) {
+
+					for (int i = 0; i < devNums; i++) {
+						cudaSetDevice(localRank * devNums + i);
+						if constexpr (std::is_same_v<dataType, double>) {
+
+							if constexpr (std::is_same_v<ifIon, trueType>) {
+								cufftExecD2Z(nPlanR2Cs[i], (double*)dPi_midl[i] + gridGhost * gridNxz, nFreqd[i]);
+								MHDFilterModeN << <devNy, gridNx, 0, 0 >> > (nFreqd[i], leftN, rightN);
+								cufftExecZ2D(nPlanC2Rs[i], nFreqd[i], (double*)dPi_midl[i] + gridGhost * gridNxz);
+							}
+
+							if constexpr (std::is_same_v<ifAlpha, trueType>) {
+								cufftExecD2Z(nPlanR2Cs[i], (double*)dPa_midl[i] + gridGhost * gridNxz, nFreqd[i]);
+								MHDFilterModeN << <devNy, gridNx, 0, 0 >> > (nFreqd[i], leftN, rightN);
+								cufftExecZ2D(nPlanC2Rs[i], nFreqd[i], (double*)dPa_midl[i] + gridGhost * gridNxz);
+							}
+
+							if constexpr (std::is_same_v<ifBeam, trueType>) {
+								cufftExecD2Z(nPlanR2Cs[i], (double*)dPb_midl[i] + gridGhost * gridNxz, nFreqd[i]);
+								MHDFilterModeN << <devNy, gridNx, 0, 0 >> > (nFreqd[i], leftN, rightN);
+								cufftExecZ2D(nPlanC2Rs[i], nFreqd[i], (double*)dPb_midl[i] + gridGhost * gridNxz);
+							}
+
+						}
+						else {
+
+							if constexpr (std::is_same_v<ifIon, trueType>) {
+								cufftExecR2C(nPlanR2Cs[i], (float*)dPi_midl[i] + gridGhost * gridNxz, nFreqf[i]);
+								MHDFilterModeN << <devNy, gridNx, 0, 0 >> > (nFreqf[i], leftN, rightN);
+								cufftExecC2R(nPlanC2Rs[i], nFreqf[i], (float*)dPi_midl[i] + gridGhost * gridNxz);
+							}
+
+							if constexpr (std::is_same_v<ifAlpha, trueType>) {
+								cufftExecR2C(nPlanR2Cs[i], (float*)dPa_midl[i] + gridGhost * gridNxz, nFreqf[i]);
+								MHDFilterModeN << <devNy, gridNx, 0, 0 >> > (nFreqf[i], leftN, rightN);
+								cufftExecC2R(nPlanC2Rs[i], nFreqf[i], (float*)dPa_midl[i] + gridGhost * gridNxz);
+							}
+
+							if constexpr (std::is_same_v<ifBeam, trueType>) {
+								cufftExecR2C(nPlanR2Cs[i], (float*)dPb_midl[i] + gridGhost * gridNxz, nFreqf[i]);
+								MHDFilterModeN << <devNy, gridNx, 0, 0 >> > (nFreqf[i], leftN, rightN);
+								cufftExecC2R(nPlanC2Rs[i], nFreqf[i], (float*)dPb_midl[i] + gridGhost * gridNxz);
+							}
+
+						}
+						if constexpr (std::is_same_v<ifIon, trueType>)
+							MHDFilterResizeN << <MRK4GridSize, MRK4BlockSize, 0, 0 >> > (dPi_midl[i]);
+						if constexpr (std::is_same_v<ifAlpha, trueType>)
+							MHDFilterResizeN << <MRK4GridSize, MRK4BlockSize, 0, 0 >> > (dPa_midl[i]);
+						if constexpr (std::is_same_v<ifBeam, trueType>)
+							MHDFilterResizeN << <MRK4GridSize, MRK4BlockSize, 0, 0 >> > (dPb_midl[i]);
+					}
+
+				}
+
+				if constexpr (removeN_dP.size() > 0) {
+
+					for (int i = 0; i < devNums; i++) {
+						cudaSetDevice(localRank * devNums + i);
+						for (int toroidal : removeN_dP) {
+
+							if constexpr (std::is_same_v<dataType, double>) {
+
+								if constexpr (std::is_same_v<ifIon, trueType>) {
+									cufftExecD2Z(nPlanR2Cs[i], (double*)dPi_midl[i] + gridGhost * gridNxz, nFreqd[i]);
+									MHDFilterModeN << <devNy, gridNx, 0, 0 >> > (nFreqd[i], toroidal);
+									cufftExecZ2D(nPlanC2Rs[i], nFreqd[i], (double*)dPi_midr[i] + gridGhost * gridNxz);
+								}
+
+								if constexpr (std::is_same_v<ifAlpha, trueType>) {
+									cufftExecD2Z(nPlanR2Cs[i], (double*)dPa_midl[i] + gridGhost * gridNxz, nFreqd[i]);
+									MHDFilterModeN << <devNy, gridNx, 0, 0 >> > (nFreqd[i], toroidal);
+									cufftExecZ2D(nPlanC2Rs[i], nFreqd[i], (double*)dPa_midr[i] + gridGhost * gridNxz);
+								}
+
+								if constexpr (std::is_same_v<ifBeam, trueType>) {
+									cufftExecD2Z(nPlanR2Cs[i], (double*)dPb_midl[i] + gridGhost * gridNxz, nFreqd[i]);
+									MHDFilterModeN << <devNy, gridNx, 0, 0 >> > (nFreqd[i], toroidal);
+									cufftExecZ2D(nPlanC2Rs[i], nFreqd[i], (double*)dPb_midr[i] + gridGhost * gridNxz);
+								}
+
+							}
+							else {
+
+								if constexpr (std::is_same_v<ifIon, trueType>) {
+									cufftExecR2C(nPlanR2Cs[i], (float*)dPi_midl[i] + gridGhost * gridNxz, nFreqf[i]);
+									MHDFilterModeN << <devNy, gridNx, 0, 0 >> > (nFreqf[i], toroidal);
+									cufftExecC2R(nPlanC2Rs[i], nFreqf[i], (float*)dPi_midr[i] + gridGhost * gridNxz);
+								}
+
+								if constexpr (std::is_same_v<ifAlpha, trueType>) {
+									cufftExecR2C(nPlanR2Cs[i], (float*)dPa_midl[i] + gridGhost * gridNxz, nFreqf[i]);
+									MHDFilterModeN << <devNy, gridNx, 0, 0 >> > (nFreqf[i], toroidal);
+									cufftExecC2R(nPlanC2Rs[i], nFreqf[i], (float*)dPa_midr[i] + gridGhost * gridNxz);
+								}
+
+								if constexpr (std::is_same_v<ifBeam, trueType>) {
+									cufftExecR2C(nPlanR2Cs[i], (float*)dPb_midl[i] + gridGhost * gridNxz, nFreqf[i]);
+									MHDFilterModeN << <devNy, gridNx, 0, 0 >> > (nFreqf[i], toroidal);
+									cufftExecC2R(nPlanC2Rs[i], nFreqf[i], (float*)dPb_midr[i] + gridGhost * gridNxz);
+								}
+
+							}
+							if constexpr (std::is_same_v<ifIon, trueType>) {
+								MHDFilterResizeN << <MRK4GridSize, MRK4BlockSize, 0, 0 >> > (dPi_midr[i]);
+								MHDSubtractMode << <MRK4GridSize, MRK4BlockSize, 0, 0 >> > (dPi_midr[i], dPi_midl[i]);
+							}
+							if constexpr (std::is_same_v<ifAlpha, trueType>) {
+								MHDFilterResizeN << <MRK4GridSize, MRK4BlockSize, 0, 0 >> > (dPa_midr[i]);
+								MHDSubtractMode << <MRK4GridSize, MRK4BlockSize, 0, 0 >> > (dPa_midr[i], dPa_midl[i]);
+							}
+							if constexpr (std::is_same_v<ifBeam, trueType>) {
+								MHDFilterResizeN << <MRK4GridSize, MRK4BlockSize, 0, 0 >> > (dPb_midr[i]);
+								MHDSubtractMode << <MRK4GridSize, MRK4BlockSize, 0, 0 >> > (dPb_midr[i], dPb_midl[i]);
+							}
+
+						}
+					}
+
+				}
+
+				if constexpr (selectNM_dP.size() > 0) {
+
+					for (const auto& [toroidal, poloidalLeft, poloidalRight] : selectNM_dP) {
+
+						for (int i = 0; i < devNums; i++) {
+							cudaSetDevice(localRank * devNums + i);
+							if constexpr (std::is_same_v<dataType, double>) {
+
+								if constexpr (std::is_same_v<ifIon, trueType>) {
+									cufftExecD2Z(nPlanR2Cs[i], (double*)dPi_midl[i] + gridGhost * gridNxz, nFreqd[i]);
+									MHDFilterModeN << <devNy, gridNx, 0, 0 >> > (nFreqd[i], toroidal);
+									cufftExecZ2D(nPlanC2Rs[i], nFreqd[i], (double*)dPi_midr[i] + gridGhost * gridNxz);
+								}
+
+								if constexpr (std::is_same_v<ifAlpha, trueType>) {
+									cufftExecD2Z(nPlanR2Cs[i], (double*)dPa_midl[i] + gridGhost * gridNxz, nFreqd[i]);
+									MHDFilterModeN << <devNy, gridNx, 0, 0 >> > (nFreqd[i], toroidal);
+									cufftExecZ2D(nPlanC2Rs[i], nFreqd[i], (double*)dPa_midr[i] + gridGhost * gridNxz);
+								}
+
+								if constexpr (std::is_same_v<ifBeam, trueType>) {
+									cufftExecD2Z(nPlanR2Cs[i], (double*)dPb_midl[i] + gridGhost * gridNxz, nFreqd[i]);
+									MHDFilterModeN << <devNy, gridNx, 0, 0 >> > (nFreqd[i], toroidal);
+									cufftExecZ2D(nPlanC2Rs[i], nFreqd[i], (double*)dPb_midr[i] + gridGhost * gridNxz);
+								}
+
+							}
+							else {
+
+								if constexpr (std::is_same_v<ifIon, trueType>) {
+									cufftExecR2C(nPlanR2Cs[i], (float*)dPi_midl[i] + gridGhost * gridNxz, nFreqf[i]);
+									MHDFilterModeN << <devNy, gridNx, 0, 0 >> > (nFreqf[i], toroidal);
+									cufftExecC2R(nPlanC2Rs[i], nFreqf[i], (float*)dPi_midr[i] + gridGhost * gridNxz);
+								}
+
+								if constexpr (std::is_same_v<ifAlpha, trueType>) {
+									cufftExecR2C(nPlanR2Cs[i], (float*)dPa_midl[i] + gridGhost * gridNxz, nFreqf[i]);
+									MHDFilterModeN << <devNy, gridNx, 0, 0 >> > (nFreqf[i], toroidal);
+									cufftExecC2R(nPlanC2Rs[i], nFreqf[i], (float*)dPa_midr[i] + gridGhost * gridNxz);
+								}
+
+								if constexpr (std::is_same_v<ifBeam, trueType>) {
+									cufftExecR2C(nPlanR2Cs[i], (float*)dPb_midl[i] + gridGhost * gridNxz, nFreqf[i]);
+									MHDFilterModeN << <devNy, gridNx, 0, 0 >> > (nFreqf[i], toroidal);
+									cufftExecC2R(nPlanC2Rs[i], nFreqf[i], (float*)dPb_midr[i] + gridGhost * gridNxz);
+								}
+
+							}
+							if constexpr (std::is_same_v<ifIon, trueType>) {
+								MHDFilterResizeN << <MRK4GridSize, MRK4BlockSize, 0, 0 >> > (dPi_midr[i]);
+								MHDSubtractMode << <MRK4GridSize, MRK4BlockSize, 0, 0 >> > (dPi_midr[i], dPi_midl[i]);
+							}
+							if constexpr (std::is_same_v<ifAlpha, trueType>) {
+								MHDFilterResizeN << <MRK4GridSize, MRK4BlockSize, 0, 0 >> > (dPa_midr[i]);
+								MHDSubtractMode << <MRK4GridSize, MRK4BlockSize, 0, 0 >> > (dPa_midr[i], dPa_midl[i]);
+							}
+							if constexpr (std::is_same_v<ifBeam, trueType>) {
+								MHDFilterResizeN << <MRK4GridSize, MRK4BlockSize, 0, 0 >> > (dPb_midr[i]);
+								MHDSubtractMode << <MRK4GridSize, MRK4BlockSize, 0, 0 >> > (dPb_midr[i], dPb_midl[i]);
+							}
+						}
+
+						ncclGroupStart();
+						for (int i = 0; i < devNums; i++) {
+							if constexpr (std::is_same_v<ifIon, trueType>)
+								ncclAllGather(dPi_midr[i] + gridGhost * gridNxz, dPi_yxz[i], devNy * gridNxz, ncclType, comms[i], 0);
+							if constexpr (std::is_same_v<ifAlpha, trueType>)
+								ncclAllGather(dPa_midr[i] + gridGhost * gridNxz, dPa_yxz[i], devNy * gridNxz, ncclType, comms[i], 0);
+							if constexpr (std::is_same_v<ifBeam, trueType>)
+								ncclAllGather(dPb_midr[i] + gridGhost * gridNxz, dPb_yxz[i], devNy * gridNxz, ncclType, comms[i], 0);
+						}
+						ncclGroupEnd();
+
+						for (int i = 0; i < devNums; i++) {
+							cudaSetDevice(localRank * devNums + i);
+							if constexpr (std::is_same_v<ifIon, trueType>)
+								MHDTransposeLeft << <gridNy, gridNx, 0, 0 >> > (dPi_yxz[i], dPi_xzy[i]);
+							if constexpr (std::is_same_v<ifAlpha, trueType>)
+								MHDTransposeLeft << <gridNy, gridNx, 0, 0 >> > (dPa_yxz[i], dPa_xzy[i]);
+							if constexpr (std::is_same_v<ifBeam, trueType>)
+								MHDTransposeLeft << <gridNy, gridNx, 0, 0 >> > (dPb_yxz[i], dPb_xzy[i]);
+							if constexpr (std::is_same_v<dataType, double>) {
+
+								if constexpr (std::is_same_v<ifIon, trueType>) {
+									cufftExecD2Z(mPlanR2Cs[i], (double*)dPi_xzy[i], mFreqd[i]);
+									MHDFilterModeM << <gridNx, gridNz, 0, 0 >> > (mFreqd[i], poloidalLeft, poloidalRight);
+									cufftExecZ2D(mPlanC2Rs[i], mFreqd[i], (double*)dPi_xzy[i]);
+								}
+
+								if constexpr (std::is_same_v<ifAlpha, trueType>) {
+									cufftExecD2Z(mPlanR2Cs[i], (double*)dPa_xzy[i], mFreqd[i]);
+									MHDFilterModeM << <gridNx, gridNz, 0, 0 >> > (mFreqd[i], poloidalLeft, poloidalRight);
+									cufftExecZ2D(mPlanC2Rs[i], mFreqd[i], (double*)dPa_xzy[i]);
+								}
+
+								if constexpr (std::is_same_v<ifBeam, trueType>) {
+									cufftExecD2Z(mPlanR2Cs[i], (double*)dPb_xzy[i], mFreqd[i]);
+									MHDFilterModeM << <gridNx, gridNz, 0, 0 >> > (mFreqd[i], poloidalLeft, poloidalRight);
+									cufftExecZ2D(mPlanC2Rs[i], mFreqd[i], (double*)dPb_xzy[i]);
+								}
+
+							}
+							else {
+
+								if constexpr (std::is_same_v<ifIon, trueType>) {
+									cufftExecR2C(mPlanR2Cs[i], (float*)dPi_xzy[i], mFreqf[i]);
+									MHDFilterModeM << <gridNx, gridNz, 0, 0 >> > (mFreqf[i], poloidalLeft, poloidalRight);
+									cufftExecC2R(mPlanC2Rs[i], mFreqf[i], (float*)dPi_xzy[i]);
+								}
+
+								if constexpr (std::is_same_v<ifAlpha, trueType>) {
+									cufftExecR2C(mPlanR2Cs[i], (float*)dPa_xzy[i], mFreqf[i]);
+									MHDFilterModeM << <gridNx, gridNz, 0, 0 >> > (mFreqf[i], poloidalLeft, poloidalRight);
+									cufftExecC2R(mPlanC2Rs[i], mFreqf[i], (float*)dPa_xzy[i]);
+								}
+
+								if constexpr (std::is_same_v<ifBeam, trueType>) {
+									cufftExecR2C(mPlanR2Cs[i], (float*)dPb_xzy[i], mFreqf[i]);
+									MHDFilterModeM << <gridNx, gridNz, 0, 0 >> > (mFreqf[i], poloidalLeft, poloidalRight);
+									cufftExecC2R(mPlanC2Rs[i], mFreqf[i], (float*)dPb_xzy[i]);
+								}
+
+							}
+							if constexpr (std::is_same_v<ifIon, trueType>) {
+								MHDTransposeRight << <gridNx, gridNz, 0, 0 >> > (dPi_xzy[i], dPi_yxz[i]);
+								cudaMemcpyAsync(dPi_midr[i] + gridGhost * gridNxz, dPi_yxz[i] + (myRank * hostNy + i * devNy) * gridNxz, sizeof(dataType) * devNy * gridNxz, cudaMemcpyDeviceToDevice, 0);
+								MHDFilterResizeM << <MRK4GridSize, MRK4BlockSize, 0, 0 >> > (dPi_midr[i]);
+								MHDAddMode << <MRK4GridSize, MRK4BlockSize, 0, 0 >> > (dPi_midr[i], dPi_midl[i]);
+							}
+							if constexpr (std::is_same_v<ifAlpha, trueType>) {
+								MHDTransposeRight << <gridNx, gridNz, 0, 0 >> > (dPa_xzy[i], dPa_yxz[i]);
+								cudaMemcpyAsync(dPa_midr[i] + gridGhost * gridNxz, dPa_yxz[i] + (myRank * hostNy + i * devNy) * gridNxz, sizeof(dataType) * devNy * gridNxz, cudaMemcpyDeviceToDevice, 0);
+								MHDFilterResizeM << <MRK4GridSize, MRK4BlockSize, 0, 0 >> > (dPa_midr[i]);
+								MHDAddMode << <MRK4GridSize, MRK4BlockSize, 0, 0 >> > (dPa_midr[i], dPa_midl[i]);
+							}
+							if constexpr (std::is_same_v<ifBeam, trueType>) {
+								MHDTransposeRight << <gridNx, gridNz, 0, 0 >> > (dPb_xzy[i], dPb_yxz[i]);
+								cudaMemcpyAsync(dPb_midr[i] + gridGhost * gridNxz, dPb_yxz[i] + (myRank * hostNy + i * devNy) * gridNxz, sizeof(dataType) * devNy * gridNxz, cudaMemcpyDeviceToDevice, 0);
+								MHDFilterResizeM << <MRK4GridSize, MRK4BlockSize, 0, 0 >> > (dPb_midr[i]);
+								MHDAddMode << <MRK4GridSize, MRK4BlockSize, 0, 0 >> > (dPb_midr[i], dPb_midl[i]);
+							}
+						}
+
+					}
+
+				}
+
+				//for (int i = 0; i < devNums; i++) {
+				//	cudaSetDevice(localRank * devNums + i);
+				//	if constexpr (std::is_same_v<ifIon, trueType> && std::is_same_v<ifIonSlowing, trueType>)
+				//		PICSlowingDown<ratioDt, Ion, IonType> << <PICGridSize, PICBlockSize, 0, 0 >> > (pic1d[i], pic2d[i], Ion_keys_in[i], Ion_values_in[i], rand_keys_in[i], rand_values_in[i], randStates[i]);
+				//	if constexpr (std::is_same_v<ifAlpha, trueType> && std::is_same_v<ifAlphaSlowing, trueType>)
+				//		PICSlowingDown<ratioDt, Alpha, AlphaType> << <PICGridSize, PICBlockSize, 0, 0 >> > (pic1d[i], pic2d[i], Alpha_keys_in[i], Alpha_values_in[i], rand_keys_in[i], rand_values_in[i], randStates[i]);
+				//	if constexpr (std::is_same_v<ifBeam, trueType> && std::is_same_v<ifBeamSlowing, trueType>)
+				//		PICSlowingDown<ratioDt, Beam, BeamType> << <PICGridSize, PICBlockSize, 0, 0 >> > (pic1d[i], pic2d[i], Beam_keys_in[i], Beam_values_in[i], rand_keys_in[i], rand_values_in[i], randStates[i]);
+				//}
 
 				ncclGroupStart();
 				for (int i = 0; i < devNums; i++) {
 
-					if constexpr (std::is_same_v<ifNablaPara4dPi, trueType>) {
+					if constexpr (std::is_same_v<ifIon, trueType>) {
 						ncclSend(dPi_midl[i] + ncclLeftSend, gridGhost * gridNxz, ncclType, ncclLeftNei[i], comms[i], 0);
 						ncclRecv(dPi_midl[i] + ncclRightRecv, gridGhost * gridNxz, ncclType, ncclRightNei[i], comms[i], 0);
 						ncclSend(dPi_midl[i] + ncclRightSend, gridGhost * gridNxz, ncclType, ncclRightNei[i], comms[i], 0);
 						ncclRecv(dPi_midl[i] + ncclLeftRecv, gridGhost * gridNxz, ncclType, ncclLeftNei[i], comms[i], 0);
 					}
 
-					if constexpr (std::is_same_v<ifNablaPara4dPa, trueType>) {
+					if constexpr (std::is_same_v<ifAlpha, trueType>) {
 						ncclSend(dPa_midl[i] + ncclLeftSend, gridGhost * gridNxz, ncclType, ncclLeftNei[i], comms[i], 0);
 						ncclRecv(dPa_midl[i] + ncclRightRecv, gridGhost * gridNxz, ncclType, ncclRightNei[i], comms[i], 0);
 						ncclSend(dPa_midl[i] + ncclRightSend, gridGhost * gridNxz, ncclType, ncclRightNei[i], comms[i], 0);
 						ncclRecv(dPa_midl[i] + ncclLeftRecv, gridGhost * gridNxz, ncclType, ncclLeftNei[i], comms[i], 0);
 					}
 
-					if constexpr (std::is_same_v<ifNablaPara4dPb, trueType>) {
+					if constexpr (std::is_same_v<ifBeam, trueType>) {
 						ncclSend(dPb_midl[i] + ncclLeftSend, gridGhost * gridNxz, ncclType, ncclLeftNei[i], comms[i], 0);
 						ncclRecv(dPb_midl[i] + ncclRightRecv, gridGhost * gridNxz, ncclType, ncclRightNei[i], comms[i], 0);
 						ncclSend(dPb_midl[i] + ncclRightSend, gridGhost * gridNxz, ncclType, ncclRightNei[i], comms[i], 0);
@@ -7624,272 +8218,37 @@ int main(int argc, char* argv[]) {
 				}
 				ncclGroupEnd();
 
-				for (int i = 0; i < devNums; i++) {
-					cudaSetDevice(localRank * devNums + i);
-					if constexpr (std::is_same_v<ifNablaPara4dPi, trueType>)
-						MHDNablaPara2<ifLocal> << <MRK4GridSize, MRK4BlockSize, 0, 0 >> > (qtheta[i], dPi_midl[i], dPi_midr[i]);
-					if constexpr (std::is_same_v<ifNablaPara4dPa, trueType>)
-						MHDNablaPara2<ifLocal> << <MRK4GridSize, MRK4BlockSize, 0, 0 >> > (qtheta[i], dPa_midl[i], dPa_midr[i]);
-					if constexpr (std::is_same_v<ifNablaPara4dPb, trueType>)
-						MHDNablaPara2<ifLocal> << <MRK4GridSize, MRK4BlockSize, 0, 0 >> > (qtheta[i], dPb_midl[i], dPb_midr[i]);
-				}
-
-				ncclGroupStart();
-				for (int i = 0; i < devNums; i++) {
-
-					if constexpr (std::is_same_v<ifNablaPara4dPi, trueType>) {
-						ncclSend(dPi_midr[i] + ncclLeftSend, gridGhost * gridNxz, ncclType, ncclLeftNei[i], comms[i], 0);
-						ncclRecv(dPi_midr[i] + ncclRightRecv, gridGhost * gridNxz, ncclType, ncclRightNei[i], comms[i], 0);
-						ncclSend(dPi_midr[i] + ncclRightSend, gridGhost * gridNxz, ncclType, ncclRightNei[i], comms[i], 0);
-						ncclRecv(dPi_midr[i] + ncclLeftRecv, gridGhost * gridNxz, ncclType, ncclLeftNei[i], comms[i], 0);
-					}
-
-					if constexpr (std::is_same_v<ifNablaPara4dPa, trueType>) {
-						ncclSend(dPa_midr[i] + ncclLeftSend, gridGhost * gridNxz, ncclType, ncclLeftNei[i], comms[i], 0);
-						ncclRecv(dPa_midr[i] + ncclRightRecv, gridGhost * gridNxz, ncclType, ncclRightNei[i], comms[i], 0);
-						ncclSend(dPa_midr[i] + ncclRightSend, gridGhost * gridNxz, ncclType, ncclRightNei[i], comms[i], 0);
-						ncclRecv(dPa_midr[i] + ncclLeftRecv, gridGhost * gridNxz, ncclType, ncclLeftNei[i], comms[i], 0);
-					}
-
-					if constexpr (std::is_same_v<ifNablaPara4dPb, trueType>) {
-						ncclSend(dPb_midr[i] + ncclLeftSend, gridGhost * gridNxz, ncclType, ncclLeftNei[i], comms[i], 0);
-						ncclRecv(dPb_midr[i] + ncclRightRecv, gridGhost * gridNxz, ncclType, ncclRightNei[i], comms[i], 0);
-						ncclSend(dPb_midr[i] + ncclRightSend, gridGhost * gridNxz, ncclType, ncclRightNei[i], comms[i], 0);
-						ncclRecv(dPb_midr[i] + ncclLeftRecv, gridGhost * gridNxz, ncclType, ncclLeftNei[i], comms[i], 0);
-					}
-
-				}
-				ncclGroupEnd();
-
-				for (int i = 0; i < devNums; i++) {
-					cudaSetDevice(localRank * devNums + i);
-					if constexpr (std::is_same_v<ifNablaPara4dPi, trueType>)
-						MHDNablaPara4<4, ifLocal> << <MRK4GridSize, MRK4BlockSize, 0, 0 >> > (qtheta[i], dPi_midl[i], dPi_midr[i]);
-					if constexpr (std::is_same_v<ifNablaPara4dPa, trueType>)
-						MHDNablaPara4<5, ifLocal> << <MRK4GridSize, MRK4BlockSize, 0, 0 >> > (qtheta[i], dPa_midl[i], dPa_midr[i]);
-					if constexpr (std::is_same_v<ifNablaPara4dPb, trueType>)
-						MHDNablaPara4<6, ifLocal> << <MRK4GridSize, MRK4BlockSize, 0, 0 >> > (qtheta[i], dPb_midl[i], dPb_midr[i]);
-				}
-
 			}
-
-			if constexpr (leftN == 0) {
-
-				for (int i = 0; i < devNums; i++) {
-					cudaSetDevice(localRank * devNums + i);
-					if constexpr (std::is_same_v<dataType, double>) {
-
-						cufftExecD2Z(nPlanR2Cs[i], (double*)dPi_midl[i] + gridGhost * gridNxz, nFreqd[i]);
-						MHDFilterModeN << <devNy, gridNx, 0, 0 >> > (nFreqd[i], 0);
-						cufftExecZ2D(nPlanC2Rs[i], nFreqd[i], (double*)dPi_midr[i] + gridGhost * gridNxz);
-						MHDFilterResizeN << <MRK4GridSize, MRK4BlockSize, 0, 0 >> > (dPi_midr[i]);
-
-						cufftExecD2Z(nPlanR2Cs[i], (double*)dPa_midl[i] + gridGhost * gridNxz, nFreqd[i]);
-						MHDFilterModeN << <devNy, gridNx, 0, 0 >> > (nFreqd[i], 0);
-						cufftExecZ2D(nPlanC2Rs[i], nFreqd[i], (double*)dPa_midr[i] + gridGhost * gridNxz);
-						MHDFilterResizeN << <MRK4GridSize, MRK4BlockSize, 0, 0 >> > (dPa_midr[i]);
-
-						cufftExecD2Z(nPlanR2Cs[i], (double*)dPb_midl[i] + gridGhost * gridNxz, nFreqd[i]);
-						MHDFilterModeN << <devNy, gridNx, 0, 0 >> > (nFreqd[i], 0);
-						cufftExecZ2D(nPlanC2Rs[i], nFreqd[i], (double*)dPb_midr[i] + gridGhost * gridNxz);
-						MHDFilterResizeN << <MRK4GridSize, MRK4BlockSize, 0, 0 >> > (dPb_midr[i]);
-
-					}
-					else {
-
-						cufftExecR2C(nPlanR2Cs[i], (float*)dPi_midl[i] + gridGhost * gridNxz, nFreqf[i]);
-						MHDFilterModeN << <devNy, gridNx, 0, 0 >> > (nFreqf[i], 0);
-						cufftExecC2R(nPlanC2Rs[i], nFreqf[i], (float*)dPi_midr[i] + gridGhost * gridNxz);
-						MHDFilterResizeN << <MRK4GridSize, MRK4BlockSize, 0, 0 >> > (dPi_midr[i]);
-
-						cufftExecR2C(nPlanR2Cs[i], (float*)dPa_midl[i] + gridGhost * gridNxz, nFreqf[i]);
-						MHDFilterModeN << <devNy, gridNx, 0, 0 >> > (nFreqf[i], 0);
-						cufftExecC2R(nPlanC2Rs[i], nFreqf[i], (float*)dPa_midr[i] + gridGhost * gridNxz);
-						MHDFilterResizeN << <MRK4GridSize, MRK4BlockSize, 0, 0 >> > (dPa_midr[i]);
-
-						cufftExecR2C(nPlanR2Cs[i], (float*)dPb_midl[i] + gridGhost * gridNxz, nFreqf[i]);
-						MHDFilterModeN << <devNy, gridNx, 0, 0 >> > (nFreqf[i], 0);
-						cufftExecC2R(nPlanC2Rs[i], nFreqf[i], (float*)dPb_midr[i] + gridGhost * gridNxz);
-						MHDFilterResizeN << <MRK4GridSize, MRK4BlockSize, 0, 0 >> > (dPb_midr[i]);
-
-					}
-					MHDExtractZonal << <devNy, gridNx, 0, 0 >> > (dPi_midr[i], dPi_zonal[i], dPa_midr[i], dPa_zonal[i], dPb_midr[i], dPb_zonal[i]);
-				}
-
-				ncclGroupStart();
-				for (int i = 0; i < devNums; i++) {
-					ncclAllGather(dPi_zonal[i], dPi_zonalyx[i], devNy * gridNx, ncclType, comms[i], 0);
-					ncclAllGather(dPa_zonal[i], dPa_zonalyx[i], devNy * gridNx, ncclType, comms[i], 0);
-					ncclAllGather(dPb_zonal[i], dPb_zonalyx[i], devNy * gridNx, ncclType, comms[i], 0);
-				}
-				ncclGroupEnd();
-
-				for (int i = 0; i < devNums; i++) {
-					cudaSetDevice(localRank * devNums + i);
-					MHDTransposeZonal << <gridNy, gridNx, 0, 0 >> > (dPi_zonalyx[i], dPi_zonalxy[i], dPa_zonalyx[i], dPa_zonalxy[i], dPb_zonalyx[i], dPb_zonalxy[i]);
-					if constexpr (std::is_same_v<dataType, double>) {
-
-						cufftExecD2Z(mPlanR2Cs[i], (double*)dPi_zonalxy[i], mFreqd[i]);
-						MHDFilterMode0M << <1, gridNx, 0, 0 >> > (mFreqd[i]);
-						cufftExecZ2D(mPlanC2Rs[i], mFreqd[i], (double*)dPi_zonalxy[i]);
-						MHDFilterResizeM << <gridNy, gridNx, 0, 0 >> > (dPi_zonalxy[i]);
-
-						cufftExecD2Z(mPlanR2Cs[i], (double*)dPa_zonalxy[i], mFreqd[i]);
-						MHDFilterMode0M << <1, gridNx, 0, 0 >> > (mFreqd[i]);
-						cufftExecZ2D(mPlanC2Rs[i], mFreqd[i], (double*)dPa_zonalxy[i]);
-						MHDFilterResizeM << <gridNy, gridNx, 0, 0 >> > (dPa_zonalxy[i]);
-
-						cufftExecD2Z(mPlanR2Cs[i], (double*)dPb_zonalxy[i], mFreqd[i]);
-						MHDFilterMode0M << <1, gridNx, 0, 0 >> > (mFreqd[i]);
-						cufftExecZ2D(mPlanC2Rs[i], mFreqd[i], (double*)dPb_zonalxy[i]);
-						MHDFilterResizeM << <gridNy, gridNx, 0, 0 >> > (dPb_zonalxy[i]);
-
-					}
-					else {
-
-						cufftExecR2C(mPlanR2Cs[i], (float*)dPi_zonalxy[i], mFreqf[i]);
-						MHDFilterMode0M << <1, gridNx, 0, 0 >> > (mFreqf[i]);
-						cufftExecC2R(mPlanC2Rs[i], mFreqf[i], (float*)dPi_zonalxy[i]);
-						MHDFilterResizeM << <gridNy, gridNx, 0, 0 >> > (dPi_zonalxy[i]);
-
-						cufftExecR2C(mPlanR2Cs[i], (float*)dPa_zonalxy[i], mFreqf[i]);
-						MHDFilterMode0M << <1, gridNx, 0, 0 >> > (mFreqf[i]);
-						cufftExecC2R(mPlanC2Rs[i], mFreqf[i], (float*)dPa_zonalxy[i]);
-						MHDFilterResizeM << <gridNy, gridNx, 0, 0 >> > (dPa_zonalxy[i]);
-
-						cufftExecR2C(mPlanR2Cs[i], (float*)dPb_zonalxy[i], mFreqf[i]);
-						MHDFilterMode0M << <1, gridNx, 0, 0 >> > (mFreqf[i]);
-						cufftExecC2R(mPlanC2Rs[i], mFreqf[i], (float*)dPb_zonalxy[i]);
-						MHDFilterResizeM << <gridNy, gridNx, 0, 0 >> > (dPb_zonalxy[i]);
-
-					}
-				}
-
-			}
-
-			for (int i = 0; i < devNums; i++) {
-				cudaSetDevice(localRank * devNums + i);
-				if constexpr (std::is_same_v<dataType, double>) {
-
-					if constexpr (std::is_same_v<ifIon, trueType>) {
-						cufftExecD2Z(nPlanR2Cs[i], (double*)dPi_midl[i] + gridGhost * gridNxz, nFreqd[i]);
-						MHDFilterMode1N << <devNy, gridNx, 0, 0 >> > (nFreqd[i]);
-						cufftExecZ2D(nPlanC2Rs[i], nFreqd[i], (double*)dPi_midl[i] + gridGhost * gridNxz);
-						MHDFilterResizeN << <MRK4GridSize, MRK4BlockSize, 0, 0 >> > (dPi_midl[i]);
-					}
-
-					if constexpr (std::is_same_v<ifAlpha, trueType>) {
-						cufftExecD2Z(nPlanR2Cs[i], (double*)dPa_midl[i] + gridGhost * gridNxz, nFreqd[i]);
-						MHDFilterMode1N << <devNy, gridNx, 0, 0 >> > (nFreqd[i]);
-						cufftExecZ2D(nPlanC2Rs[i], nFreqd[i], (double*)dPa_midl[i] + gridGhost * gridNxz);
-						MHDFilterResizeN << <MRK4GridSize, MRK4BlockSize, 0, 0 >> > (dPa_midl[i]);
-					}
-
-					if constexpr (std::is_same_v<ifBeam, trueType>) {
-						cufftExecD2Z(nPlanR2Cs[i], (double*)dPb_midl[i] + gridGhost * gridNxz, nFreqd[i]);
-						MHDFilterMode1N << <devNy, gridNx, 0, 0 >> > (nFreqd[i]);
-						cufftExecZ2D(nPlanC2Rs[i], nFreqd[i], (double*)dPb_midl[i] + gridGhost * gridNxz);
-						MHDFilterResizeN << <MRK4GridSize, MRK4BlockSize, 0, 0 >> > (dPb_midl[i]);
-					}
-
-				}
-				else {
-
-					if constexpr (std::is_same_v<ifIon, trueType>) {
-						cufftExecR2C(nPlanR2Cs[i], (float*)dPi_midl[i] + gridGhost * gridNxz, nFreqf[i]);
-						MHDFilterMode1N << <devNy, gridNx, 0, 0 >> > (nFreqf[i]);
-						cufftExecC2R(nPlanC2Rs[i], nFreqf[i], (float*)dPi_midl[i] + gridGhost * gridNxz);
-						MHDFilterResizeN << <MRK4GridSize, MRK4BlockSize, 0, 0 >> > (dPi_midl[i]);
-					}
-
-					if constexpr (std::is_same_v<ifAlpha, trueType>) {
-						cufftExecR2C(nPlanR2Cs[i], (float*)dPa_midl[i] + gridGhost * gridNxz, nFreqf[i]);
-						MHDFilterMode1N << <devNy, gridNx, 0, 0 >> > (nFreqf[i]);
-						cufftExecC2R(nPlanC2Rs[i], nFreqf[i], (float*)dPa_midl[i] + gridGhost * gridNxz);
-						MHDFilterResizeN << <MRK4GridSize, MRK4BlockSize, 0, 0 >> > (dPa_midl[i]);
-					}
-
-					if constexpr (std::is_same_v<ifBeam, trueType>) {
-						cufftExecR2C(nPlanR2Cs[i], (float*)dPb_midl[i] + gridGhost * gridNxz, nFreqf[i]);
-						MHDFilterMode1N << <devNy, gridNx, 0, 0 >> > (nFreqf[i]);
-						cufftExecC2R(nPlanC2Rs[i], nFreqf[i], (float*)dPb_midl[i] + gridGhost * gridNxz);
-						MHDFilterResizeN << <MRK4GridSize, MRK4BlockSize, 0, 0 >> > (dPb_midl[i]);
-					}
-
-				}
-			}
-
-			if constexpr (leftN == 0) {
-
-				for (int i = 0; i < devNums; i++) {
-					cudaSetDevice(localRank * devNums + i);
-					MHDAddZonal << <devNy, gridNx, 0, 0 >> > (myRank * hostNy + i * devNy, dPi_zonalxy[i], dPi_midl[i], dPa_zonalxy[i], dPa_midl[i], dPb_zonalxy[i], dPb_midl[i]);
-				}
-
-			}
-
-			for (int i = 0; i < devNums; i++) {
-				cudaSetDevice(localRank * devNums + i);
-				if constexpr (std::is_same_v<ifIon, trueType> && std::is_same_v<ifIonSlowing, trueType>)
-					PICSlowingDown<ratioDt, Ion, IonType> << <PICGridSize, PICBlockSize, 0, 0 >> > (pic1d[i], pic2d[i], Ion_keys_in[i], Ion_values_in[i], rand_keys_in[i], rand_values_in[i], randStates[i]);
-				if constexpr (std::is_same_v<ifAlpha, trueType> && std::is_same_v<ifAlphaSlowing, trueType>)
-					PICSlowingDown<ratioDt, Alpha, AlphaType> << <PICGridSize, PICBlockSize, 0, 0 >> > (pic1d[i], pic2d[i], Alpha_keys_in[i], Alpha_values_in[i], rand_keys_in[i], rand_values_in[i], randStates[i]);
-				if constexpr (std::is_same_v<ifBeam, trueType> && std::is_same_v<ifBeamSlowing, trueType>)
-					PICSlowingDown<ratioDt, Beam, BeamType> << <PICGridSize, PICBlockSize, 0, 0 >> > (pic1d[i], pic2d[i], Beam_keys_in[i], Beam_values_in[i], rand_keys_in[i], rand_values_in[i], randStates[i]);
-			}
-
-			ncclGroupStart();
-			for (int i = 0; i < devNums; i++) {
-
-				if constexpr (std::is_same_v<ifIon, trueType>) {
-					ncclSend(dPi_midl[i] + ncclLeftSend, gridGhost * gridNxz, ncclType, ncclLeftNei[i], comms[i], 0);
-					ncclRecv(dPi_midl[i] + ncclRightRecv, gridGhost * gridNxz, ncclType, ncclRightNei[i], comms[i], 0);
-					ncclSend(dPi_midl[i] + ncclRightSend, gridGhost * gridNxz, ncclType, ncclRightNei[i], comms[i], 0);
-					ncclRecv(dPi_midl[i] + ncclLeftRecv, gridGhost * gridNxz, ncclType, ncclLeftNei[i], comms[i], 0);
-				}
-
-				if constexpr (std::is_same_v<ifAlpha, trueType>) {
-					ncclSend(dPa_midl[i] + ncclLeftSend, gridGhost * gridNxz, ncclType, ncclLeftNei[i], comms[i], 0);
-					ncclRecv(dPa_midl[i] + ncclRightRecv, gridGhost * gridNxz, ncclType, ncclRightNei[i], comms[i], 0);
-					ncclSend(dPa_midl[i] + ncclRightSend, gridGhost * gridNxz, ncclType, ncclRightNei[i], comms[i], 0);
-					ncclRecv(dPa_midl[i] + ncclLeftRecv, gridGhost * gridNxz, ncclType, ncclLeftNei[i], comms[i], 0);
-				}
-
-				if constexpr (std::is_same_v<ifBeam, trueType>) {
-					ncclSend(dPb_midl[i] + ncclLeftSend, gridGhost * gridNxz, ncclType, ncclLeftNei[i], comms[i], 0);
-					ncclRecv(dPb_midl[i] + ncclRightRecv, gridGhost * gridNxz, ncclType, ncclRightNei[i], comms[i], 0);
-					ncclSend(dPb_midl[i] + ncclRightSend, gridGhost * gridNxz, ncclType, ncclRightNei[i], comms[i], 0);
-					ncclRecv(dPb_midl[i] + ncclLeftRecv, gridGhost * gridNxz, ncclType, ncclLeftNei[i], comms[i], 0);
-				}
-
-			}
-			ncclGroupEnd();
 
 		}
 
-		if constexpr (std::is_same_v<ifIon, trueType>) {
-			for (int i = 0; i < devNums; i++) {
-				cudaSetDevice(localRank * devNums + i);
-				cub::DeviceSegmentedRadixSort::SortPairs(Ion_storage[i], Ion_storage_bytes[i], Ion_keys_in[i], Ion_keys_out[i], Ion_values_in[i], Ion_values_out[i], picDev * 7, 7, Ion_offsets[i], Ion_offsets[i] + 1);
-				cudaMemcpyAsync(Ion_keys_in[i], Ion_keys_out[i], sizeof(int) * picDev * 7, cudaMemcpyDeviceToDevice);
-				cudaMemcpyAsync(Ion_values_in[i], Ion_values_out[i], sizeof(dataType) * picDev * 7, cudaMemcpyDeviceToDevice);
+		if constexpr (std::is_same_v<ifIon, trueType> || std::is_same_v<ifAlpha, trueType> || std::is_same_v<ifBeam, trueType>) {
+
+			if constexpr (std::is_same_v<ifIon, trueType>) {
+				for (int i = 0; i < devNums; i++) {
+					cudaSetDevice(localRank * devNums + i);
+					cub::DeviceSegmentedRadixSort::SortPairs(Ion_storage[i], Ion_storage_bytes[i], Ion_keys_in[i], Ion_keys_out[i], Ion_values_in[i], Ion_values_out[i], picDev * 7, 7, Ion_offsets[i], Ion_offsets[i] + 1);
+					cudaMemcpyAsync(Ion_keys_in[i], Ion_keys_out[i], sizeof(int) * picDev * 7, cudaMemcpyDeviceToDevice);
+					cudaMemcpyAsync(Ion_values_in[i], Ion_values_out[i], sizeof(dataType) * picDev * 7, cudaMemcpyDeviceToDevice);
+				}
 			}
-		}
-		if constexpr (std::is_same_v<ifAlpha, trueType>) {
-			for (int i = 0; i < devNums; i++) {
-				cudaSetDevice(localRank * devNums + i);
-				cub::DeviceSegmentedRadixSort::SortPairs(Alpha_storage[i], Alpha_storage_bytes[i], Alpha_keys_in[i], Alpha_keys_out[i], Alpha_values_in[i], Alpha_values_out[i], picDev * 7, 7, Alpha_offsets[i], Alpha_offsets[i] + 1);
-				cudaMemcpyAsync(Alpha_keys_in[i], Alpha_keys_out[i], sizeof(int) * picDev * 7, cudaMemcpyDeviceToDevice);
-				cudaMemcpyAsync(Alpha_values_in[i], Alpha_values_out[i], sizeof(dataType) * picDev * 7, cudaMemcpyDeviceToDevice);
+			if constexpr (std::is_same_v<ifAlpha, trueType>) {
+				for (int i = 0; i < devNums; i++) {
+					cudaSetDevice(localRank * devNums + i);
+					cub::DeviceSegmentedRadixSort::SortPairs(Alpha_storage[i], Alpha_storage_bytes[i], Alpha_keys_in[i], Alpha_keys_out[i], Alpha_values_in[i], Alpha_values_out[i], picDev * 7, 7, Alpha_offsets[i], Alpha_offsets[i] + 1);
+					cudaMemcpyAsync(Alpha_keys_in[i], Alpha_keys_out[i], sizeof(int) * picDev * 7, cudaMemcpyDeviceToDevice);
+					cudaMemcpyAsync(Alpha_values_in[i], Alpha_values_out[i], sizeof(dataType) * picDev * 7, cudaMemcpyDeviceToDevice);
+				}
 			}
-		}
-		if constexpr (std::is_same_v<ifBeam, trueType>) {
-			for (int i = 0; i < devNums; i++) {
-				cudaSetDevice(localRank * devNums + i);
-				cub::DeviceSegmentedRadixSort::SortPairs(Beam_storage[i], Beam_storage_bytes[i], Beam_keys_in[i], Beam_keys_out[i], Beam_values_in[i], Beam_values_out[i], picDev * 7, 7, Beam_offsets[i], Beam_offsets[i] + 1);
-				cudaMemcpyAsync(Beam_keys_in[i], Beam_keys_out[i], sizeof(int) * picDev * 7, cudaMemcpyDeviceToDevice);
-				cudaMemcpyAsync(Beam_values_in[i], Beam_values_out[i], sizeof(dataType) * picDev * 7, cudaMemcpyDeviceToDevice);
+			if constexpr (std::is_same_v<ifBeam, trueType>) {
+				for (int i = 0; i < devNums; i++) {
+					cudaSetDevice(localRank * devNums + i);
+					cub::DeviceSegmentedRadixSort::SortPairs(Beam_storage[i], Beam_storage_bytes[i], Beam_keys_in[i], Beam_keys_out[i], Beam_values_in[i], Beam_values_out[i], picDev * 7, 7, Beam_offsets[i], Beam_offsets[i] + 1);
+					cudaMemcpyAsync(Beam_keys_in[i], Beam_keys_out[i], sizeof(int) * picDev * 7, cudaMemcpyDeviceToDevice);
+					cudaMemcpyAsync(Beam_values_in[i], Beam_values_out[i], sizeof(dataType) * picDev * 7, cudaMemcpyDeviceToDevice);
+				}
 			}
+
 		}
 
 	}
@@ -7905,208 +8264,6 @@ int main(int argc, char* argv[]) {
 		cudaEventSynchronize(end[i]);
 		cudaEventElapsedTime(&time[i], start[i], end[i]);
 		CUDACHECK(cudaGetLastError());
-	}
-
-	if (diagIndex % diagSteps == 0) {
-
-		if constexpr (std::is_same_v<ifDiagEnergy, trueType>) {
-			for (int i = 0; i < devNums; i++) {
-				cudaSetDevice(localRank * devNums + i);
-				MHDDiagEnergy<ifLocal> << <MRK4GridSize, MRK4BlockSize, 0, 0 >> > (diagnose[i], qtheta[i], Phi_midl[i], d_energy[i] + diagIndex / diagSteps);
-			}
-		}
-
-		if constexpr (std::is_same_v<ifDiagAmplitude, trueType>) {
-			for (int i = 0; i < devNums; i++) {
-				cudaSetDevice(localRank * devNums + i);
-				if constexpr (std::is_same_v<dataType, double>) {
-					cufftExecD2Z(nPlanR2Cs[i], (double*)Phi_midl[i] + gridGhost * gridNxz, nFreqd[i]);
-					MHDDiagAmplitude << <1, diagRightX - diagLeftX + 1, 0, 0 >> > (nFreqd[i],
-						d_amplitude[i] + diagIndex / diagSteps * (rightN - leftN + 1) * (diagRightX - diagLeftX + 1),
-						d_modeReal[i] + diagIndex / diagSteps * (rightN - leftN + 1) * (diagRightX - diagLeftX + 1),
-						d_modeImag[i] + diagIndex / diagSteps * (rightN - leftN + 1) * (diagRightX - diagLeftX + 1));
-				}
-				else {
-					cufftExecR2C(nPlanR2Cs[i], (float*)Phi_midl[i] + gridGhost * gridNxz, nFreqf[i]);
-					MHDDiagAmplitude << <1, diagRightX - diagLeftX + 1, 0, 0 >> > (nFreqf[i],
-						d_amplitude[i] + diagIndex / diagSteps * (rightN - leftN + 1) * (diagRightX - diagLeftX + 1),
-						d_modeReal[i] + diagIndex / diagSteps * (rightN - leftN + 1) * (diagRightX - diagLeftX + 1),
-						d_modeImag[i] + diagIndex / diagSteps * (rightN - leftN + 1) * (diagRightX - diagLeftX + 1));
-				}
-			}
-		}
-
-		if constexpr (std::is_same_v<ifDiagFrequency, trueType>) {
-			for (int i = 0; i < devNums; i++) {
-				cudaSetDevice(localRank * devNums + i);
-				MHDDiagFrequency << <1, diagRightX - diagLeftX + 1, 0, 0 >> > (Phi_midl[i], d_frequency[i] + diagIndex / diagSteps * (diagRightX - diagLeftX + 1));
-			}
-		}
-
-		if constexpr (std::is_same_v<ifDiagEparallel, trueType>) {
-			for (int i = 0; i < devNums; i++) {
-				cudaSetDevice(localRank * devNums + i);
-				MHDDiagEparallel<ifNonlinear, ifStaggered, ifEparallel> << <1, diagRightX - diagLeftX + 1, 0, 0 >> > (qtheta[i],
-					A_midl[i], dNe_midl[i], dTe_midl[i], Phi_midl[i], Ne0[i], Te0[i], Ne0_px[i], APhidNe2A[i], PhiA_A[i], NeA_A[i],
-					d_Epara[i] + diagIndex / diagSteps * (diagRightX - diagLeftX + 1), d_EparaES[i] + diagIndex / diagSteps * (diagRightX - diagLeftX + 1));
-			}
-		}
-
-		if constexpr (std::is_same_v<ifDiagDensity, trueType>) {
-
-			for (int i = 0; i < devNums; i++) {
-				cudaSetDevice(localRank * devNums + i);
-				if constexpr (std::is_same_v<ifIon, trueType>)
-					PICDiagDensityProfile<Ion> << <PICGridSize, PICBlockSize, 0, 0 >> > (pic2d[i], Ion_keys_in[i], Ion_values_in[i], d_IonDensity[i] + diagIndex / diagSteps * gridNx);
-				if constexpr (std::is_same_v<ifAlpha, trueType>)
-					PICDiagDensityProfile<Alpha> << <PICGridSize, PICBlockSize, 0, 0 >> > (pic2d[i], Alpha_keys_in[i], Alpha_values_in[i], d_AlphaDensity[i] + diagIndex / diagSteps * gridNx);
-				if constexpr (std::is_same_v<ifBeam, trueType>)
-					PICDiagDensityProfile<Beam> << <PICGridSize, PICBlockSize, 0, 0 >> > (pic2d[i], Beam_keys_in[i], Beam_values_in[i], d_BeamDensity[i] + diagIndex / diagSteps * gridNx);
-			}
-
-		}
-
-	}
-
-	if (outputIndex % outputSteps == 0) {
-
-		for (int mode = leftN; mode <= rightN; mode++) {
-
-			for (int i = 0; i < devNums; i++) {
-				cudaSetDevice(localRank * devNums + i);
-				if constexpr (std::is_same_v<dataType, double>) {
-					if constexpr (std::is_same_v<ifOutputw, trueType>) {
-						cufftExecD2Z(nPlanR2Cs[i], (double*)w_midl[i] + gridGhost * gridNxz, nFreqd[i]);
-						MHDFilterModeN << <devNy, gridNx, 0, 0 >> > (nFreqd[i], mode);
-						cufftExecZ2D(nPlanC2Rs[i], nFreqd[i], (double*)d_eachw[i] + gridGhost * gridNxz);
-						MHDFilterResizeN << <MRK4GridSize, MRK4BlockSize, 0, 0 >> > (d_eachw[i]);
-					}
-					if constexpr (std::is_same_v<ifOutputA, trueType>) {
-						cufftExecD2Z(nPlanR2Cs[i], (double*)A_midl[i] + gridGhost * gridNxz, nFreqd[i]);
-						MHDFilterModeN << <devNy, gridNx, 0, 0 >> > (nFreqd[i], mode);
-						cufftExecZ2D(nPlanC2Rs[i], nFreqd[i], (double*)d_eachA[i] + gridGhost * gridNxz);
-						MHDFilterResizeN << <MRK4GridSize, MRK4BlockSize, 0, 0 >> > (d_eachA[i]);
-					}
-					if constexpr (std::is_same_v<ifOutputdNe, trueType>) {
-						cufftExecD2Z(nPlanR2Cs[i], (double*)dNe_midl[i] + gridGhost * gridNxz, nFreqd[i]);
-						MHDFilterModeN << <devNy, gridNx, 0, 0 >> > (nFreqd[i], mode);
-						cufftExecZ2D(nPlanC2Rs[i], nFreqd[i], (double*)d_eachdNe[i] + gridGhost * gridNxz);
-						MHDFilterResizeN << <MRK4GridSize, MRK4BlockSize, 0, 0 >> > (d_eachdNe[i]);
-					}
-					if constexpr (std::is_same_v<ifOutputdTe, trueType>) {
-						cufftExecD2Z(nPlanR2Cs[i], (double*)dTe_midl[i] + gridGhost * gridNxz, nFreqd[i]);
-						MHDFilterModeN << <devNy, gridNx, 0, 0 >> > (nFreqd[i], mode);
-						cufftExecZ2D(nPlanC2Rs[i], nFreqd[i], (double*)d_eachdTe[i] + gridGhost * gridNxz);
-						MHDFilterResizeN << <MRK4GridSize, MRK4BlockSize, 0, 0 >> > (d_eachdTe[i]);
-					}
-					if constexpr (std::is_same_v<ifOutputPhi, trueType>) {
-						cufftExecD2Z(nPlanR2Cs[i], (double*)Phi_midl[i] + gridGhost * gridNxz, nFreqd[i]);
-						MHDFilterModeN << <devNy, gridNx, 0, 0 >> > (nFreqd[i], mode);
-						cufftExecZ2D(nPlanC2Rs[i], nFreqd[i], (double*)d_eachPhi[i] + gridGhost * gridNxz);
-						MHDFilterResizeN << <MRK4GridSize, MRK4BlockSize, 0, 0 >> > (d_eachPhi[i]);
-					}
-					if constexpr (std::is_same_v<ifOutputdPi, trueType>) {
-						cufftExecD2Z(nPlanR2Cs[i], (double*)dPi_midl[i] + gridGhost * gridNxz, nFreqd[i]);
-						MHDFilterModeN << <devNy, gridNx, 0, 0 >> > (nFreqd[i], mode);
-						cufftExecZ2D(nPlanC2Rs[i], nFreqd[i], (double*)d_eachdPi[i] + gridGhost * gridNxz);
-						MHDFilterResizeN << <MRK4GridSize, MRK4BlockSize, 0, 0 >> > (d_eachdPi[i]);
-					}
-					if constexpr (std::is_same_v<ifOutputdPa, trueType>) {
-						cufftExecD2Z(nPlanR2Cs[i], (double*)dPa_midl[i] + gridGhost * gridNxz, nFreqd[i]);
-						MHDFilterModeN << <devNy, gridNx, 0, 0 >> > (nFreqd[i], mode);
-						cufftExecZ2D(nPlanC2Rs[i], nFreqd[i], (double*)d_eachdPa[i] + gridGhost * gridNxz);
-						MHDFilterResizeN << <MRK4GridSize, MRK4BlockSize, 0, 0 >> > (d_eachdPa[i]);
-					}
-					if constexpr (std::is_same_v<ifOutputdPb, trueType>) {
-						cufftExecD2Z(nPlanR2Cs[i], (double*)dPb_midl[i] + gridGhost * gridNxz, nFreqd[i]);
-						MHDFilterModeN << <devNy, gridNx, 0, 0 >> > (nFreqd[i], mode);
-						cufftExecZ2D(nPlanC2Rs[i], nFreqd[i], (double*)d_eachdPb[i] + gridGhost * gridNxz);
-						MHDFilterResizeN << <MRK4GridSize, MRK4BlockSize, 0, 0 >> > (d_eachdPb[i]);
-					}
-				}
-				else {
-					if constexpr (std::is_same_v<ifOutputw, trueType>) {
-						cufftExecR2C(nPlanR2Cs[i], (float*)w_midl[i] + gridGhost * gridNxz, nFreqf[i]);
-						MHDFilterModeN << <devNy, gridNx, 0, 0 >> > (nFreqf[i], mode);
-						cufftExecC2R(nPlanC2Rs[i], nFreqf[i], (float*)d_eachw[i] + gridGhost * gridNxz);
-						MHDFilterResizeN << <MRK4GridSize, MRK4BlockSize, 0, 0 >> > (d_eachw[i]);
-					}
-					if constexpr (std::is_same_v<ifOutputA, trueType>) {
-						cufftExecR2C(nPlanR2Cs[i], (float*)A_midl[i] + gridGhost * gridNxz, nFreqf[i]);
-						MHDFilterModeN << <devNy, gridNx, 0, 0 >> > (nFreqf[i], mode);
-						cufftExecC2R(nPlanC2Rs[i], nFreqf[i], (float*)d_eachA[i] + gridGhost * gridNxz);
-						MHDFilterResizeN << <MRK4GridSize, MRK4BlockSize, 0, 0 >> > (d_eachA[i]);
-					}
-					if constexpr (std::is_same_v<ifOutputdNe, trueType>) {
-						cufftExecR2C(nPlanR2Cs[i], (float*)dNe_midl[i] + gridGhost * gridNxz, nFreqf[i]);
-						MHDFilterModeN << <devNy, gridNx, 0, 0 >> > (nFreqf[i], mode);
-						cufftExecC2R(nPlanC2Rs[i], nFreqf[i], (float*)d_eachdNe[i] + gridGhost * gridNxz);
-						MHDFilterResizeN << <MRK4GridSize, MRK4BlockSize, 0, 0 >> > (d_eachdNe[i]);
-					}
-					if constexpr (std::is_same_v<ifOutputdTe, trueType>) {
-						cufftExecR2C(nPlanR2Cs[i], (float*)dTe_midl[i] + gridGhost * gridNxz, nFreqf[i]);
-						MHDFilterModeN << <devNy, gridNx, 0, 0 >> > (nFreqf[i], mode);
-						cufftExecC2R(nPlanC2Rs[i], nFreqf[i], (float*)d_eachdTe[i] + gridGhost * gridNxz);
-						MHDFilterResizeN << <MRK4GridSize, MRK4BlockSize, 0, 0 >> > (d_eachdTe[i]);
-					}
-					if constexpr (std::is_same_v<ifOutputPhi, trueType>) {
-						cufftExecR2C(nPlanR2Cs[i], (float*)Phi_midl[i] + gridGhost * gridNxz, nFreqf[i]);
-						MHDFilterModeN << <devNy, gridNx, 0, 0 >> > (nFreqf[i], mode);
-						cufftExecC2R(nPlanC2Rs[i], nFreqf[i], (float*)d_eachPhi[i] + gridGhost * gridNxz);
-						MHDFilterResizeN << <MRK4GridSize, MRK4BlockSize, 0, 0 >> > (d_eachPhi[i]);
-					}
-					if constexpr (std::is_same_v<ifOutputdPi, trueType>) {
-						cufftExecR2C(nPlanR2Cs[i], (float*)dPi_midl[i] + gridGhost * gridNxz, nFreqf[i]);
-						MHDFilterModeN << <devNy, gridNx, 0, 0 >> > (nFreqf[i], mode);
-						cufftExecC2R(nPlanC2Rs[i], nFreqf[i], (float*)d_eachdPi[i] + gridGhost * gridNxz);
-						MHDFilterResizeN << <MRK4GridSize, MRK4BlockSize, 0, 0 >> > (d_eachdPi[i]);
-					}
-					if constexpr (std::is_same_v<ifOutputdPa, trueType>) {
-						cufftExecR2C(nPlanR2Cs[i], (float*)dPa_midl[i] + gridGhost * gridNxz, nFreqf[i]);
-						MHDFilterModeN << <devNy, gridNx, 0, 0 >> > (nFreqf[i], mode);
-						cufftExecC2R(nPlanC2Rs[i], nFreqf[i], (float*)d_eachdPa[i] + gridGhost * gridNxz);
-						MHDFilterResizeN << <MRK4GridSize, MRK4BlockSize, 0, 0 >> > (d_eachdPa[i]);
-					}
-					if constexpr (std::is_same_v<ifOutputdPb, trueType>) {
-						cufftExecR2C(nPlanR2Cs[i], (float*)dPb_midl[i] + gridGhost * gridNxz, nFreqf[i]);
-						MHDFilterModeN << <devNy, gridNx, 0, 0 >> > (nFreqf[i], mode);
-						cufftExecC2R(nPlanC2Rs[i], nFreqf[i], (float*)d_eachdPb[i] + gridGhost * gridNxz);
-						MHDFilterResizeN << <MRK4GridSize, MRK4BlockSize, 0, 0 >> > (d_eachdPb[i]);
-					}
-				}
-			}
-
-			ncclGroupStart();
-			for (int i = 0; i < devNums; i++) {
-				if constexpr (std::is_same_v<ifOutputw, trueType>)
-					ncclAllGather(d_eachw[i] + gridGhost * gridNxz, d_totalw[i]
-						+ (size_t)outputIndex / outputSteps * (rightN - leftN + 1) * gridNy * gridNxz + (mode - leftN) * gridNy * gridNxz, devNy * gridNxz, ncclType, comms[i], 0);
-				if constexpr (std::is_same_v<ifOutputA, trueType>)
-					ncclAllGather(d_eachA[i] + gridGhost * gridNxz, d_totalA[i]
-						+ (size_t)outputIndex / outputSteps * (rightN - leftN + 1) * gridNy * gridNxz + (mode - leftN) * gridNy * gridNxz, devNy * gridNxz, ncclType, comms[i], 0);
-				if constexpr (std::is_same_v<ifOutputdNe, trueType>)
-					ncclAllGather(d_eachdNe[i] + gridGhost * gridNxz, d_totaldNe[i]
-						+ (size_t)outputIndex / outputSteps * (rightN - leftN + 1) * gridNy * gridNxz + (mode - leftN) * gridNy * gridNxz, devNy * gridNxz, ncclType, comms[i], 0);
-				if constexpr (std::is_same_v<ifOutputdTe, trueType>)
-					ncclAllGather(d_eachdTe[i] + gridGhost * gridNxz, d_totaldTe[i]
-						+ (size_t)outputIndex / outputSteps * (rightN - leftN + 1) * gridNy * gridNxz + (mode - leftN) * gridNy * gridNxz, devNy * gridNxz, ncclType, comms[i], 0);
-				if constexpr (std::is_same_v<ifOutputPhi, trueType>)
-					ncclAllGather(d_eachPhi[i] + gridGhost * gridNxz, d_totalPhi[i]
-						+ (size_t)outputIndex / outputSteps * (rightN - leftN + 1) * gridNy * gridNxz + (mode - leftN) * gridNy * gridNxz, devNy * gridNxz, ncclType, comms[i], 0);
-				if constexpr (std::is_same_v<ifOutputdPi, trueType>)
-					ncclAllGather(d_eachdPi[i] + gridGhost * gridNxz, d_totaldPi[i]
-						+ (size_t)outputIndex / outputSteps * (rightN - leftN + 1) * gridNy * gridNxz + (mode - leftN) * gridNy * gridNxz, devNy * gridNxz, ncclType, comms[i], 0);
-				if constexpr (std::is_same_v<ifOutputdPa, trueType>)
-					ncclAllGather(d_eachdPa[i] + gridGhost * gridNxz, d_totaldPa[i]
-						+ (size_t)outputIndex / outputSteps * (rightN - leftN + 1) * gridNy * gridNxz + (mode - leftN) * gridNy * gridNxz, devNy * gridNxz, ncclType, comms[i], 0);
-				if constexpr (std::is_same_v<ifOutputdPb, trueType>)
-					ncclAllGather(d_eachdPb[i] + gridGhost * gridNxz, d_totaldPb[i]
-						+ (size_t)outputIndex / outputSteps * (rightN - leftN + 1) * gridNy * gridNxz + (mode - leftN) * gridNy * gridNxz, devNy * gridNxz, ncclType, comms[i], 0);
-			}
-			ncclGroupEnd();
-
-		}
-
 	}
 
 	if (myRank == 0) {
@@ -8125,10 +8282,12 @@ int main(int argc, char* argv[]) {
 
 	NCCLCHECK(ncclGroupStart());
 	for (int i = 0; i < devNums; i++) {
-		NCCLCHECK(ncclAllReduce(d_energy[i], d_energy[i], h_energy.size(), ncclType, ncclSum, comms[i], 0));
 		NCCLCHECK(ncclAllReduce(d_IonDensity[i], d_IonDensity[i], h_IonDensity.size(), ncclType, ncclSum, comms[i], 0));
 		NCCLCHECK(ncclAllReduce(d_AlphaDensity[i], d_AlphaDensity[i], h_AlphaDensity.size(), ncclType, ncclSum, comms[i], 0));
 		NCCLCHECK(ncclAllReduce(d_BeamDensity[i], d_BeamDensity[i], h_BeamDensity.size(), ncclType, ncclSum, comms[i], 0));
+		NCCLCHECK(ncclAllReduce(d_IonDiffusivity[i], d_IonDiffusivity[i], h_IonDiffusivity.size(), ncclType, ncclSum, comms[i], 0));
+		NCCLCHECK(ncclAllReduce(d_AlphaDiffusivity[i], d_AlphaDiffusivity[i], h_AlphaDiffusivity.size(), ncclType, ncclSum, comms[i], 0));
+		NCCLCHECK(ncclAllReduce(d_BeamDiffusivity[i], d_BeamDiffusivity[i], h_BeamDiffusivity.size(), ncclType, ncclSum, comms[i], 0));
 		NCCLCHECK(ncclAllGather(w_midl[i] + gridGhost * gridNxz, cuGMEC.d_w[i], devNy * gridNxz, ncclType, comms[i], 0));
 		NCCLCHECK(ncclAllGather(A_midl[i] + gridGhost * gridNxz, cuGMEC.d_A[i], devNy * gridNxz, ncclType, comms[i], 0));
 		NCCLCHECK(ncclAllGather(dNe_midl[i] + gridGhost * gridNxz, cuGMEC.d_dNe[i], devNy * gridNxz, ncclType, comms[i], 0));
@@ -8143,20 +8302,20 @@ int main(int argc, char* argv[]) {
 	NCCLCHECK(ncclGroupEnd());
 
 	CUDACHECK(cudaSetDevice(localRank * devNums));
-	CUDACHECK(cudaMemcpy(h_energy.data(), d_energy[0], sizeof(dataType) * h_energy.size(), cudaMemcpyDeviceToHost));
 	CUDACHECK(cudaMemcpy(h_IonDensity.data(), d_IonDensity[0], sizeof(dataType) * h_IonDensity.size(), cudaMemcpyDeviceToHost));
 	CUDACHECK(cudaMemcpy(h_AlphaDensity.data(), d_AlphaDensity[0], sizeof(dataType) * h_AlphaDensity.size(), cudaMemcpyDeviceToHost));
 	CUDACHECK(cudaMemcpy(h_BeamDensity.data(), d_BeamDensity[0], sizeof(dataType) * h_BeamDensity.size(), cudaMemcpyDeviceToHost));
-	if constexpr (std::is_same_v<ifOutputw, trueType>)
-		CUDACHECK(cudaMemcpy(h_totalw.data(), d_totalw[0], sizeof(dataType) * h_totalw.size(), cudaMemcpyDeviceToHost));
+	CUDACHECK(cudaMemcpy(h_IonDiffusivity.data(), d_IonDiffusivity[0], sizeof(dataType) * h_IonDiffusivity.size(), cudaMemcpyDeviceToHost));
+	CUDACHECK(cudaMemcpy(h_AlphaDiffusivity.data(), d_AlphaDiffusivity[0], sizeof(dataType) * h_AlphaDiffusivity.size(), cudaMemcpyDeviceToHost));
+	CUDACHECK(cudaMemcpy(h_BeamDiffusivity.data(), d_BeamDiffusivity[0], sizeof(dataType) * h_BeamDiffusivity.size(), cudaMemcpyDeviceToHost));
+	if constexpr (std::is_same_v<ifOutputPhi, trueType>)
+		CUDACHECK(cudaMemcpy(h_totalPhi.data(), d_totalPhi[0], sizeof(dataType) * h_totalPhi.size(), cudaMemcpyDeviceToHost));
 	if constexpr (std::is_same_v<ifOutputA, trueType>)
 		CUDACHECK(cudaMemcpy(h_totalA.data(), d_totalA[0], sizeof(dataType) * h_totalA.size(), cudaMemcpyDeviceToHost));
 	if constexpr (std::is_same_v<ifOutputdNe, trueType>)
 		CUDACHECK(cudaMemcpy(h_totaldNe.data(), d_totaldNe[0], sizeof(dataType) * h_totaldNe.size(), cudaMemcpyDeviceToHost));
 	if constexpr (std::is_same_v<ifOutputdTe, trueType>)
 		CUDACHECK(cudaMemcpy(h_totaldTe.data(), d_totaldTe[0], sizeof(dataType) * h_totaldTe.size(), cudaMemcpyDeviceToHost));
-	if constexpr (std::is_same_v<ifOutputPhi, trueType>)
-		CUDACHECK(cudaMemcpy(h_totalPhi.data(), d_totalPhi[0], sizeof(dataType) * h_totalPhi.size(), cudaMemcpyDeviceToHost));
 	if constexpr (std::is_same_v<ifOutputdPi, trueType>)
 		CUDACHECK(cudaMemcpy(h_totaldPi.data(), d_totaldPi[0], sizeof(dataType) * h_totaldPi.size(), cudaMemcpyDeviceToHost));
 	if constexpr (std::is_same_v<ifOutputdPa, trueType>)
@@ -8280,51 +8439,43 @@ int main(int argc, char* argv[]) {
 	if (hostNums == 1) {
 		if (devNums == 1) {
 			CUDACHECK(cudaSetDevice(0));
-			CUDACHECK(cudaMemcpy(h_frequency.data(), d_frequency[0], sizeof(dataType) * h_frequency.size(), cudaMemcpyDeviceToHost));
 			CUDACHECK(cudaMemcpy(h_amplitude.data(), d_amplitude[0], sizeof(dataType) * h_amplitude.size(), cudaMemcpyDeviceToHost));
-			CUDACHECK(cudaMemcpy(h_Epara.data(), d_Epara[0], sizeof(dataType) * h_Epara.size(), cudaMemcpyDeviceToHost));
-			CUDACHECK(cudaMemcpy(h_EparaES.data(), d_EparaES[0], sizeof(dataType) * h_EparaES.size(), cudaMemcpyDeviceToHost));
+			CUDACHECK(cudaMemcpy(h_frequency.data(), d_frequency[0], sizeof(dataType) * h_frequency.size(), cudaMemcpyDeviceToHost));
 			CUDACHECK(cudaMemcpy(h_modeReal.data(), d_modeReal[0], sizeof(dataType) * h_modeReal.size(), cudaMemcpyDeviceToHost));
 			CUDACHECK(cudaMemcpy(h_modeImag.data(), d_modeImag[0], sizeof(dataType) * h_modeImag.size(), cudaMemcpyDeviceToHost));
+			CUDACHECK(cudaMemcpy(h_Epara.data(), d_Epara[0], sizeof(dataType) * h_Epara.size(), cudaMemcpyDeviceToHost));
+			CUDACHECK(cudaMemcpy(h_EparaES.data(), d_EparaES[0], sizeof(dataType) * h_EparaES.size(), cudaMemcpyDeviceToHost));
 		}
 		else {
 			CUDACHECK(cudaSetDevice(devNums / 2));
-			CUDACHECK(cudaMemcpy(h_frequency.data(), d_frequency[devNums / 2], sizeof(dataType) * h_frequency.size(), cudaMemcpyDeviceToHost));
 			CUDACHECK(cudaMemcpy(h_amplitude.data(), d_amplitude[devNums / 2], sizeof(dataType) * h_amplitude.size(), cudaMemcpyDeviceToHost));
-			CUDACHECK(cudaMemcpy(h_Epara.data(), d_Epara[devNums / 2], sizeof(dataType) * h_Epara.size(), cudaMemcpyDeviceToHost));
-			CUDACHECK(cudaMemcpy(h_EparaES.data(), d_EparaES[devNums / 2], sizeof(dataType) * h_EparaES.size(), cudaMemcpyDeviceToHost));
+			CUDACHECK(cudaMemcpy(h_frequency.data(), d_frequency[devNums / 2], sizeof(dataType) * h_frequency.size(), cudaMemcpyDeviceToHost));
 			CUDACHECK(cudaMemcpy(h_modeReal.data(), d_modeReal[devNums / 2], sizeof(dataType) * h_modeReal.size(), cudaMemcpyDeviceToHost));
 			CUDACHECK(cudaMemcpy(h_modeImag.data(), d_modeImag[devNums / 2], sizeof(dataType) * h_modeImag.size(), cudaMemcpyDeviceToHost));
+			CUDACHECK(cudaMemcpy(h_Epara.data(), d_Epara[devNums / 2], sizeof(dataType) * h_Epara.size(), cudaMemcpyDeviceToHost));
+			CUDACHECK(cudaMemcpy(h_EparaES.data(), d_EparaES[devNums / 2], sizeof(dataType) * h_EparaES.size(), cudaMemcpyDeviceToHost));
 		}
 	}
 	else {
 		CUDACHECK(cudaSetDevice(localRank * devNums));
-		CUDACHECK(cudaMemcpy(h_frequency.data(), d_frequency[0], sizeof(dataType) * h_frequency.size(), cudaMemcpyDeviceToHost));
 		CUDACHECK(cudaMemcpy(h_amplitude.data(), d_amplitude[0], sizeof(dataType) * h_amplitude.size(), cudaMemcpyDeviceToHost));
-		CUDACHECK(cudaMemcpy(h_Epara.data(), d_Epara[0], sizeof(dataType) * h_Epara.size(), cudaMemcpyDeviceToHost));
-		CUDACHECK(cudaMemcpy(h_EparaES.data(), d_EparaES[0], sizeof(dataType) * h_EparaES.size(), cudaMemcpyDeviceToHost));
+		CUDACHECK(cudaMemcpy(h_frequency.data(), d_frequency[0], sizeof(dataType) * h_frequency.size(), cudaMemcpyDeviceToHost));
 		CUDACHECK(cudaMemcpy(h_modeReal.data(), d_modeReal[0], sizeof(dataType) * h_modeReal.size(), cudaMemcpyDeviceToHost));
 		CUDACHECK(cudaMemcpy(h_modeImag.data(), d_modeImag[0], sizeof(dataType) * h_modeImag.size(), cudaMemcpyDeviceToHost));
+		CUDACHECK(cudaMemcpy(h_Epara.data(), d_Epara[0], sizeof(dataType) * h_Epara.size(), cudaMemcpyDeviceToHost));
+		CUDACHECK(cudaMemcpy(h_EparaES.data(), d_EparaES[0], sizeof(dataType) * h_EparaES.size(), cudaMemcpyDeviceToHost));
 	}
 
 	if (myRank == hostNums / 2) {
 
 		std::ofstream output;
 
-		output.open("./result/frequency.bin", std::ios::out | std::ios::binary);
-		output.write((char*)(h_frequency.data()), sizeof(dataType) * h_frequency.size());
-		output.close();
-
 		output.open("./result/amplitude.bin", std::ios::out | std::ios::binary);
 		output.write((char*)(h_amplitude.data()), sizeof(dataType) * h_amplitude.size());
 		output.close();
 
-		output.open("./result/Epara.bin", std::ios::out | std::ios::binary);
-		output.write((char*)(h_Epara.data()), sizeof(dataType) * h_Epara.size());
-		output.close();
-
-		output.open("./result/EparaES.bin", std::ios::out | std::ios::binary);
-		output.write((char*)(h_EparaES.data()), sizeof(dataType) * h_EparaES.size());
+		output.open("./result/frequency.bin", std::ios::out | std::ios::binary);
+		output.write((char*)(h_frequency.data()), sizeof(dataType) * h_frequency.size());
 		output.close();
 
 		output.open("./result/RealMode.bin", std::ios::out | std::ios::binary);
@@ -8335,15 +8486,19 @@ int main(int argc, char* argv[]) {
 		output.write((char*)(h_modeImag.data()), sizeof(dataType) * h_modeImag.size());
 		output.close();
 
+		output.open("./result/Epara.bin", std::ios::out | std::ios::binary);
+		output.write((char*)(h_Epara.data()), sizeof(dataType) * h_Epara.size());
+		output.close();
+
+		output.open("./result/EparaES.bin", std::ios::out | std::ios::binary);
+		output.write((char*)(h_EparaES.data()), sizeof(dataType) * h_EparaES.size());
+		output.close();
+
 	}
 
 	if (myRank == 0) {
 
 		std::ofstream output;
-
-		output.open("./result/energy.bin", std::ios::out | std::ios::binary);
-		output.write((char*)(h_energy.data()), sizeof(dataType) * h_energy.size());
-		output.close();
 
 		output.open("./result/IonDensity.bin", std::ios::out | std::ios::binary);
 		output.write((char*)(h_IonDensity.data()), sizeof(dataType) * h_IonDensity.size());
@@ -8357,9 +8512,21 @@ int main(int argc, char* argv[]) {
 		output.write((char*)(h_BeamDensity.data()), sizeof(dataType) * h_BeamDensity.size());
 		output.close();
 
-		if constexpr (std::is_same_v<ifOutputw, trueType>) {
-			output.open("./result/totalw.bin", std::ios::out | std::ios::binary);
-			output.write((char*)(h_totalw.data()), sizeof(dataType) * h_totalw.size());
+		output.open("./result/IonDiffusivity.bin", std::ios::out | std::ios::binary);
+		output.write((char*)(h_IonDiffusivity.data()), sizeof(dataType) * h_IonDiffusivity.size());
+		output.close();
+
+		output.open("./result/AlphaDiffusivity.bin", std::ios::out | std::ios::binary);
+		output.write((char*)(h_AlphaDiffusivity.data()), sizeof(dataType) * h_AlphaDiffusivity.size());
+		output.close();
+
+		output.open("./result/BeamDiffusivity.bin", std::ios::out | std::ios::binary);
+		output.write((char*)(h_BeamDiffusivity.data()), sizeof(dataType) * h_BeamDiffusivity.size());
+		output.close();
+
+		if constexpr (std::is_same_v<ifOutputPhi, trueType>) {
+			output.open("./result/totalPhi.bin", std::ios::out | std::ios::binary);
+			output.write((char*)(h_totalPhi.data()), sizeof(dataType) * h_totalPhi.size());
 			output.close();
 		}
 		if constexpr (std::is_same_v<ifOutputA, trueType>) {
@@ -8375,11 +8542,6 @@ int main(int argc, char* argv[]) {
 		if constexpr (std::is_same_v<ifOutputdTe, trueType>) {
 			output.open("./result/totaldTe.bin", std::ios::out | std::ios::binary);
 			output.write((char*)(h_totaldTe.data()), sizeof(dataType) * h_totaldTe.size());
-			output.close();
-		}
-		if constexpr (std::is_same_v<ifOutputPhi, trueType>) {
-			output.open("./result/totalPhi.bin", std::ios::out | std::ios::binary);
-			output.write((char*)(h_totalPhi.data()), sizeof(dataType) * h_totalPhi.size());
 			output.close();
 		}
 		if constexpr (std::is_same_v<ifOutputdPi, trueType>) {
@@ -8489,46 +8651,48 @@ int main(int argc, char* argv[]) {
 
 		CUDACHECK(cudaFree(randStates[i]));
 
-		CUDACHECK(cudaFree(d_energy[i]));
-		CUDACHECK(cudaFree(d_frequency[i]));
 		CUDACHECK(cudaFree(d_amplitude[i]));
-		CUDACHECK(cudaFree(d_Epara[i]));
-		CUDACHECK(cudaFree(d_EparaES[i]));
+		CUDACHECK(cudaFree(d_frequency[i]));
 		CUDACHECK(cudaFree(d_modeReal[i]));
 		CUDACHECK(cudaFree(d_modeImag[i]));
+		CUDACHECK(cudaFree(d_Epara[i]));
+		CUDACHECK(cudaFree(d_EparaES[i]));
+		CUDACHECK(cudaFree(d_AlphaDensity[i]));
+		CUDACHECK(cudaFree(d_IonDensity[i]));
+		CUDACHECK(cudaFree(d_BeamDensity[i]));
+		CUDACHECK(cudaFree(d_AlphaDiffusivity[i]));
+		CUDACHECK(cudaFree(d_IonDiffusivity[i]));
+		CUDACHECK(cudaFree(d_BeamDiffusivity[i]));
 
-		if constexpr (std::is_same_v<ifOutputw, trueType>) {
-			CUDACHECK(cudaFree(d_eachw[i]));
-			CUDACHECK(cudaFree(d_totalw[i]));
-		}
-		if constexpr (std::is_same_v<ifOutputA, trueType>) {
-			CUDACHECK(cudaFree(d_eachA[i]));
-			CUDACHECK(cudaFree(d_totalA[i]));
-		}
-		if constexpr (std::is_same_v<ifOutputdNe, trueType>) {
-			CUDACHECK(cudaFree(d_eachdNe[i]));
-			CUDACHECK(cudaFree(d_totaldNe[i]));
-		}
-		if constexpr (std::is_same_v<ifOutputdTe, trueType>) {
-			CUDACHECK(cudaFree(d_eachdTe[i]));
-			CUDACHECK(cudaFree(d_totaldTe[i]));
-		}
-		if constexpr (std::is_same_v<ifOutputPhi, trueType>) {
-			CUDACHECK(cudaFree(d_eachPhi[i]));
+		if constexpr (std::is_same_v<ifOutputPhi, trueType>)
 			CUDACHECK(cudaFree(d_totalPhi[i]));
-		}
-		if constexpr (std::is_same_v<ifOutputdPi, trueType>) {
-			CUDACHECK(cudaFree(d_eachdPi[i]));
+		if constexpr (std::is_same_v<ifOutputA, trueType>)
+			CUDACHECK(cudaFree(d_totalA[i]));
+		if constexpr (std::is_same_v<ifOutputdNe, trueType>)
+			CUDACHECK(cudaFree(d_totaldNe[i]));
+		if constexpr (std::is_same_v<ifOutputdTe, trueType>)
+			CUDACHECK(cudaFree(d_totaldTe[i]));
+		if constexpr (std::is_same_v<ifOutputdPi, trueType>)
 			CUDACHECK(cudaFree(d_totaldPi[i]));
-		}
-		if constexpr (std::is_same_v<ifOutputdPa, trueType>) {
-			CUDACHECK(cudaFree(d_eachdPa[i]));
+		if constexpr (std::is_same_v<ifOutputdPa, trueType>)
 			CUDACHECK(cudaFree(d_totaldPa[i]));
-		}
-		if constexpr (std::is_same_v<ifOutputdPb, trueType>) {
-			CUDACHECK(cudaFree(d_eachdPb[i]));
+		if constexpr (std::is_same_v<ifOutputdPb, trueType>)
 			CUDACHECK(cudaFree(d_totaldPb[i]));
-		}
+
+		CUDACHECK(cudaFree(Phi_yxz[i]));
+		CUDACHECK(cudaFree(Phi_xzy[i]));
+		CUDACHECK(cudaFree(A_yxz[i]));
+		CUDACHECK(cudaFree(A_xzy[i]));
+		CUDACHECK(cudaFree(dNe_yxz[i]));
+		CUDACHECK(cudaFree(dNe_xzy[i]));
+		CUDACHECK(cudaFree(dTe_yxz[i]));
+		CUDACHECK(cudaFree(dTe_xzy[i]));
+		CUDACHECK(cudaFree(dPi_yxz[i]));
+		CUDACHECK(cudaFree(dPi_xzy[i]));
+		CUDACHECK(cudaFree(dPa_yxz[i]));
+		CUDACHECK(cudaFree(dPa_xzy[i]));
+		CUDACHECK(cudaFree(dPb_yxz[i]));
+		CUDACHECK(cudaFree(dPb_xzy[i]));
 
 		if constexpr (std::is_same_v<ifIon, trueType>)
 			CUDACHECK(cudaFree(Ion_storage[i]));
@@ -8550,6 +8714,7 @@ int main(int argc, char* argv[]) {
 	if (myRank == 0) {
 		std::cout << BOLDYELLOW << "Start: Exit the program." << RESET << std::endl;
 		std::cout << BOLDGREEN << "Done." << RESET << std::endl;
+		std::cout << std::endl;
 	}
 
 	//finalizing MPI
