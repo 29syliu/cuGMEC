@@ -58,7 +58,7 @@ using dataType = double;
 
 const std::string MHDCollocated = "../MHDCollocated_256_32.bin";
 const std::string MHDStaggered = "../MHDStaggered_256_32.bin";
-const std::string MHDPerturbation = "../MHDPerturbation_256_32_16_30_1.bin";
+const std::string MHDPerturbation = "../MHDPerturbation_500.bin";
 
 /*-------------------------Normalization Setting-------------------------*/
 
@@ -76,15 +76,15 @@ const int hostNums = 4;
 const int devNums = 4;
 const int gridNx = 256;
 const int gridNy = 32;
-const int gridNz = 16;
+const int gridNz = 96;
 const int gridGhost = 2;
 const int ppcNums = 128;
 
 /*-----------------------------MHD Setting-----------------------------*/
 
-const int tubes = 30;
+const int tubes = 6;
 const int leftN = 1;
-const int rightN = 1;
+const int rightN = 6;
 using ifFilterN_Phi = trueType;
 using ifFilterN_A = trueType;
 using ifFilterN_dNe = trueType;
@@ -102,43 +102,43 @@ constexpr std::array<std::tuple<int, int, int>, 0> selectNM_dTe = {};
 constexpr std::array<std::tuple<int, int, int>, 0> selectNM_dP = {};
 
 using ifStaggered = falseType;
-using ifNonlinear = falseType;
+using ifNonlinear = trueType;
 using ifEparallel = trueType;
 using ifFLRMHD = falseType;
 
-using ifNablaPerp2Phi = falseType;
-using ifNablaPara4Phi = falseType;
-const dataType perp2Phi = 0.0;
-const dataType para4Phi = 0.0;
+using ifNablaPerp2Phi = trueType;
+using ifNablaPara4Phi = trueType;
+const dataType perp2Phi = 2.0e-7;
+const dataType para4Phi = 1.0e-5;
 
-using ifNablaPerp2A = falseType;
+using ifNablaPerp2A = trueType;
 using ifNablaPara4A = falseType;
-const dataType perp2A = 0.0;
+const dataType perp2A = 2.0e-7;
 const dataType para4A = 0.0;
 
-using ifNablaPerp2dNe = falseType;
+using ifNablaPerp2dNe = trueType;
 using ifNablaPara4dNe = falseType;
-const dataType perp2dNe = 0.0;
+const dataType perp2dNe = 2.0e-7;
 const dataType para4dNe = 0.0;
 
-using ifNablaPerp2dTe = falseType;
+using ifNablaPerp2dTe = trueType;
 using ifNablaPara4dTe = falseType;
-const dataType perp2dTe = 0.0;
+const dataType perp2dTe = 2.0e-7;
 const dataType para4dTe = 0.0;
 
-using ifNablaPerp2dPi = falseType;
+using ifNablaPerp2dPi = trueType;
 using ifNablaPara4dPi = falseType;
-const dataType perp2dPi = 0.0;
+const dataType perp2dPi = 1.0e-6;
 const dataType para4dPi = 0.0;
 
-using ifNablaPerp2dPa = falseType;
+using ifNablaPerp2dPa = trueType;
 using ifNablaPara4dPa = falseType;
-const dataType perp2dPa = 0.0;
+const dataType perp2dPa = 1.0e-6;
 const dataType para4dPa = 0.0;
 
-using ifNablaPerp2dPb = falseType;
+using ifNablaPerp2dPb = trueType;
 using ifNablaPara4dPb = falseType;
-const dataType perp2dPb = 0.0;
+const dataType perp2dPb = 1.0e-6;
 const dataType para4dPb = 0.0;
 
 /*------------------------------PIC Setting------------------------------*/
@@ -196,7 +196,7 @@ const dataType BeamDragRate = 0.0;
 
 /*------------------------------Run Setting------------------------------*/
 
-using ifContinue = falseType;
+using ifContinue = trueType;
 using ifDiagAmplitude = trueType;
 using ifDiagFrequency = trueType;
 using ifDiagEparallel = trueType;
@@ -214,23 +214,23 @@ using ifOutputdPb = falseType;
 const int gridE = 64;
 const int gridPphi = 64;
 const int gridLambda = 64;
-const int ppcPhase = 4096;
+const int ppcPhase = 256;
 const dataType IonEPphiLambda[6] = {0.0, 0.0, 0.0, 0.0, 0.0, 0.0};
 const dataType AlphaEPphiLambda[6] = {0.0, 0.0, 0.0, 0.0, 0.0, 0.0};
 const dataType BeamEPphiLambda[6] = {0.0, 0.0, 0.0, 0.0, 0.0, 0.0};
-using ifOutputPhaceSpaceF0 = trueType;
+using ifOutputPhaceSpaceF0 = falseType;
 using ifOutputPhaceSpaceDeltaF = falseType;
 using ifOutputPhaceSpacePower = falseType;
-using ifOutputPhaceSpaceJacobian = trueType;
-using ifOutputPhaceSpaceFrequency = trueType;
+using ifOutputPhaceSpaceJacobian = falseType;
+using ifOutputPhaceSpaceFrequency = falseType;
 const std::string IonPhaseSpaceMapping = "../IonPhaseSpaceMapping.bin";
 const std::string BeamPhaseSpaceMapping = "../BeamPhaseSpaceMapping.bin";
 const std::string AlphaPhaseSpaceMapping = "../AlphaPhaseSpaceMapping.bin";
 
 const double dt = 0.02;
-const int continueSteps = 0;
+const int continueSteps = 500;
 const int ratioDt = 1;
-const int totalSteps = 4000;
+const int totalSteps = 500;
 const int sortSteps = 25;
 const int diagSteps = 1;
 const int diagLeftX = 0;
@@ -5917,6 +5917,13 @@ int main(int argc, char* argv[]) {
                                               std::vector<double>{BeamMass, BeamChar, BeamBeta, BeamVmin, BeamVmax,
                                                                   BeamVb, BeamDeltaV, BeamLambda0, BeamDeltaLambda2}});
 
+    if (myRank == 0) {
+        if ((access(std::string("./initial").c_str(), 0)) == -1)
+            mkdir(std::string("./initial").c_str(), S_IRWXU);
+        if ((access(std::string("./final").c_str(), 0)) == -1)
+            mkdir(std::string("./final").c_str(), S_IRWXU);
+    }
+
     cuGMEC.allocateHostMemory();
     cuGMEC.allocateDeviceMemory();
 
@@ -6040,12 +6047,9 @@ int main(int argc, char* argv[]) {
 
     if constexpr (std::is_same_v<ifIon, trueType>) {
         if constexpr (std::is_same_v<ifContinue, trueType>) {
-            std::string file1, file2, file3, file4;
-            file1 = "../IonConst_" + std::to_string(myRank) + "_" + std::to_string(continueSteps) + ".bin";
-            file2 = "../IonOffsets_" + std::to_string(myRank) + "_" + std::to_string(continueSteps) + ".bin";
-            file3 = "../IonKeys_" + std::to_string(myRank) + "_" + std::to_string(continueSteps) + ".bin";
-            file4 = "../IonValues_" + std::to_string(myRank) + "_" + std::to_string(continueSteps) + ".bin";
-            cuGMEC.loadParticles<Ion>(file1, file2, file3, file4);
+            std::string file;
+            file = "../IonPicData_" + std::to_string(continueSteps) + ".bin";
+            cuGMEC.loadParticles<Ion>(file);
             if constexpr (continueSteps == 0)
                 cuGMEC.computeEquilibriumPressure<Ion>();
         } else {
@@ -6055,12 +6059,9 @@ int main(int argc, char* argv[]) {
     }
     if constexpr (std::is_same_v<ifAlpha, trueType>) {
         if constexpr (std::is_same_v<ifContinue, trueType>) {
-            std::string file1, file2, file3, file4;
-            file1 = "../AlphaConst_" + std::to_string(myRank) + "_" + std::to_string(continueSteps) + ".bin";
-            file2 = "../AlphaOffsets_" + std::to_string(myRank) + "_" + std::to_string(continueSteps) + ".bin";
-            file3 = "../AlphaKeys_" + std::to_string(myRank) + "_" + std::to_string(continueSteps) + ".bin";
-            file4 = "../AlphaValues_" + std::to_string(myRank) + "_" + std::to_string(continueSteps) + ".bin";
-            cuGMEC.loadParticles<Alpha>(file1, file2, file3, file4);
+            std::string file;
+            file = "../AlphaPicData_" + std::to_string(continueSteps) + ".bin";
+            cuGMEC.loadParticles<Alpha>(file);
             if constexpr (continueSteps == 0)
                 cuGMEC.computeEquilibriumPressure<Alpha>();
         } else {
@@ -6070,12 +6071,9 @@ int main(int argc, char* argv[]) {
     }
     if constexpr (std::is_same_v<ifBeam, trueType>) {
         if constexpr (std::is_same_v<ifContinue, trueType>) {
-            std::string file1, file2, file3, file4;
-            file1 = "../BeamConst_" + std::to_string(myRank) + "_" + std::to_string(continueSteps) + ".bin";
-            file2 = "../BeamOffsets_" + std::to_string(myRank) + "_" + std::to_string(continueSteps) + ".bin";
-            file3 = "../BeamKeys_" + std::to_string(myRank) + "_" + std::to_string(continueSteps) + ".bin";
-            file4 = "../BeamValues_" + std::to_string(myRank) + "_" + std::to_string(continueSteps) + ".bin";
-            cuGMEC.loadParticles<Beam>(file1, file2, file3, file4);
+            std::string file;
+            file = "../BeamPicData_" + std::to_string(continueSteps) + ".bin";
+            cuGMEC.loadParticles<Beam>(file);
             if constexpr (continueSteps == 0)
                 cuGMEC.computeEquilibriumPressure<Beam>();
         } else {
@@ -6097,10 +6095,6 @@ int main(int argc, char* argv[]) {
         if constexpr (std::is_same_v<ifNablaPerp2A, trueType>)
             cuGMEC.computeSparseMatrix<Resistive, trueType, trueType>();
     }
-
-    if (myRank == 0)
-        if ((access(std::string("./result").c_str(), 0)) == -1)
-            mkdir(std::string("./result").c_str(), S_IRWXU);
 
     // initializing cuFFT for filtering toroidal mode
 
@@ -8446,118 +8440,121 @@ int main(int argc, char* argv[]) {
 
         for (int i = 0; i < devNums; i++) {
             cudaSetDevice(localRank * devNums + i);
-            if constexpr (std::is_same_v<ifIon, trueType>) {
-                CUDACHECK(
-                    cudaMemcpy(cuGMEC.h_Ion_keys[i], Ion_keys_in[i], sizeof(int) * picDev * 7, cudaMemcpyDeviceToHost));
-                CUDACHECK(cudaMemcpy(cuGMEC.h_Ion_values[i], Ion_values_in[i], sizeof(dataType) * picDev * 7,
-                                     cudaMemcpyDeviceToHost));
-            }
+            CUDACHECK(
+                cudaMemcpy(cuGMEC.h_Ion_keys[i], Ion_keys_in[i], sizeof(int) * picDev * 7, cudaMemcpyDeviceToHost));
+            CUDACHECK(cudaMemcpy(cuGMEC.h_Ion_values[i], Ion_values_in[i], sizeof(dataType) * picDev * 7,
+                                 cudaMemcpyDeviceToHost));
         }
 
-        std::ofstream output;
-        std::string fileName;
+        std::string filename = "./final/IonPicData_" + std::to_string(continueSteps + totalSteps) + ".bin";
+        size_t rankDataSize = sizeof(dataType) + sizeof(int) * devNums * 8 + sizeof(int) * devNums * picDev * 7 +
+                              sizeof(dataType) * devNums * picDev * 7;
+        size_t offset = myRank * rankDataSize;
 
-        fileName =
-            "./result/IonConst_" + std::to_string(myRank) + "_" + std::to_string(continueSteps + totalSteps) + ".bin";
-        output.open(fileName.c_str(), std::ios::out | std::ios::binary);
-        output.write((char*)(&cuGMEC.IonConst), sizeof(dataType));
-        output.close();
+        MPI_File fileHandle;
+        MPI_File_open(MPI_COMM_WORLD, filename.c_str(), MPI_MODE_CREATE | MPI_MODE_WRONLY, MPI_INFO_NULL, &fileHandle);
 
-        fileName =
-            "./result/IonOffsets_" + std::to_string(myRank) + "_" + std::to_string(continueSteps + totalSteps) + ".bin";
-        output.open(fileName.c_str(), std::ios::out | std::ios::binary);
-        output.write((char*)(cuGMEC.h_Ion_offsets[0]), sizeof(int) * devNums * 8);
-        output.close();
+        if constexpr (std::is_same_v<dataType, double>)
+            MPI_File_write_at_all(fileHandle, offset, &cuGMEC.IonConst, 1, MPI_DOUBLE, MPI_STATUS_IGNORE);
+        else
+            MPI_File_write_at_all(fileHandle, offset, &cuGMEC.IonConst, 1, MPI_FLOAT, MPI_STATUS_IGNORE);
 
-        fileName =
-            "./result/IonKeys_" + std::to_string(myRank) + "_" + std::to_string(continueSteps + totalSteps) + ".bin";
-        output.open(fileName.c_str(), std::ios::out | std::ios::binary);
-        output.write((char*)(cuGMEC.h_Ion_keys[0]), sizeof(int) * devNums * picDev * 7);
-        output.close();
+        MPI_File_write_at_all(fileHandle, offset + sizeof(dataType), cuGMEC.h_Ion_offsets[0], devNums * 8, MPI_INT,
+                              MPI_STATUS_IGNORE);
 
-        fileName =
-            "./result/IonValues_" + std::to_string(myRank) + "_" + std::to_string(continueSteps + totalSteps) + ".bin";
-        output.open(fileName.c_str(), std::ios::out | std::ios::binary);
-        output.write((char*)(cuGMEC.h_Ion_values[0]), sizeof(dataType) * devNums * picDev * 7);
-        output.close();
+        MPI_File_write_at_all(fileHandle, offset + sizeof(dataType) + sizeof(int) * devNums * 8, cuGMEC.h_Ion_keys[0],
+                              devNums * picDev * 7, MPI_INT, MPI_STATUS_IGNORE);
+
+        if constexpr (std::is_same_v<dataType, double>)
+            MPI_File_write_at_all(
+                fileHandle, offset + sizeof(dataType) + sizeof(int) * devNums * 8 + sizeof(int) * devNums * picDev * 7,
+                cuGMEC.h_Ion_values[0], devNums * picDev * 7, MPI_DOUBLE, MPI_STATUS_IGNORE);
+        else
+            MPI_File_write_at_all(
+                fileHandle, offset + sizeof(dataType) + sizeof(int) * devNums * 8 + sizeof(int) * devNums * picDev * 7,
+                cuGMEC.h_Ion_values[0], devNums * picDev * 7, MPI_FLOAT, MPI_STATUS_IGNORE);
+
+        MPI_File_close(&fileHandle);
     }
     if constexpr (std::is_same_v<ifAlpha, trueType>) {
 
         for (int i = 0; i < devNums; i++) {
             cudaSetDevice(localRank * devNums + i);
-            if constexpr (std::is_same_v<ifAlpha, trueType>) {
-                CUDACHECK(cudaMemcpy(cuGMEC.h_Alpha_keys[i], Alpha_keys_in[i], sizeof(int) * picDev * 7,
-                                     cudaMemcpyDeviceToHost));
-                CUDACHECK(cudaMemcpy(cuGMEC.h_Alpha_values[i], Alpha_values_in[i], sizeof(dataType) * picDev * 7,
-                                     cudaMemcpyDeviceToHost));
-            }
+            CUDACHECK(
+                cudaMemcpy(cuGMEC.h_Alpha_keys[i], Alpha_keys_in[i], sizeof(int) * picDev * 7, cudaMemcpyDeviceToHost));
+            CUDACHECK(cudaMemcpy(cuGMEC.h_Alpha_values[i], Alpha_values_in[i], sizeof(dataType) * picDev * 7,
+                                 cudaMemcpyDeviceToHost));
         }
 
-        std::ofstream output;
-        std::string fileName;
+        std::string filename = "./final/AlphaPicData_" + std::to_string(continueSteps + totalSteps) + ".bin";
+        size_t rankDataSize = sizeof(dataType) + sizeof(int) * devNums * 8 + sizeof(int) * devNums * picDev * 7 +
+                              sizeof(dataType) * devNums * picDev * 7;
+        size_t offset = myRank * rankDataSize;
 
-        fileName =
-            "./result/AlphaConst_" + std::to_string(myRank) + "_" + std::to_string(continueSteps + totalSteps) + ".bin";
-        output.open(fileName.c_str(), std::ios::out | std::ios::binary);
-        output.write((char*)(&cuGMEC.AlphaConst), sizeof(dataType));
-        output.close();
+        MPI_File fileHandle;
+        MPI_File_open(MPI_COMM_WORLD, filename.c_str(), MPI_MODE_CREATE | MPI_MODE_WRONLY, MPI_INFO_NULL, &fileHandle);
 
-        fileName = "./result/AlphaOffsets_" + std::to_string(myRank) + "_" +
-                   std::to_string(continueSteps + totalSteps) + ".bin";
-        output.open(fileName.c_str(), std::ios::out | std::ios::binary);
-        output.write((char*)(cuGMEC.h_Alpha_offsets[0]), sizeof(int) * devNums * 8);
-        output.close();
+        if constexpr (std::is_same_v<dataType, double>)
+            MPI_File_write_at_all(fileHandle, offset, &cuGMEC.AlphaConst, 1, MPI_DOUBLE, MPI_STATUS_IGNORE);
+        else
+            MPI_File_write_at_all(fileHandle, offset, &cuGMEC.AlphaConst, 1, MPI_FLOAT, MPI_STATUS_IGNORE);
 
-        fileName =
-            "./result/AlphaKeys_" + std::to_string(myRank) + "_" + std::to_string(continueSteps + totalSteps) + ".bin";
-        output.open(fileName.c_str(), std::ios::out | std::ios::binary);
-        output.write((char*)(cuGMEC.h_Alpha_keys[0]), sizeof(int) * devNums * picDev * 7);
-        output.close();
+        MPI_File_write_at_all(fileHandle, offset + sizeof(dataType), cuGMEC.h_Alpha_offsets[0], devNums * 8, MPI_INT,
+                              MPI_STATUS_IGNORE);
 
-        fileName = "./result/AlphaValues_" + std::to_string(myRank) + "_" + std::to_string(continueSteps + totalSteps) +
-                   ".bin";
-        output.open(fileName.c_str(), std::ios::out | std::ios::binary);
-        output.write((char*)(cuGMEC.h_Alpha_values[0]), sizeof(dataType) * devNums * picDev * 7);
-        output.close();
+        MPI_File_write_at_all(fileHandle, offset + sizeof(dataType) + sizeof(int) * devNums * 8, cuGMEC.h_Alpha_keys[0],
+                              devNums * picDev * 7, MPI_INT, MPI_STATUS_IGNORE);
+
+        if constexpr (std::is_same_v<dataType, double>)
+            MPI_File_write_at_all(
+                fileHandle, offset + sizeof(dataType) + sizeof(int) * devNums * 8 + sizeof(int) * devNums * picDev * 7,
+                cuGMEC.h_Alpha_values[0], devNums * picDev * 7, MPI_DOUBLE, MPI_STATUS_IGNORE);
+        else
+            MPI_File_write_at_all(
+                fileHandle, offset + sizeof(dataType) + sizeof(int) * devNums * 8 + sizeof(int) * devNums * picDev * 7,
+                cuGMEC.h_Alpha_values[0], devNums * picDev * 7, MPI_FLOAT, MPI_STATUS_IGNORE);
+
+        MPI_File_close(&fileHandle);
     }
     if constexpr (std::is_same_v<ifBeam, trueType>) {
 
         for (int i = 0; i < devNums; i++) {
             cudaSetDevice(localRank * devNums + i);
-            if constexpr (std::is_same_v<ifBeam, trueType>) {
-                CUDACHECK(cudaMemcpy(cuGMEC.h_Beam_keys[i], Beam_keys_in[i], sizeof(int) * picDev * 7,
-                                     cudaMemcpyDeviceToHost));
-                CUDACHECK(cudaMemcpy(cuGMEC.h_Beam_values[i], Beam_values_in[i], sizeof(dataType) * picDev * 7,
-                                     cudaMemcpyDeviceToHost));
-            }
+            CUDACHECK(
+                cudaMemcpy(cuGMEC.h_Beam_keys[i], Beam_keys_in[i], sizeof(int) * picDev * 7, cudaMemcpyDeviceToHost));
+            CUDACHECK(cudaMemcpy(cuGMEC.h_Beam_values[i], Beam_values_in[i], sizeof(dataType) * picDev * 7,
+                                 cudaMemcpyDeviceToHost));
         }
 
-        std::ofstream output;
-        std::string fileName;
+        std::string filename = "./final/BeamPicData_" + std::to_string(continueSteps + totalSteps) + ".bin";
+        size_t rankDataSize = sizeof(dataType) + sizeof(int) * devNums * 8 + sizeof(int) * devNums * picDev * 7 +
+                              sizeof(dataType) * devNums * picDev * 7;
+        size_t offset = myRank * rankDataSize;
 
-        fileName =
-            "./result/BeamConst_" + std::to_string(myRank) + "_" + std::to_string(continueSteps + totalSteps) + ".bin";
-        output.open(fileName.c_str(), std::ios::out | std::ios::binary);
-        output.write((char*)(&cuGMEC.BeamConst), sizeof(dataType));
-        output.close();
+        MPI_File fileHandle;
+        MPI_File_open(MPI_COMM_WORLD, filename.c_str(), MPI_MODE_CREATE | MPI_MODE_WRONLY, MPI_INFO_NULL, &fileHandle);
 
-        fileName = "./result/BeamOffsets_" + std::to_string(myRank) + "_" + std::to_string(continueSteps + totalSteps) +
-                   ".bin";
-        output.open(fileName.c_str(), std::ios::out | std::ios::binary);
-        output.write((char*)(cuGMEC.h_Beam_offsets[0]), sizeof(int) * devNums * 8);
-        output.close();
+        if constexpr (std::is_same_v<dataType, double>)
+            MPI_File_write_at_all(fileHandle, offset, &cuGMEC.BeamConst, 1, MPI_DOUBLE, MPI_STATUS_IGNORE);
+        else
+            MPI_File_write_at_all(fileHandle, offset, &cuGMEC.BeamConst, 1, MPI_FLOAT, MPI_STATUS_IGNORE);
 
-        fileName =
-            "./result/BeamKeys_" + std::to_string(myRank) + "_" + std::to_string(continueSteps + totalSteps) + ".bin";
-        output.open(fileName.c_str(), std::ios::out | std::ios::binary);
-        output.write((char*)(cuGMEC.h_Beam_keys[0]), sizeof(int) * devNums * picDev * 7);
-        output.close();
+        MPI_File_write_at_all(fileHandle, offset + sizeof(dataType), cuGMEC.h_Beam_offsets[0], devNums * 8, MPI_INT,
+                              MPI_STATUS_IGNORE);
 
-        fileName =
-            "./result/BeamValues_" + std::to_string(myRank) + "_" + std::to_string(continueSteps + totalSteps) + ".bin";
-        output.open(fileName.c_str(), std::ios::out | std::ios::binary);
-        output.write((char*)(cuGMEC.h_Beam_values[0]), sizeof(dataType) * devNums * picDev * 7);
-        output.close();
+        MPI_File_write_at_all(fileHandle, offset + sizeof(dataType) + sizeof(int) * devNums * 8, cuGMEC.h_Beam_keys[0],
+                              devNums * picDev * 7, MPI_INT, MPI_STATUS_IGNORE);
+
+        if constexpr (std::is_same_v<dataType, double>)
+            MPI_File_write_at_all(
+                fileHandle, offset + sizeof(dataType) + sizeof(int) * devNums * 8 + sizeof(int) * devNums * picDev * 7,
+                cuGMEC.h_Beam_values[0], devNums * picDev * 7, MPI_DOUBLE, MPI_STATUS_IGNORE);
+        else
+            MPI_File_write_at_all(
+                fileHandle, offset + sizeof(dataType) + sizeof(int) * devNums * 8 + sizeof(int) * devNums * picDev * 7,
+                cuGMEC.h_Beam_values[0], devNums * picDev * 7, MPI_FLOAT, MPI_STATUS_IGNORE);
+
+        MPI_File_close(&fileHandle);
     }
 
     if (hostNums == 1) {
@@ -8609,27 +8606,27 @@ int main(int argc, char* argv[]) {
 
         std::ofstream output;
 
-        output.open("./result/amplitude.bin", std::ios::out | std::ios::binary);
+        output.open("./final/amplitude.bin", std::ios::out | std::ios::binary);
         output.write((char*)(h_amplitude.data()), sizeof(dataType) * h_amplitude.size());
         output.close();
 
-        output.open("./result/frequency.bin", std::ios::out | std::ios::binary);
+        output.open("./final/frequency.bin", std::ios::out | std::ios::binary);
         output.write((char*)(h_frequency.data()), sizeof(dataType) * h_frequency.size());
         output.close();
 
-        output.open("./result/RealMode.bin", std::ios::out | std::ios::binary);
+        output.open("./final/RealMode.bin", std::ios::out | std::ios::binary);
         output.write((char*)(h_modeReal.data()), sizeof(dataType) * h_modeReal.size());
         output.close();
 
-        output.open("./result/ImagMode.bin", std::ios::out | std::ios::binary);
+        output.open("./final/ImagMode.bin", std::ios::out | std::ios::binary);
         output.write((char*)(h_modeImag.data()), sizeof(dataType) * h_modeImag.size());
         output.close();
 
-        output.open("./result/Epara.bin", std::ios::out | std::ios::binary);
+        output.open("./final/Epara.bin", std::ios::out | std::ios::binary);
         output.write((char*)(h_Epara.data()), sizeof(dataType) * h_Epara.size());
         output.close();
 
-        output.open("./result/EparaES.bin", std::ios::out | std::ios::binary);
+        output.open("./final/EparaES.bin", std::ios::out | std::ios::binary);
         output.write((char*)(h_EparaES.data()), sizeof(dataType) * h_EparaES.size());
         output.close();
     }
@@ -8638,103 +8635,103 @@ int main(int argc, char* argv[]) {
 
         std::ofstream output;
 
-        output.open("./result/IonDensity.bin", std::ios::out | std::ios::binary);
+        output.open("./final/IonDensity.bin", std::ios::out | std::ios::binary);
         output.write((char*)(h_IonDensity.data()), sizeof(dataType) * h_IonDensity.size());
         output.close();
 
-        output.open("./result/AlphaDensity.bin", std::ios::out | std::ios::binary);
+        output.open("./final/AlphaDensity.bin", std::ios::out | std::ios::binary);
         output.write((char*)(h_AlphaDensity.data()), sizeof(dataType) * h_AlphaDensity.size());
         output.close();
 
-        output.open("./result/BeamDensity.bin", std::ios::out | std::ios::binary);
+        output.open("./final/BeamDensity.bin", std::ios::out | std::ios::binary);
         output.write((char*)(h_BeamDensity.data()), sizeof(dataType) * h_BeamDensity.size());
         output.close();
 
-        output.open("./result/IonDiffusivity.bin", std::ios::out | std::ios::binary);
+        output.open("./final/IonDiffusivity.bin", std::ios::out | std::ios::binary);
         output.write((char*)(h_IonDiffusivity.data()), sizeof(dataType) * h_IonDiffusivity.size());
         output.close();
 
-        output.open("./result/AlphaDiffusivity.bin", std::ios::out | std::ios::binary);
+        output.open("./final/AlphaDiffusivity.bin", std::ios::out | std::ios::binary);
         output.write((char*)(h_AlphaDiffusivity.data()), sizeof(dataType) * h_AlphaDiffusivity.size());
         output.close();
 
-        output.open("./result/BeamDiffusivity.bin", std::ios::out | std::ios::binary);
+        output.open("./final/BeamDiffusivity.bin", std::ios::out | std::ios::binary);
         output.write((char*)(h_BeamDiffusivity.data()), sizeof(dataType) * h_BeamDiffusivity.size());
         output.close();
 
         if constexpr (std::is_same_v<ifOutputPhi, trueType>) {
-            output.open("./result/totalPhi.bin", std::ios::out | std::ios::binary);
+            output.open("./final/totalPhi.bin", std::ios::out | std::ios::binary);
             output.write((char*)(h_totalPhi.data()), sizeof(dataType) * h_totalPhi.size());
             output.close();
         }
         if constexpr (std::is_same_v<ifOutputA, trueType>) {
-            output.open("./result/totalA.bin", std::ios::out | std::ios::binary);
+            output.open("./final/totalA.bin", std::ios::out | std::ios::binary);
             output.write((char*)(h_totalA.data()), sizeof(dataType) * h_totalA.size());
             output.close();
         }
         if constexpr (std::is_same_v<ifOutputdNe, trueType>) {
-            output.open("./result/totaldNe.bin", std::ios::out | std::ios::binary);
+            output.open("./final/totaldNe.bin", std::ios::out | std::ios::binary);
             output.write((char*)(h_totaldNe.data()), sizeof(dataType) * h_totaldNe.size());
             output.close();
         }
         if constexpr (std::is_same_v<ifOutputdTe, trueType>) {
-            output.open("./result/totaldTe.bin", std::ios::out | std::ios::binary);
+            output.open("./final/totaldTe.bin", std::ios::out | std::ios::binary);
             output.write((char*)(h_totaldTe.data()), sizeof(dataType) * h_totaldTe.size());
             output.close();
         }
         if constexpr (std::is_same_v<ifOutputdPi, trueType>) {
-            output.open("./result/totaldPi.bin", std::ios::out | std::ios::binary);
+            output.open("./final/totaldPi.bin", std::ios::out | std::ios::binary);
             output.write((char*)(h_totaldPi.data()), sizeof(dataType) * h_totaldPi.size());
             output.close();
         }
         if constexpr (std::is_same_v<ifOutputdPa, trueType>) {
-            output.open("./result/totaldPa.bin", std::ios::out | std::ios::binary);
+            output.open("./final/totaldPa.bin", std::ios::out | std::ios::binary);
             output.write((char*)(h_totaldPa.data()), sizeof(dataType) * h_totaldPa.size());
             output.close();
         }
         if constexpr (std::is_same_v<ifOutputdPb, trueType>) {
-            output.open("./result/totaldPb.bin", std::ios::out | std::ios::binary);
+            output.open("./final/totaldPb.bin", std::ios::out | std::ios::binary);
             output.write((char*)(h_totaldPb.data()), sizeof(dataType) * h_totaldPb.size());
             output.close();
         }
 
-        output.open("./result/w.bin", std::ios::out | std::ios::binary);
+        output.open("./final/w.bin", std::ios::out | std::ios::binary);
         output.write((char*)(cuGMEC.h_w[0][0] + gridGhost * gridNxz), sizeof(dataType) * gridNy * gridNxz);
         output.close();
 
-        output.open("./result/A.bin", std::ios::out | std::ios::binary);
+        output.open("./final/A.bin", std::ios::out | std::ios::binary);
         output.write((char*)(cuGMEC.h_A[0][0] + gridGhost * gridNxz), sizeof(dataType) * gridNy * gridNxz);
         output.close();
 
-        output.open("./result/dNe.bin", std::ios::out | std::ios::binary);
+        output.open("./final/dNe.bin", std::ios::out | std::ios::binary);
         output.write((char*)(cuGMEC.h_dNe[0][0] + gridGhost * gridNxz), sizeof(dataType) * gridNy * gridNxz);
         output.close();
 
-        output.open("./result/dTe.bin", std::ios::out | std::ios::binary);
+        output.open("./final/dTe.bin", std::ios::out | std::ios::binary);
         output.write((char*)(cuGMEC.h_dTe[0][0] + gridGhost * gridNxz), sizeof(dataType) * gridNy * gridNxz);
         output.close();
 
-        output.open("./result/Phi.bin", std::ios::out | std::ios::binary);
+        output.open("./final/Phi.bin", std::ios::out | std::ios::binary);
         output.write((char*)(cuGMEC.h_Phi[0][0] + gridGhost * gridNxz), sizeof(dataType) * gridNy * gridNxz);
         output.close();
 
-        output.open("./result/dJpB.bin", std::ios::out | std::ios::binary);
+        output.open("./final/dJpB.bin", std::ios::out | std::ios::binary);
         output.write((char*)(cuGMEC.h_dJpB[0][0] + gridGhost * gridNxz), sizeof(dataType) * gridNy * gridNxz);
         output.close();
 
-        output.open("./result/dPe.bin", std::ios::out | std::ios::binary);
+        output.open("./final/dPe.bin", std::ios::out | std::ios::binary);
         output.write((char*)(cuGMEC.h_dPe[0][0] + gridGhost * gridNxz), sizeof(dataType) * gridNy * gridNxz);
         output.close();
 
-        output.open("./result/dPi.bin", std::ios::out | std::ios::binary);
+        output.open("./final/dPi.bin", std::ios::out | std::ios::binary);
         output.write((char*)(cuGMEC.h_globalPi[0][0] + gridGhost * gridNxz), sizeof(dataType) * gridNy * gridNxz);
         output.close();
 
-        output.open("./result/dPa.bin", std::ios::out | std::ios::binary);
+        output.open("./final/dPa.bin", std::ios::out | std::ios::binary);
         output.write((char*)(cuGMEC.h_globalPa[0][0] + gridGhost * gridNxz), sizeof(dataType) * gridNy * gridNxz);
         output.close();
 
-        output.open("./result/dPb.bin", std::ios::out | std::ios::binary);
+        output.open("./final/dPb.bin", std::ios::out | std::ios::binary);
         output.write((char*)(cuGMEC.h_globalPb[0][0] + gridGhost * gridNxz), sizeof(dataType) * gridNy * gridNxz);
         output.close();
 
@@ -8762,7 +8759,7 @@ int main(int argc, char* argv[]) {
         }
 
         std::string fileName;
-        fileName = "./result/MHDPerturbation_" + std::to_string(continueSteps + totalSteps) + ".bin";
+        fileName = "./final/MHDPerturbation_" + std::to_string(continueSteps + totalSteps) + ".bin";
         output.open(fileName.c_str(), std::ios::out | std::ios::binary);
         output.write((char*)(MHDFinalPerturbation.data()), sizeof(dataType) * MHDFinalPerturbation.size());
         output.close();

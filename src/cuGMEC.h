@@ -619,6 +619,16 @@ class HybridModel {
         std::mt19937_64 mt_gen;
         std::uniform_real_distribution<double> rnd_dist;
     };
+    class RandNormal {
+
+      public:
+        RandNormal() : mt_gen{std::random_device()()}, norm_dist{0.0, 1.0} {}
+        ~RandNormal() {}
+        double operator()() { return norm_dist(mt_gen); }
+
+        std::mt19937_64 mt_gen;
+        std::normal_distribution<double> norm_dist;
+    };
     class Allocator {
 
       public:
@@ -3945,61 +3955,6 @@ class HybridModel {
         }
 #pragma omp barrier
 
-        std::ofstream output;
-        std::string fileName;
-
-        if constexpr (picType == 0) {
-
-            fileName = "IonOffsets_" + std::to_string(hostId) + "_0" + ".bin";
-            output.open(fileName.c_str(), std::ios::out | std::ios::binary);
-            output.write((char*)(h_Ion_offsets[0]), sizeof(int) * devNums * 8);
-            output.close();
-
-            fileName = "IonKeys_" + std::to_string(hostId) + "_0" + ".bin";
-            output.open(fileName.c_str(), std::ios::out | std::ios::binary);
-            output.write((char*)(h_Ion_keys[0]), sizeof(int) * devNums * picDev * 7);
-            output.close();
-
-            fileName = "IonValues_" + std::to_string(hostId) + "_0" + ".bin";
-            output.open(fileName.c_str(), std::ios::out | std::ios::binary);
-            output.write((char*)(h_Ion_values[0]), sizeof(dataType) * devNums * picDev * 7);
-            output.close();
-
-        } else if constexpr (picType == 1) {
-
-            fileName = "AlphaOffsets_" + std::to_string(hostId) + "_0" + ".bin";
-            output.open(fileName.c_str(), std::ios::out | std::ios::binary);
-            output.write((char*)(h_Alpha_offsets[0]), sizeof(int) * devNums * 8);
-            output.close();
-
-            fileName = "AlphaKeys_" + std::to_string(hostId) + "_0" + ".bin";
-            output.open(fileName.c_str(), std::ios::out | std::ios::binary);
-            output.write((char*)(h_Alpha_keys[0]), sizeof(int) * devNums * picDev * 7);
-            output.close();
-
-            fileName = "AlphaValues_" + std::to_string(hostId) + "_0" + ".bin";
-            output.open(fileName.c_str(), std::ios::out | std::ios::binary);
-            output.write((char*)(h_Alpha_values[0]), sizeof(dataType) * devNums * picDev * 7);
-            output.close();
-
-        } else if constexpr (picType == 2) {
-
-            fileName = "BeamOffsets_" + std::to_string(hostId) + "_0" + ".bin";
-            output.open(fileName.c_str(), std::ios::out | std::ios::binary);
-            output.write((char*)(h_Beam_offsets[0]), sizeof(int) * devNums * 8);
-            output.close();
-
-            fileName = "BeamKeys_" + std::to_string(hostId) + "_0" + ".bin";
-            output.open(fileName.c_str(), std::ios::out | std::ios::binary);
-            output.write((char*)(h_Beam_keys[0]), sizeof(int) * devNums * picDev * 7);
-            output.close();
-
-            fileName = "BeamValues_" + std::to_string(hostId) + "_0" + ".bin";
-            output.open(fileName.c_str(), std::ios::out | std::ios::binary);
-            output.write((char*)(h_Beam_values[0]), sizeof(dataType) * devNums * picDev * 7);
-            output.close();
-        }
-
         if (hostId == 0) {
 
             std::cout << BOLDGREEN << "Done." << RESET << std::endl;
@@ -4007,7 +3962,7 @@ class HybridModel {
         }
     }
     template <int picType>
-    void loadParticles(std::string file1, std::string file2, std::string file3, std::string file4) {
+    void loadParticles(std::string file) {
 
         if (hostId == 0) {
 
@@ -4021,57 +3976,40 @@ class HybridModel {
 
         std::ifstream input;
 
+        size_t rankDataSize = sizeof(dataType) + sizeof(int) * devNums * 8 + sizeof(int) * devNums * picDev * 7 +
+                              sizeof(dataType) * devNums * picDev * 7;
+        size_t offset = hostId * rankDataSize;
+
         if constexpr (picType == 0) {
 
-            input.open(file1, std::ios::in | std::ios::binary);
+            input.open(file, std::ios::in | std::ios::binary);
+            input.seekg(offset, std::ios::beg);
+
             input.read((char*)(&IonConst), sizeof(dataType));
-            input.close();
-
-            input.open(file2, std::ios::in | std::ios::binary);
             input.read((char*)(h_Ion_offsets[0]), sizeof(int) * devNums * 8);
-            input.close();
-
-            input.open(file3, std::ios::in | std::ios::binary);
             input.read((char*)(h_Ion_keys[0]), sizeof(int) * devNums * picDev * 7);
-            input.close();
-
-            input.open(file4, std::ios::in | std::ios::binary);
             input.read((char*)(h_Ion_values[0]), sizeof(dataType) * devNums * picDev * 7);
             input.close();
 
         } else if constexpr (picType == 1) {
 
-            input.open(file1, std::ios::in | std::ios::binary);
+            input.open(file, std::ios::in | std::ios::binary);
+            input.seekg(offset, std::ios::beg);
+
             input.read((char*)(&AlphaConst), sizeof(dataType));
-            input.close();
-
-            input.open(file2, std::ios::in | std::ios::binary);
             input.read((char*)(h_Alpha_offsets[0]), sizeof(int) * devNums * 8);
-            input.close();
-
-            input.open(file3, std::ios::in | std::ios::binary);
             input.read((char*)(h_Alpha_keys[0]), sizeof(int) * devNums * picDev * 7);
-            input.close();
-
-            input.open(file4, std::ios::in | std::ios::binary);
             input.read((char*)(h_Alpha_values[0]), sizeof(dataType) * devNums * picDev * 7);
             input.close();
 
         } else if constexpr (picType == 2) {
 
-            input.open(file1, std::ios::in | std::ios::binary);
+            input.open(file, std::ios::in | std::ios::binary);
+            input.seekg(offset, std::ios::beg);
+
             input.read((char*)(&BeamConst), sizeof(dataType));
-            input.close();
-
-            input.open(file2, std::ios::in | std::ios::binary);
             input.read((char*)(h_Beam_offsets[0]), sizeof(int) * devNums * 8);
-            input.close();
-
-            input.open(file3, std::ios::in | std::ios::binary);
             input.read((char*)(h_Beam_keys[0]), sizeof(int) * devNums * picDev * 7);
-            input.close();
-
-            input.open(file4, std::ios::in | std::ios::binary);
             input.read((char*)(h_Beam_values[0]), sizeof(dataType) * devNums * picDev * 7);
             input.close();
         }
@@ -4200,11 +4138,14 @@ class HybridModel {
         int i, j, k, tileId, cellId;
         dataType li, lj, lk;
         dataType x, y, z, vp, pw, mu;
-        dataType dx, dy, dz, J, B, P;
+        dataType dx, dy, dz, J, B, N, P;
+        dataType*** localN;
+        dataType*** globalN;
         dataType*** localP;
         dataType*** globalP;
 
         Allocator HostAllocator;
+        HostAllocator.allocateHostArrays(gridNyPlusGhost, gridNxPlusGhost, gridNzPlusGhost, localN, globalN);
         HostAllocator.allocateHostArrays(gridNyPlusGhost, gridNxPlusGhost, gridNzPlusGhost, localP, globalP);
 
         for (int devId = 0; devId < devNums; devId++) {
@@ -4273,12 +4214,23 @@ class HybridModel {
                 coes[6] *= (cz[6] + sz[6] * dz);
                 coes[7] *= (cz[7] + sz[7] * dz);
 
+                N = pw / J * B0 * B0 / 2 / MU0 / (MP * VA0 * VA0);
+
                 if constexpr (picType == 0)
-                    P = IonMass * vp * vp * pw / J + mu * B * pw / J;
+                    P = (IonMass * vp * vp + mu * B) * pw / J / 2;
                 else if constexpr (picType == 1)
-                    P = AlphaMass * vp * vp * pw / J + mu * B * pw / J;
+                    P = (AlphaMass * vp * vp + mu * B) * pw / J / 2;
                 else if constexpr (picType == 2)
-                    P = BeamMass * vp * vp * pw / J + mu * B * pw / J;
+                    P = (BeamMass * vp * vp + mu * B) * pw / J / 2;
+
+                localN[j][i][k] += N * coes[0];
+                localN[j][i + 1][k] += N * coes[1];
+                localN[j + 1][i][k] += N * coes[2];
+                localN[j + 1][i + 1][k] += N * coes[3];
+                localN[j][i][k + 1] += N * coes[4];
+                localN[j][i + 1][k + 1] += N * coes[5];
+                localN[j + 1][i][k + 1] += N * coes[6];
+                localN[j + 1][i + 1][k + 1] += N * coes[7];
 
                 localP[j][i][k] += P * coes[0];
                 localP[j][i + 1][k] += P * coes[1];
@@ -4292,6 +4244,14 @@ class HybridModel {
         }
 
         if constexpr (std::is_same_v<dataType, double>) {
+            MPICHECK(MPI_Allreduce(localN[0][0], globalN[0][0], gridNyPlusGhost * gridNxPlusGhost * gridNzPlusGhost,
+                                   MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD));
+        } else {
+            MPICHECK(MPI_Allreduce(localN[0][0], globalN[0][0], gridNyPlusGhost * gridNxPlusGhost * gridNzPlusGhost,
+                                   MPI_FLOAT, MPI_SUM, MPI_COMM_WORLD));
+        }
+
+        if constexpr (std::is_same_v<dataType, double>) {
             MPICHECK(MPI_Allreduce(localP[0][0], globalP[0][0], gridNyPlusGhost * gridNxPlusGhost * gridNzPlusGhost,
                                    MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD));
         } else {
@@ -4301,10 +4261,14 @@ class HybridModel {
 
         for (int j = 0; j < gridNyPlusGhost; j++) {
             for (int k = 0; k < gridNzPlusGhost; k++) {
+                globalN[j][0][k] *= 2.0;
+                globalN[j][gridNxPlusGhost - 1][k] *= 2.0;
                 globalP[j][0][k] *= 2.0;
                 globalP[j][gridNxPlusGhost - 1][k] *= 2.0;
             }
             for (int i = 0; i < gridNxPlusGhost; i++) {
+                globalN[j][i][gridGhost] += globalN[j][i][gridNz + gridGhost];
+                globalN[j][i][gridNz + gridGhost - 1] += globalN[j][i][gridGhost - 1];
                 globalP[j][i][gridGhost] += globalP[j][i][gridNz + gridGhost];
                 globalP[j][i][gridNz + gridGhost - 1] += globalP[j][i][gridGhost - 1];
             }
@@ -4312,6 +4276,8 @@ class HybridModel {
 
         for (int i = 0; i < gridNxPlusGhost; i++) {
             for (int k = 0; k < gridNzPlusGhost; k++) {
+                globalN[gridGhost][i][k] += globalN[gridNy + gridGhost][i][k];
+                globalN[gridNy + gridGhost - 1][i][k] += globalN[gridGhost - 1][i][k];
                 globalP[gridGhost][i][k] += globalP[gridNy + gridGhost][i][k];
                 globalP[gridNy + gridGhost - 1][i][k] += globalP[gridGhost - 1][i][k];
             }
@@ -4325,7 +4291,7 @@ class HybridModel {
             }
         }
 
-        innerP /= (2 * gridNy * gridNz);
+        innerP /= gridNy * gridNz;
 
         if constexpr (picType == 0)
             IonConst = IonBeta / innerP;
@@ -4334,31 +4300,161 @@ class HybridModel {
         else if constexpr (picType == 2)
             BeamConst = BeamBeta / innerP;
 
+        std::vector<dataType> density(gridNx);
+        std::vector<dataType> pressure(gridNx);
+
+        for (int i = 0; i < gridNx; i++) {
+            for (int j = 0; j < gridNy; j++) {
+                for (int k = 0; k < gridNz; k++) {
+
+                    if constexpr (picType == 0) {
+                        globalN[j + gridGhost][i][k + gridGhost] *= IonConst;
+                        globalP[j + gridGhost][i][k + gridGhost] *= IonConst * B0 * B0 / 2 / MU0;
+                    } else if constexpr (picType == 1) {
+                        globalN[j + gridGhost][i][k + gridGhost] *= AlphaConst;
+                        globalP[j + gridGhost][i][k + gridGhost] *= AlphaConst * B0 * B0 / 2 / MU0;
+                    } else if constexpr (picType == 2) {
+                        globalN[j + gridGhost][i][k + gridGhost] *= BeamConst;
+                        globalP[j + gridGhost][i][k + gridGhost] *= BeamConst * B0 * B0 / 2 / MU0;
+                    }
+                    density[i] += globalN[j + gridGhost][i][k + gridGhost] / (gridNy * gridNz);
+                    pressure[i] += globalP[j + gridGhost][i][k + gridGhost] / (gridNy * gridNz);
+                }
+            }
+        }
+
+        HostAllocator.releaseHostArrays(localN, globalN);
         HostAllocator.releaseHostArrays(localP, globalP);
 
         std::ofstream output;
         std::string fileName;
 
+        if (hostId == 0) {
+
+            if constexpr (picType == 0)
+                fileName = "./initial/IonDensity.bin";
+            else if constexpr (picType == 1)
+                fileName = "./initial/AlphaDensity.bin";
+            else if constexpr (picType == 2)
+                fileName = "./initial/BeamDensity.bin";
+
+            output.open(fileName.c_str(), std::ios::out | std::ios::binary);
+            output.write((char*)(density.data()), sizeof(dataType) * density.size());
+            output.close();
+
+            if constexpr (picType == 0)
+                fileName = "./initial/IonPressure.bin";
+            else if constexpr (picType == 1)
+                fileName = "./initial/AlphaPressure.bin";
+            else if constexpr (picType == 2)
+                fileName = "./initial/BeamPressure.bin";
+
+            output.open(fileName.c_str(), std::ios::out | std::ios::binary);
+            output.write((char*)(pressure.data()), sizeof(dataType) * pressure.size());
+            output.close();
+        }
+
         if constexpr (picType == 0) {
 
-            fileName = "IonConst_" + std::to_string(hostId) + "_0" + ".bin";
-            output.open(fileName.c_str(), std::ios::out | std::ios::binary);
-            output.write((char*)(&IonConst), sizeof(dataType));
-            output.close();
+            size_t rankDataSize = sizeof(dataType) + sizeof(int) * devNums * 8 + sizeof(int) * devNums * picDev * 7 +
+                                  sizeof(dataType) * devNums * picDev * 7;
+            size_t offset = hostId * rankDataSize;
+
+            MPI_File fileHandle;
+            MPI_File_open(MPI_COMM_WORLD, "./initial/IonPicData_0.bin", MPI_MODE_CREATE | MPI_MODE_WRONLY,
+                          MPI_INFO_NULL, &fileHandle);
+
+            if constexpr (std::is_same_v<dataType, double>)
+                MPI_File_write_at_all(fileHandle, offset, &IonConst, 1, MPI_DOUBLE, MPI_STATUS_IGNORE);
+            else
+                MPI_File_write_at_all(fileHandle, offset, &IonConst, 1, MPI_FLOAT, MPI_STATUS_IGNORE);
+
+            MPI_File_write_at_all(fileHandle, offset + sizeof(dataType), h_Ion_offsets[0], devNums * 8, MPI_INT,
+                                  MPI_STATUS_IGNORE);
+
+            MPI_File_write_at_all(fileHandle, offset + sizeof(dataType) + sizeof(int) * devNums * 8, h_Ion_keys[0],
+                                  devNums * picDev * 7, MPI_INT, MPI_STATUS_IGNORE);
+
+            if constexpr (std::is_same_v<dataType, double>)
+                MPI_File_write_at_all(fileHandle,
+                                      offset + sizeof(dataType) + sizeof(int) * devNums * 8 +
+                                          sizeof(int) * devNums * picDev * 7,
+                                      h_Ion_values[0], devNums * picDev * 7, MPI_DOUBLE, MPI_STATUS_IGNORE);
+            else
+                MPI_File_write_at_all(fileHandle,
+                                      offset + sizeof(dataType) + sizeof(int) * devNums * 8 +
+                                          sizeof(int) * devNums * picDev * 7,
+                                      h_Ion_values[0], devNums * picDev * 7, MPI_FLOAT, MPI_STATUS_IGNORE);
+
+            MPI_File_close(&fileHandle);
 
         } else if constexpr (picType == 1) {
 
-            fileName = "AlphaConst_" + std::to_string(hostId) + "_0" + ".bin";
-            output.open(fileName.c_str(), std::ios::out | std::ios::binary);
-            output.write((char*)(&AlphaConst), sizeof(dataType));
-            output.close();
+            size_t rankDataSize = sizeof(dataType) + sizeof(int) * devNums * 8 + sizeof(int) * devNums * picDev * 7 +
+                                  sizeof(dataType) * devNums * picDev * 7;
+            size_t offset = hostId * rankDataSize;
+
+            MPI_File fileHandle;
+            MPI_File_open(MPI_COMM_WORLD, "./initial/AlphaPicData_0.bin", MPI_MODE_CREATE | MPI_MODE_WRONLY,
+                          MPI_INFO_NULL, &fileHandle);
+
+            if constexpr (std::is_same_v<dataType, double>)
+                MPI_File_write_at_all(fileHandle, offset, &AlphaConst, 1, MPI_DOUBLE, MPI_STATUS_IGNORE);
+            else
+                MPI_File_write_at_all(fileHandle, offset, &AlphaConst, 1, MPI_FLOAT, MPI_STATUS_IGNORE);
+
+            MPI_File_write_at_all(fileHandle, offset + sizeof(dataType), h_Alpha_offsets[0], devNums * 8, MPI_INT,
+                                  MPI_STATUS_IGNORE);
+
+            MPI_File_write_at_all(fileHandle, offset + sizeof(dataType) + sizeof(int) * devNums * 8, h_Alpha_keys[0],
+                                  devNums * picDev * 7, MPI_INT, MPI_STATUS_IGNORE);
+
+            if constexpr (std::is_same_v<dataType, double>)
+                MPI_File_write_at_all(fileHandle,
+                                      offset + sizeof(dataType) + sizeof(int) * devNums * 8 +
+                                          sizeof(int) * devNums * picDev * 7,
+                                      h_Alpha_values[0], devNums * picDev * 7, MPI_DOUBLE, MPI_STATUS_IGNORE);
+            else
+                MPI_File_write_at_all(fileHandle,
+                                      offset + sizeof(dataType) + sizeof(int) * devNums * 8 +
+                                          sizeof(int) * devNums * picDev * 7,
+                                      h_Alpha_values[0], devNums * picDev * 7, MPI_FLOAT, MPI_STATUS_IGNORE);
+
+            MPI_File_close(&fileHandle);
 
         } else if constexpr (picType == 2) {
 
-            fileName = "BeamConst_" + std::to_string(hostId) + "_0" + ".bin";
-            output.open(fileName.c_str(), std::ios::out | std::ios::binary);
-            output.write((char*)(&BeamConst), sizeof(dataType));
-            output.close();
+            size_t rankDataSize = sizeof(dataType) + sizeof(int) * devNums * 8 + sizeof(int) * devNums * picDev * 7 +
+                                  sizeof(dataType) * devNums * picDev * 7;
+            size_t offset = hostId * rankDataSize;
+
+            MPI_File fileHandle;
+            MPI_File_open(MPI_COMM_WORLD, "./initial/BeamPicData_0.bin", MPI_MODE_CREATE | MPI_MODE_WRONLY,
+                          MPI_INFO_NULL, &fileHandle);
+
+            if constexpr (std::is_same_v<dataType, double>)
+                MPI_File_write_at_all(fileHandle, offset, &BeamConst, 1, MPI_DOUBLE, MPI_STATUS_IGNORE);
+            else
+                MPI_File_write_at_all(fileHandle, offset, &BeamConst, 1, MPI_FLOAT, MPI_STATUS_IGNORE);
+
+            MPI_File_write_at_all(fileHandle, offset + sizeof(dataType), h_Beam_offsets[0], devNums * 8, MPI_INT,
+                                  MPI_STATUS_IGNORE);
+
+            MPI_File_write_at_all(fileHandle, offset + sizeof(dataType) + sizeof(int) * devNums * 8, h_Beam_keys[0],
+                                  devNums * picDev * 7, MPI_INT, MPI_STATUS_IGNORE);
+
+            if constexpr (std::is_same_v<dataType, double>)
+                MPI_File_write_at_all(fileHandle,
+                                      offset + sizeof(dataType) + sizeof(int) * devNums * 8 +
+                                          sizeof(int) * devNums * picDev * 7,
+                                      h_Beam_values[0], devNums * picDev * 7, MPI_DOUBLE, MPI_STATUS_IGNORE);
+            else
+                MPI_File_write_at_all(fileHandle,
+                                      offset + sizeof(dataType) + sizeof(int) * devNums * 8 +
+                                          sizeof(int) * devNums * picDev * 7,
+                                      h_Beam_values[0], devNums * picDev * 7, MPI_FLOAT, MPI_STATUS_IGNORE);
+
+            MPI_File_close(&fileHandle);
         }
 
         if (hostId == 0) {
@@ -4697,10 +4793,8 @@ class HybridModel {
             phaseSpaceF0[i + 1][j + 1][k + 1] += pw * coes[7];
         }
 
-        if (hostId == 0) {
+        if (hostId == 0)
             std::cout << BOLDGREEN << 100 << "%" << RESET << std::endl;
-            std::cout << std::endl;
-        }
 
         MPICHECK(MPI_Allreduce(MPI_IN_PLACE, phaseSpaceF0[0][0], gridE * gridPphi * gridLambda, MPI_DOUBLE, MPI_SUM,
                                MPI_COMM_WORLD));
@@ -4735,11 +4829,11 @@ class HybridModel {
             std::string fileName;
 
             if constexpr (picType == 0)
-                fileName = "IonPhaseSpaceF0.bin";
+                fileName = "./initial/IonPhaseSpaceF0.bin";
             else if constexpr (picType == 1)
-                fileName = "AlphaPhaseSpaceF0.bin";
+                fileName = "./initial/AlphaPhaseSpaceF0.bin";
             else if constexpr (picType == 2)
-                fileName = "BeamPhaseSpaceF0.bin";
+                fileName = "./initial/BeamPhaseSpaceF0.bin";
 
             output.open(fileName.c_str(), std::ios::out | std::ios::binary);
 
@@ -5004,10 +5098,8 @@ class HybridModel {
             phaseSpaceJacobian[i + 1][j + 1][k + 1] += coes[7];
         }
 
-        if (hostId == 0) {
+        if (hostId == 0)
             std::cout << BOLDGREEN << 100 << "%" << RESET << std::endl;
-            std::cout << std::endl;
-        }
 
         MPICHECK(MPI_Allreduce(MPI_IN_PLACE, phaseSpaceJacobian[0][0], gridE * gridPphi * gridLambda, MPI_DOUBLE,
                                MPI_SUM, MPI_COMM_WORLD));
@@ -5042,11 +5134,11 @@ class HybridModel {
             std::string fileName;
 
             if constexpr (picType == 0)
-                fileName = "IonPhaseSpaceJacobian.bin";
+                fileName = "./initial/IonPhaseSpaceJacobian.bin";
             else if constexpr (picType == 1)
-                fileName = "AlphaPhaseSpaceJacobian.bin";
+                fileName = "./initial/AlphaPhaseSpaceJacobian.bin";
             else if constexpr (picType == 2)
-                fileName = "BeamPhaseSpaceJacobian.bin";
+                fileName = "./initial/BeamPhaseSpaceJacobian.bin";
 
             output.open(fileName.c_str(), std::ios::out | std::ios::binary);
 
@@ -5309,11 +5401,11 @@ class HybridModel {
             std::string fileName;
 
             if constexpr (picType == 0)
-                fileName = "IonPhaseSpaceFrequency.bin";
+                fileName = "./initial/IonPhaseSpaceFrequency.bin";
             else if constexpr (picType == 1)
-                fileName = "AlphaPhaseSpaceFrequency.bin";
+                fileName = "./initial/AlphaPhaseSpaceFrequency.bin";
             else if constexpr (picType == 2)
-                fileName = "BeamPhaseSpaceFrequency.bin";
+                fileName = "./initial/BeamPhaseSpaceFrequency.bin";
 
             output.open(fileName.c_str(), std::ios::out | std::ios::binary);
             output.write((char*)(phaseSpaceFrequency.data()), sizeof(double) * picPhase * 9);
