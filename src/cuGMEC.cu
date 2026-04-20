@@ -8233,12 +8233,13 @@ int main(int argc, char* argv[]) {
                 //	if constexpr (std::is_same_v<ifIon, trueType> && std::is_same_v<ifIonSlowing, trueType>)
                 //		PICSlowingDown<ratioDt, Ion, IonType> << <PICGridSize, PICBlockSize, 0, 0 >> >
                 //(pic1d[i], pic2d[i], Ion_keys_in[i], Ion_values_in[i], rand_keys_in[i], rand_values_in[i],
-                //randStates[i]); 	if constexpr (std::is_same_v<ifAlpha, trueType> && std::is_same_v<ifAlphaSlowing,
-                //trueType>) 		PICSlowingDown<ratioDt, Alpha, AlphaType> << <PICGridSize, PICBlockSize, 0, 0 >> >
-                //(pic1d[i], pic2d[i], Alpha_keys_in[i], Alpha_values_in[i], rand_keys_in[i], rand_values_in[i],
-                //randStates[i]); 	if constexpr (std::is_same_v<ifBeam, trueType> && std::is_same_v<ifBeamSlowing,
-                //trueType>) 		PICSlowingDown<ratioDt, Beam, BeamType> << <PICGridSize, PICBlockSize, 0, 0 >> > (pic1d[i],
-                //pic2d[i], Beam_keys_in[i], Beam_values_in[i], rand_keys_in[i], rand_values_in[i], randStates[i]);
+                // randStates[i]); 	if constexpr (std::is_same_v<ifAlpha, trueType> &&
+                // std::is_same_v<ifAlphaSlowing, trueType>) 		PICSlowingDown<ratioDt, Alpha, AlphaType> <<
+                // <PICGridSize, PICBlockSize, 0, 0 >> > (pic1d[i], pic2d[i], Alpha_keys_in[i], Alpha_values_in[i],
+                // rand_keys_in[i], rand_values_in[i], randStates[i]); 	if constexpr (std::is_same_v<ifBeam, trueType>
+                // && std::is_same_v<ifBeamSlowing, trueType>) 		PICSlowingDown<ratioDt, Beam, BeamType> <<
+                // <PICGridSize, PICBlockSize, 0, 0 >> > (pic1d[i], pic2d[i], Beam_keys_in[i], Beam_values_in[i],
+                // rand_keys_in[i], rand_values_in[i], randStates[i]);
                 // }
 
                 ncclGroupStart();
