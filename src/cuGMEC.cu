@@ -18,6 +18,10 @@
  */
 
 #include "cuGMEC.h"
+#include <nlohmann/json.hpp>
+#include <stdexcept>
+
+using json = nlohmann::json;
 
 static uint64_t getHostHash(const char* string) {
 	// Based on DJB2a, result = result * 33 ^ char
@@ -56,19 +60,27 @@ enum matrixType { Laplacian, Resistive, Perp2Phi, Perp2dNe, Perp2dTe, Perp2dPi, 
 
 using dataType = double;
 
-const std::string MHDCollocated = "../MHDCollocated_512_64.bin";
-const std::string MHDStaggered = "../MHDStaggered_512_64.bin";
-const std::string MHDPerturbation = "../MHDPerturbation_512_64_16_30_1.bin";
+std::string h_MHDCollocated = "../MHDCollocated_512_64.bin";
+std::string h_MHDStaggered = "../MHDStaggered_512_64.bin";
+std::string h_MHDPerturbation = "../MHDPerturbation_512_64_16_30_1.bin";
 
 /*-------------------------Normalization Setting-------------------------*/
 
-const double B0 = 4.921751144619735;
-const double L0 = 6.595629295925759;
-const double VA0 = 8.864164667700194e+06;
-const double RHO0 = 0.08;
-const double RHO1 = 0.95;
-const double PSITMAX = 18.868213504765762;
-const double OMEGACI = QE * B0 / MP;
+dataType h_B0 = 4.921751144619735;
+dataType h_L0 = 6.595629295925759;
+dataType h_VA0 = 8.864164667700194e+06;
+dataType h_RHO0 = 0.08;
+dataType h_RHO1 = 0.95;
+dataType h_PSITMAX = 18.868213504765762;
+dataType h_OMEGACI = QE * h_B0 / MP;
+
+__constant__ dataType B0;
+__constant__ dataType L0;
+__constant__ dataType VA0;
+__constant__ dataType RHO0;
+__constant__ dataType RHO1;
+__constant__ dataType PSITMAX;
+__constant__ dataType OMEGACI;
 
 /*------------------------------Scale Setting------------------------------*/
 
@@ -78,13 +90,17 @@ const int gridNx = 512;
 const int gridNy = 64;
 const int gridNz = 16;
 const int gridGhost = 2;
-const int ppcNums = 128;
+int h_ppcNums = 128;
+__constant__ int ppcNums;
 
 /*-----------------------------MHD Setting-----------------------------*/
 
-const int tubes = 30;
-const int leftN = 1;
-const int rightN = 1;
+int h_tubes = 30;
+__constant__ int tubes;
+int h_leftN = 1;
+int h_rightN = 1;
+__constant__ int leftN;
+__constant__ int rightN;
 using ifFilterN_Phi = trueType;
 using ifFilterN_A = trueType;
 using ifFilterN_dNe = trueType;
@@ -108,38 +124,38 @@ using ifFLRMHD = falseType;
 
 using ifNablaPerp2Phi = falseType;
 using ifNablaPara4Phi = falseType;
-const dataType perp2Phi = 0.0;
-const dataType para4Phi = 0.0;
+dataType h_perp2Phi = 0.0;
+dataType h_para4Phi = 0.0;
 
 using ifNablaPerp2A = falseType;
 using ifNablaPara4A = falseType;
-const dataType perp2A = 0.0;
-const dataType para4A = 0.0;
+dataType h_perp2A = 0.0;
+dataType h_para4A = 0.0;
 
 using ifNablaPerp2dNe = falseType;
 using ifNablaPara4dNe = falseType;
-const dataType perp2dNe = 0.0;
-const dataType para4dNe = 0.0;
+dataType h_perp2dNe = 0.0;
+dataType h_para4dNe = 0.0;
 
 using ifNablaPerp2dTe = falseType;
 using ifNablaPara4dTe = falseType;
-const dataType perp2dTe = 0.0;
-const dataType para4dTe = 0.0;
+dataType h_perp2dTe = 0.0;
+dataType h_para4dTe = 0.0;
 
 using ifNablaPerp2dPi = falseType;
 using ifNablaPara4dPi = falseType;
-const dataType perp2dPi = 0.0;
-const dataType para4dPi = 0.0;
+dataType h_perp2dPi = 0.0;
+dataType h_para4dPi = 0.0;
 
 using ifNablaPerp2dPa = falseType;
 using ifNablaPara4dPa = falseType;
-const dataType perp2dPa = 0.0;
-const dataType para4dPa = 0.0;
+dataType h_perp2dPa = 0.0;
+dataType h_para4dPa = 0.0;
 
 using ifNablaPerp2dPb = falseType;
 using ifNablaPara4dPb = falseType;
-const dataType perp2dPb = 0.0;
-const dataType para4dPb = 0.0;
+dataType h_perp2dPb = 0.0;
+dataType h_para4dPb = 0.0;
 
 /*------------------------------PIC Setting------------------------------*/
 
@@ -153,45 +169,72 @@ using ifIon = trueType;
 const disType IonType = Maxwell;
 const markerType IonMarker = physicalReal;
 using ifIonSlowing = falseType;
-const dataType IonMass = 2.5;
-const dataType IonChar = 1.0;
-const dataType IonBeta = 0.037793721898356;
-const dataType IonVmin = 0.0135;
-const dataType IonVmax = 0.54;
-const dataType IonVb = 0.0;
-const dataType IonDeltaV = 0.0;
-const dataType IonLambda0 = 0.0;
-const dataType IonDeltaLambda2 = 0.0;
+dataType h_IonMass = 2.5;
+dataType h_IonChar = 1.0;
+dataType h_IonBeta = 0.037793721898356;
+dataType h_IonVmin = 0.0135;
+dataType h_IonVmax = 0.54;
+dataType h_IonVb = 0.0;
+dataType h_IonDeltaV = 0.0;
+dataType h_IonLambda0 = 0.0;
+dataType h_IonDeltaLambda2 = 0.0;
+__constant__ dataType IonMass;
+__constant__ dataType IonChar;
+__constant__ dataType IonBeta;
+__constant__ dataType IonVmin;
+__constant__ dataType IonVmax;
+__constant__ dataType IonVb;
+__constant__ dataType IonDeltaV;
+__constant__ dataType IonLambda0;
+__constant__ dataType IonDeltaLambda2;
 const dataType IonDragRate = 0.0;
 
 using ifAlpha = trueType;
 const disType AlphaType = Slowing0;
 const markerType AlphaMarker = physicalReal;
 using ifAlphaSlowing = falseType;
-const dataType AlphaMass = 4.0;
-const dataType AlphaChar = 2.0;
-const dataType AlphaBeta = 0.018554328058860;
-const dataType AlphaVmin = 0.0733;
-const dataType AlphaVmax = 1.466;
-const dataType AlphaVb = 0.0;
-const dataType AlphaDeltaV = 0.0;
-const dataType AlphaLambda0 = 0.0;
-const dataType AlphaDeltaLambda2 = 0.0;
+dataType h_AlphaMass = 4.0;
+dataType h_AlphaChar = 2.0;
+dataType h_AlphaBeta = 0.018554328058860;
+dataType h_AlphaVmin = 0.0733;
+dataType h_AlphaVmax = 1.466;
+dataType h_AlphaVb = 0.0;
+dataType h_AlphaDeltaV = 0.0;
+dataType h_AlphaLambda0 = 0.0;
+dataType h_AlphaDeltaLambda2 = 0.0;
+__constant__ dataType AlphaMass;
+__constant__ dataType AlphaChar;
+__constant__ dataType AlphaBeta;
+__constant__ dataType AlphaVmin;
+__constant__ dataType AlphaVmax;
+__constant__ dataType AlphaVb;
+__constant__ dataType AlphaDeltaV;
+__constant__ dataType AlphaLambda0;
+__constant__ dataType AlphaDeltaLambda2;
 const dataType AlphaDragRate = 0.0;
 
 using ifBeam = trueType;
 const disType BeamType = Slowing2;
 const markerType BeamMarker = physicalReal;
 using ifBeamSlowing = falseType;
-const dataType BeamMass = 2.0;
-const dataType BeamChar = 1.0;
-const dataType BeamBeta = 0.010583527513998;
-const dataType BeamVmin = 0.0552;
-const dataType BeamVmax = 1.104;
-const dataType BeamVb = 0.0;
-const dataType BeamDeltaV = 0.0;
-const dataType BeamLambda0 = 0.4;
-const dataType BeamDeltaLambda2 = 1.0 / (4.5 * 4.5);
+dataType h_BeamMass = 2.0;
+dataType h_BeamChar = 1.0;
+dataType h_BeamBeta = 0.010583527513998;
+dataType h_BeamVmin = 0.0552;
+dataType h_BeamVmax = 1.104;
+dataType h_BeamVb = 0.0;
+dataType h_BeamDeltaV = 0.0;
+dataType h_BeamLambda0 = 0.4;
+dataType h_BeamDeltaLambda2 = 1.0 / (4.5 * 4.5);
+__constant__ dataType BeamMass;
+__constant__ dataType BeamChar;
+__constant__ dataType BeamBeta;
+__constant__ dataType BeamVmin;
+__constant__ dataType BeamVmax;
+__constant__ dataType BeamVb;
+__constant__ dataType BeamDeltaV;
+__constant__ dataType BeamLambda0;
+__constant__ dataType BeamDeltaLambda2;
 const dataType BeamDragRate = 0.0;
 
 /*------------------------------Run Setting------------------------------*/
@@ -224,20 +267,23 @@ using ifOutputdPb = falseType;
 //const std::string AlphaPhaseSpaceMapping = "../MHDCollocated_512_64.bin";
 //const std::string BeamPhaseSpaceMapping = "../MHDCollocated_512_64.bin";
 
-const double dt = 0.02;
-const int continueSteps = 0;
+dataType h_dt = 0.02;
+int h_continueSteps = 0;
 const int ratioDt = 1;
-const int totalSteps = 4000;
-const int sortSteps = 25;
-const int diagSteps = 1;
-const int diagLeftX = 0;
-const int diagRightX = gridNx - 1;
-const int outputSteps = 5000;
+int h_totalSteps = 4000;
+int h_sortSteps = 25;
+int h_diagSteps = 1;
+int h_outputSteps = 5000;
+int h_diagLeftX = 0;
+int h_diagRightX = gridNx - 1;
 
-const int diagY = ((hostNums * devNums == 1) ? gridNy / 2 : 0);
-const int outerLoopMax = totalSteps / sortSteps / ratioDt;
-const int innerLoopMax = sortSteps;
-const int MHDLoopMax = ratioDt;
+int h_diagY = ((hostNums * devNums == 1) ? gridNy / 2 : 0);
+__constant__ int diagLeftX;
+__constant__ int diagRightX;
+__constant__ int diagY;
+int h_outerLoopMax = h_totalSteps / h_sortSteps / ratioDt;
+int h_innerLoopMax = h_sortSteps;
+int h_MHDLoopMax = ratioDt;
 
 /*----------------------------MHD Parameter----------------------------*/
 
@@ -251,37 +297,245 @@ const int gridNzPlusGhost = gridNz + 2 * gridGhost;
 const int hostNy = gridNy / hostNums;
 const int devNy = hostNy / devNums;
 
-const dataType NormQE = QE / (B0 * L0 * L0 / MU0 / VA0);
-const dataType NormMP = MP / (B0 * B0 * L0 * L0 * L0 / MU0 / VA0 / VA0);
+__constant__ dataType NormQE;
+__constant__ dataType NormMP;
 const dataType gridDx = 1.0 / (gridNx - 1);
 const dataType gridDy = 2.0 * PI / gridNy;
-const dataType gridDz = 2.0 * PI / tubes / gridNz;
-const dataType gridDt = dt;
+__constant__ dataType gridDz;
+__constant__ dataType gridDt;
 
 /*-----------------------------PIC Parameter-----------------------------*/
 
-const int picHost = gridNx * gridNy * gridNz / hostNums * ppcNums;
-const int picDev = gridNx * gridNy * gridNz / hostNums / devNums * ppcNums;
+int h_picHost = gridNx * gridNy * gridNz / hostNums * h_ppcNums;
+int h_picDev = gridNx * gridNy * gridNz / hostNums / devNums * h_ppcNums;
+__constant__ int picHost;
+__constant__ int picDev;
 
-const dataType rho0 = RHO0;
-const dataType drho = RHO1 - RHO0;
-const dataType psitmax = PSITMAX / (B0 * L0 * L0);
+__constant__ dataType rho0;
+__constant__ dataType drho;
+__constant__ dataType psitmax;
 const dataType xbeg = 0.0;
 const dataType xend = 1.0;
 const dataType ybeg = -PI - (gridGhost - 0.5) * gridDy;
-const dataType zbeg = -PI / tubes - (gridGhost - 0.5) * gridDz;
+__constant__ dataType zbeg;
 const dataType yori = -PI;
-const dataType zori = -PI / tubes;
+__constant__ dataType zori;
 const dataType yrange = 2.0 * PI;
-const dataType zrange = 2.0 * PI / tubes;
+__constant__ dataType zrange;
 const dataType pi = PI;
 const dataType mp = MP;
 const dataType mu0 = MU0;
-const dataType pitchB0 = B0;
+__constant__ dataType pitchB0;
 const dataType kev = KEV;
-const dataType va = VA0;
-const dataType l3 = 1e19 / (L0 * L0 * L0);
-const dataType cm = VA0 / (L0 * OMEGACI);
+__constant__ dataType va;
+__constant__ dataType l3;
+__constant__ dataType cm;
+
+__constant__ dataType perp2Phi;
+__constant__ dataType para4Phi;
+__constant__ dataType perp2A;
+__constant__ dataType para4A;
+__constant__ dataType perp2dNe;
+__constant__ dataType para4dNe;
+__constant__ dataType perp2dTe;
+__constant__ dataType para4dTe;
+__constant__ dataType perp2dPi;
+__constant__ dataType para4dPi;
+__constant__ dataType perp2dPa;
+__constant__ dataType para4dPa;
+__constant__ dataType perp2dPb;
+__constant__ dataType para4dPb;
+
+static void loadConfigFromJson(const std::string& configPath) {
+	std::ifstream ifs(configPath);
+	if (!ifs.is_open()) {
+		return;
+	}
+
+	json j;
+	ifs >> j;
+
+	h_MHDCollocated = j.value("MHDCollocated", h_MHDCollocated);
+	h_MHDStaggered = j.value("MHDStaggered", h_MHDStaggered);
+	h_MHDPerturbation = j.value("MHDPerturbation", h_MHDPerturbation);
+
+	h_B0 = j.value("B0", h_B0);
+	h_L0 = j.value("L0", h_L0);
+	h_VA0 = j.value("VA0", h_VA0);
+	h_dt = j.value("dt", h_dt);
+	h_continueSteps = j.value("continueSteps", h_continueSteps);
+	h_totalSteps = j.value("totalSteps", h_totalSteps);
+	h_sortSteps = j.value("sortSteps", h_sortSteps);
+	h_diagSteps = j.value("diagSteps", h_diagSteps);
+	h_outputSteps = j.value("outputSteps", h_outputSteps);
+	int cfgRatioDt = j.value("ratioDt", ratioDt);
+	if (cfgRatioDt != ratioDt) {
+		throw std::runtime_error("ratioDt is a compile-time parameter and must match compiled values.");
+	}
+	if (h_sortSteps <= 0 || h_diagSteps <= 0) {
+		throw std::runtime_error("sortSteps and diagSteps must be positive.");
+	}
+	h_outerLoopMax = h_totalSteps / h_sortSteps / ratioDt;
+	h_innerLoopMax = h_sortSteps;
+	h_MHDLoopMax = ratioDt;
+	h_RHO0 = j.value("RHO0", h_RHO0);
+	h_RHO1 = j.value("RHO1", h_RHO1);
+	h_PSITMAX = j.value("PSITMAX", h_PSITMAX);
+	h_tubes = j.value("tubes", h_tubes);
+	int cfgGridNx = j.value("gridNx", gridNx);
+	int cfgGridNy = j.value("gridNy", gridNy);
+	int cfgGridNz = j.value("gridNz", gridNz);
+	if (cfgGridNx != gridNx || cfgGridNy != gridNy || cfgGridNz != gridNz) {
+		throw std::runtime_error("gridNx/gridNy/gridNz are compile-time parameters and must match compiled values.");
+	}
+	h_ppcNums = j.value("ppcNums", h_ppcNums);
+	h_picHost = gridNx * gridNy * gridNz / hostNums * h_ppcNums;
+	h_picDev = gridNx * gridNy * gridNz / hostNums / devNums * h_ppcNums;
+	h_leftN = j.value("leftN", h_leftN);
+	h_rightN = j.value("rightN", h_rightN);
+	h_diagLeftX = j.value("diagLeftX", h_diagLeftX);
+	h_diagRightX = j.value("diagRightX", h_diagRightX);
+	h_diagY = j.value("diagY", h_diagY);
+	h_OMEGACI = QE * h_B0 / MP;
+
+	h_perp2Phi = j.value("perp2Phi", h_perp2Phi);
+	h_para4Phi = j.value("para4Phi", h_para4Phi);
+	h_perp2A = j.value("perp2A", h_perp2A);
+	h_para4A = j.value("para4A", h_para4A);
+	h_perp2dNe = j.value("perp2dNe", h_perp2dNe);
+	h_para4dNe = j.value("para4dNe", h_para4dNe);
+	h_perp2dTe = j.value("perp2dTe", h_perp2dTe);
+	h_para4dTe = j.value("para4dTe", h_para4dTe);
+	h_perp2dPi = j.value("perp2dPi", h_perp2dPi);
+	h_para4dPi = j.value("para4dPi", h_para4dPi);
+	h_perp2dPa = j.value("perp2dPa", h_perp2dPa);
+	h_para4dPa = j.value("para4dPa", h_para4dPa);
+	h_perp2dPb = j.value("perp2dPb", h_perp2dPb);
+	h_para4dPb = j.value("para4dPb", h_para4dPb);
+
+	h_IonMass = j.value("IonMass", h_IonMass);
+	h_IonChar = j.value("IonChar", h_IonChar);
+	h_IonBeta = j.value("IonBeta", h_IonBeta);
+	h_IonVmin = j.value("IonVmin", h_IonVmin);
+	h_IonVmax = j.value("IonVmax", h_IonVmax);
+	h_IonVb = j.value("IonVb", h_IonVb);
+	h_IonDeltaV = j.value("IonDeltaV", h_IonDeltaV);
+	h_IonLambda0 = j.value("IonLambda0", h_IonLambda0);
+	h_IonDeltaLambda2 = j.value("IonDeltaLambda2", h_IonDeltaLambda2);
+
+	h_AlphaMass = j.value("AlphaMass", h_AlphaMass);
+	h_AlphaChar = j.value("AlphaChar", h_AlphaChar);
+	h_AlphaBeta = j.value("AlphaBeta", h_AlphaBeta);
+	h_AlphaVmin = j.value("AlphaVmin", h_AlphaVmin);
+	h_AlphaVmax = j.value("AlphaVmax", h_AlphaVmax);
+	h_AlphaVb = j.value("AlphaVb", h_AlphaVb);
+	h_AlphaDeltaV = j.value("AlphaDeltaV", h_AlphaDeltaV);
+	h_AlphaLambda0 = j.value("AlphaLambda0", h_AlphaLambda0);
+	h_AlphaDeltaLambda2 = j.value("AlphaDeltaLambda2", h_AlphaDeltaLambda2);
+
+	h_BeamMass = j.value("BeamMass", h_BeamMass);
+	h_BeamChar = j.value("BeamChar", h_BeamChar);
+	h_BeamBeta = j.value("BeamBeta", h_BeamBeta);
+	h_BeamVmin = j.value("BeamVmin", h_BeamVmin);
+	h_BeamVmax = j.value("BeamVmax", h_BeamVmax);
+	h_BeamVb = j.value("BeamVb", h_BeamVb);
+	h_BeamDeltaV = j.value("BeamDeltaV", h_BeamDeltaV);
+	h_BeamLambda0 = j.value("BeamLambda0", h_BeamLambda0);
+	h_BeamDeltaLambda2 = j.value("BeamDeltaLambda2", h_BeamDeltaLambda2);
+}
+
+static void syncConfigToDeviceConstants() {
+	const dataType normQE = QE / (h_B0 * h_L0 * h_L0 / MU0 / h_VA0);
+	const dataType normMP = MP / (h_B0 * h_B0 * h_L0 * h_L0 * h_L0 / MU0 / h_VA0 / h_VA0);
+	const dataType gridDzVal = 2.0 * PI / h_tubes / gridNz;
+	const dataType gridDtVal = h_dt;
+	const dataType zbegVal = -PI / h_tubes - (gridGhost - 0.5) * gridDzVal;
+	const dataType zoriVal = -PI / h_tubes;
+	const dataType zrangeVal = 2.0 * PI / h_tubes;
+	const dataType rho0Val = h_RHO0;
+	const dataType drhoVal = h_RHO1 - h_RHO0;
+	const dataType psitmaxVal = h_PSITMAX / (h_B0 * h_L0 * h_L0);
+	const dataType pitchB0Val = h_B0;
+	const dataType vaVal = h_VA0;
+	const dataType l3Val = 1e19 / (h_L0 * h_L0 * h_L0);
+	const dataType cmVal = h_VA0 / (h_L0 * h_OMEGACI);
+
+	CUDACHECK(cudaMemcpyToSymbol(B0, &h_B0, sizeof(dataType)));
+	CUDACHECK(cudaMemcpyToSymbol(L0, &h_L0, sizeof(dataType)));
+	CUDACHECK(cudaMemcpyToSymbol(VA0, &h_VA0, sizeof(dataType)));
+	CUDACHECK(cudaMemcpyToSymbol(RHO0, &h_RHO0, sizeof(dataType)));
+	CUDACHECK(cudaMemcpyToSymbol(RHO1, &h_RHO1, sizeof(dataType)));
+	CUDACHECK(cudaMemcpyToSymbol(PSITMAX, &h_PSITMAX, sizeof(dataType)));
+	CUDACHECK(cudaMemcpyToSymbol(OMEGACI, &h_OMEGACI, sizeof(dataType)));
+	CUDACHECK(cudaMemcpyToSymbol(ppcNums, &h_ppcNums, sizeof(int)));
+	CUDACHECK(cudaMemcpyToSymbol(picHost, &h_picHost, sizeof(int)));
+	CUDACHECK(cudaMemcpyToSymbol(picDev, &h_picDev, sizeof(int)));
+	CUDACHECK(cudaMemcpyToSymbol(tubes, &h_tubes, sizeof(int)));
+	CUDACHECK(cudaMemcpyToSymbol(leftN, &h_leftN, sizeof(int)));
+	CUDACHECK(cudaMemcpyToSymbol(rightN, &h_rightN, sizeof(int)));
+	CUDACHECK(cudaMemcpyToSymbol(diagLeftX, &h_diagLeftX, sizeof(int)));
+	CUDACHECK(cudaMemcpyToSymbol(diagRightX, &h_diagRightX, sizeof(int)));
+	CUDACHECK(cudaMemcpyToSymbol(diagY, &h_diagY, sizeof(int)));
+	CUDACHECK(cudaMemcpyToSymbol(gridDt, &gridDtVal, sizeof(dataType)));
+	CUDACHECK(cudaMemcpyToSymbol(gridDz, &gridDzVal, sizeof(dataType)));
+	CUDACHECK(cudaMemcpyToSymbol(zbeg, &zbegVal, sizeof(dataType)));
+	CUDACHECK(cudaMemcpyToSymbol(zori, &zoriVal, sizeof(dataType)));
+	CUDACHECK(cudaMemcpyToSymbol(zrange, &zrangeVal, sizeof(dataType)));
+	CUDACHECK(cudaMemcpyToSymbol(NormQE, &normQE, sizeof(dataType)));
+	CUDACHECK(cudaMemcpyToSymbol(NormMP, &normMP, sizeof(dataType)));
+	CUDACHECK(cudaMemcpyToSymbol(rho0, &rho0Val, sizeof(dataType)));
+	CUDACHECK(cudaMemcpyToSymbol(drho, &drhoVal, sizeof(dataType)));
+	CUDACHECK(cudaMemcpyToSymbol(psitmax, &psitmaxVal, sizeof(dataType)));
+	CUDACHECK(cudaMemcpyToSymbol(pitchB0, &pitchB0Val, sizeof(dataType)));
+	CUDACHECK(cudaMemcpyToSymbol(va, &vaVal, sizeof(dataType)));
+	CUDACHECK(cudaMemcpyToSymbol(l3, &l3Val, sizeof(dataType)));
+	CUDACHECK(cudaMemcpyToSymbol(cm, &cmVal, sizeof(dataType)));
+
+	CUDACHECK(cudaMemcpyToSymbol(perp2Phi, &h_perp2Phi, sizeof(dataType)));
+	CUDACHECK(cudaMemcpyToSymbol(para4Phi, &h_para4Phi, sizeof(dataType)));
+	CUDACHECK(cudaMemcpyToSymbol(perp2A, &h_perp2A, sizeof(dataType)));
+	CUDACHECK(cudaMemcpyToSymbol(para4A, &h_para4A, sizeof(dataType)));
+	CUDACHECK(cudaMemcpyToSymbol(perp2dNe, &h_perp2dNe, sizeof(dataType)));
+	CUDACHECK(cudaMemcpyToSymbol(para4dNe, &h_para4dNe, sizeof(dataType)));
+	CUDACHECK(cudaMemcpyToSymbol(perp2dTe, &h_perp2dTe, sizeof(dataType)));
+	CUDACHECK(cudaMemcpyToSymbol(para4dTe, &h_para4dTe, sizeof(dataType)));
+	CUDACHECK(cudaMemcpyToSymbol(perp2dPi, &h_perp2dPi, sizeof(dataType)));
+	CUDACHECK(cudaMemcpyToSymbol(para4dPi, &h_para4dPi, sizeof(dataType)));
+	CUDACHECK(cudaMemcpyToSymbol(perp2dPa, &h_perp2dPa, sizeof(dataType)));
+	CUDACHECK(cudaMemcpyToSymbol(para4dPa, &h_para4dPa, sizeof(dataType)));
+	CUDACHECK(cudaMemcpyToSymbol(perp2dPb, &h_perp2dPb, sizeof(dataType)));
+	CUDACHECK(cudaMemcpyToSymbol(para4dPb, &h_para4dPb, sizeof(dataType)));
+
+	CUDACHECK(cudaMemcpyToSymbol(IonMass, &h_IonMass, sizeof(dataType)));
+	CUDACHECK(cudaMemcpyToSymbol(IonChar, &h_IonChar, sizeof(dataType)));
+	CUDACHECK(cudaMemcpyToSymbol(IonBeta, &h_IonBeta, sizeof(dataType)));
+	CUDACHECK(cudaMemcpyToSymbol(IonVmin, &h_IonVmin, sizeof(dataType)));
+	CUDACHECK(cudaMemcpyToSymbol(IonVmax, &h_IonVmax, sizeof(dataType)));
+	CUDACHECK(cudaMemcpyToSymbol(IonVb, &h_IonVb, sizeof(dataType)));
+	CUDACHECK(cudaMemcpyToSymbol(IonDeltaV, &h_IonDeltaV, sizeof(dataType)));
+	CUDACHECK(cudaMemcpyToSymbol(IonLambda0, &h_IonLambda0, sizeof(dataType)));
+	CUDACHECK(cudaMemcpyToSymbol(IonDeltaLambda2, &h_IonDeltaLambda2, sizeof(dataType)));
+
+	CUDACHECK(cudaMemcpyToSymbol(AlphaMass, &h_AlphaMass, sizeof(dataType)));
+	CUDACHECK(cudaMemcpyToSymbol(AlphaChar, &h_AlphaChar, sizeof(dataType)));
+	CUDACHECK(cudaMemcpyToSymbol(AlphaBeta, &h_AlphaBeta, sizeof(dataType)));
+	CUDACHECK(cudaMemcpyToSymbol(AlphaVmin, &h_AlphaVmin, sizeof(dataType)));
+	CUDACHECK(cudaMemcpyToSymbol(AlphaVmax, &h_AlphaVmax, sizeof(dataType)));
+	CUDACHECK(cudaMemcpyToSymbol(AlphaVb, &h_AlphaVb, sizeof(dataType)));
+	CUDACHECK(cudaMemcpyToSymbol(AlphaDeltaV, &h_AlphaDeltaV, sizeof(dataType)));
+	CUDACHECK(cudaMemcpyToSymbol(AlphaLambda0, &h_AlphaLambda0, sizeof(dataType)));
+	CUDACHECK(cudaMemcpyToSymbol(AlphaDeltaLambda2, &h_AlphaDeltaLambda2, sizeof(dataType)));
+
+	CUDACHECK(cudaMemcpyToSymbol(BeamMass, &h_BeamMass, sizeof(dataType)));
+	CUDACHECK(cudaMemcpyToSymbol(BeamChar, &h_BeamChar, sizeof(dataType)));
+	CUDACHECK(cudaMemcpyToSymbol(BeamBeta, &h_BeamBeta, sizeof(dataType)));
+	CUDACHECK(cudaMemcpyToSymbol(BeamVmin, &h_BeamVmin, sizeof(dataType)));
+	CUDACHECK(cudaMemcpyToSymbol(BeamVmax, &h_BeamVmax, sizeof(dataType)));
+	CUDACHECK(cudaMemcpyToSymbol(BeamVb, &h_BeamVb, sizeof(dataType)));
+	CUDACHECK(cudaMemcpyToSymbol(BeamDeltaV, &h_BeamDeltaV, sizeof(dataType)));
+	CUDACHECK(cudaMemcpyToSymbol(BeamLambda0, &h_BeamLambda0, sizeof(dataType)));
+	CUDACHECK(cudaMemcpyToSymbol(BeamDeltaLambda2, &h_BeamDeltaLambda2, sizeof(dataType)));
+}
 
 __constant__ dataType IonConst;
 __constant__ dataType AlphaConst;
@@ -320,7 +574,7 @@ const int M2PGridDimz = gridNz / M2PBlockDimx;
 
 const int pptNums = 32;
 const int PICBlockDimx = 256;
-const int PICGridDimx = picDev / pptNums / PICBlockDimx;
+int h_PICGridDimx = h_picDev / pptNums / PICBlockDimx;
 
 const int nFFTBatchSize = devNy * gridNx;
 const int nFFTTimeSize = gridNz;
@@ -5585,6 +5839,35 @@ __global__ void PICDiagDiffusivity(type* __restrict__ pic1d, type* __restrict__ 
 
 int main(int argc, char* argv[]) {
 
+	std::string configPath = "../config.json";
+	if (argc > 1) {
+		configPath = argv[1];
+	}
+	try {
+		loadConfigFromJson(configPath);
+	}
+	catch (const std::exception& e) {
+		std::cout << "Config error: " << e.what() << std::endl;
+		return 1;
+	}
+	h_PICGridDimx = h_picDev / pptNums / PICBlockDimx;
+	const dataType dt = h_dt;
+	const int continueSteps = h_continueSteps;
+	const int totalSteps = h_totalSteps;
+	const int diagSteps = h_diagSteps;
+	const int outputSteps = h_outputSteps;
+	const int outerLoopMax = h_outerLoopMax;
+	const int innerLoopMax = h_innerLoopMax;
+	const int MHDLoopMax = h_MHDLoopMax;
+	const int ppcNums = h_ppcNums;
+	const int picDev = h_picDev;
+	const int PICGridDimx = h_PICGridDimx;
+	const int leftN = h_leftN;
+	const int rightN = h_rightN;
+	const int diagLeftX = h_diagLeftX;
+	const int diagRightX = h_diagRightX;
+	const int diagY = h_diagY;
+
 	int myRank, nRanks, localRank = 0;
 
 	//initializing MPI
@@ -5622,6 +5905,7 @@ int main(int argc, char* argv[]) {
 	NCCLCHECK(ncclGroupStart());
 	for (int i = 0; i < devNums; i++) {
 		CUDACHECK(cudaSetDevice(localRank * devNums + i));
+		syncConfigToDeviceConstants();
 		NCCLCHECK(ncclCommInitRank(comms + i, nRanks * devNums, id, myRank * devNums + i));
 	}
 	NCCLCHECK(ncclGroupEnd());
@@ -5655,25 +5939,25 @@ int main(int argc, char* argv[]) {
 	//initializing cuGMEC
 
 	HybridModel<dataType> cuGMEC(
-		std::vector<int> { devNums, nRanks, myRank, localRank, gridNx, gridNy, gridNz, gridGhost, ppcNums, tubes },
-		std::vector<double> { B0, L0, VA0, RHO0, RHO1, PSITMAX, dt },
-		std::tuple<bool, double> { ifNablaPerp2A().value, perp2A },
-		std::tuple<bool, double> { ifNablaPerp2Phi().value, perp2Phi },
-		std::tuple<bool, double> { ifNablaPerp2dNe().value, perp2dNe },
-		std::tuple<bool, double> { ifNablaPerp2dTe().value, perp2dTe },
-		std::tuple<bool, double> { ifNablaPerp2dPi().value, perp2dPi },
-		std::tuple<bool, double> { ifNablaPerp2dPa().value, perp2dPa },
-		std::tuple<bool, double> { ifNablaPerp2dPb().value, perp2dPb },
+		std::vector<int> { devNums, nRanks, myRank, localRank, gridNx, gridNy, gridNz, gridGhost, ppcNums, h_tubes },
+		std::vector<double> { h_B0, h_L0, h_VA0, h_RHO0, h_RHO1, h_PSITMAX, dt },
+		std::tuple<bool, double> { ifNablaPerp2A().value, h_perp2A },
+		std::tuple<bool, double> { ifNablaPerp2Phi().value, h_perp2Phi },
+		std::tuple<bool, double> { ifNablaPerp2dNe().value, h_perp2dNe },
+		std::tuple<bool, double> { ifNablaPerp2dTe().value, h_perp2dTe },
+		std::tuple<bool, double> { ifNablaPerp2dPi().value, h_perp2dPi },
+		std::tuple<bool, double> { ifNablaPerp2dPa().value, h_perp2dPa },
+		std::tuple<bool, double> { ifNablaPerp2dPb().value, h_perp2dPb },
 		std::tuple<bool, unsigned int> { (ifIon().value&& ifIonSlowing().value) || (ifAlpha().value && ifAlphaSlowing().value) || (ifBeam().value && ifBeamSlowing().value), randMax },
-		std::tuple<bool, std::vector<double>> { ifIon().value, std::vector<double>{IonMass, IonChar, IonBeta, IonVmin, IonVmax, IonVb, IonDeltaV, IonLambda0, IonDeltaLambda2} },
-		std::tuple<bool, std::vector<double>> { ifAlpha().value, std::vector<double>{AlphaMass, AlphaChar, AlphaBeta, AlphaVmin, AlphaVmax, AlphaVb, AlphaDeltaV, AlphaLambda0, AlphaDeltaLambda2} },
-		std::tuple<bool, std::vector<double>> { ifBeam().value, std::vector<double>{BeamMass, BeamChar, BeamBeta, BeamVmin, BeamVmax, BeamVb, BeamDeltaV, BeamLambda0, BeamDeltaLambda2} });
+		std::tuple<bool, std::vector<double>> { ifIon().value, std::vector<double>{h_IonMass, h_IonChar, h_IonBeta, h_IonVmin, h_IonVmax, h_IonVb, h_IonDeltaV, h_IonLambda0, h_IonDeltaLambda2} },
+		std::tuple<bool, std::vector<double>> { ifAlpha().value, std::vector<double>{h_AlphaMass, h_AlphaChar, h_AlphaBeta, h_AlphaVmin, h_AlphaVmax, h_AlphaVb, h_AlphaDeltaV, h_AlphaLambda0, h_AlphaDeltaLambda2} },
+		std::tuple<bool, std::vector<double>> { ifBeam().value, std::vector<double>{h_BeamMass, h_BeamChar, h_BeamBeta, h_BeamVmin, h_BeamVmax, h_BeamVb, h_BeamDeltaV, h_BeamLambda0, h_BeamDeltaLambda2} });
 
 	cuGMEC.allocateHostMemory();
 	cuGMEC.allocateDeviceMemory();
 
-	cuGMEC.loadMHDEquilibrium(MHDCollocated);
-	cuGMEC.loadMHDPerturbation(MHDPerturbation);
+	cuGMEC.loadMHDEquilibrium(h_MHDCollocated);
+	cuGMEC.loadMHDPerturbation(h_MHDPerturbation);
 	cuGMEC.compressCollocatedCoefficient();
 
 	cuGMEC.computeSparseMatrix<Laplacian, trueType, trueType>();
@@ -5704,7 +5988,7 @@ int main(int argc, char* argv[]) {
 			file3 = "../IonKeys_" + std::to_string(myRank) + "_" + std::to_string(continueSteps) + ".bin";
 			file4 = "../IonValues_" + std::to_string(myRank) + "_" + std::to_string(continueSteps) + ".bin";
 			cuGMEC.loadParticles<Ion>(file1, file2, file3, file4);
-			if constexpr (continueSteps == 0)
+			if (continueSteps == 0)
 				cuGMEC.computeEquilibriumPressure<Ion>();
 		}
 		else {
@@ -5720,7 +6004,7 @@ int main(int argc, char* argv[]) {
 			file3 = "../AlphaKeys_" + std::to_string(myRank) + "_" + std::to_string(continueSteps) + ".bin";
 			file4 = "../AlphaValues_" + std::to_string(myRank) + "_" + std::to_string(continueSteps) + ".bin";
 			cuGMEC.loadParticles<Alpha>(file1, file2, file3, file4);
-			if constexpr (continueSteps == 0)
+			if (continueSteps == 0)
 				cuGMEC.computeEquilibriumPressure<Alpha>();
 		}
 		else {
@@ -5736,7 +6020,7 @@ int main(int argc, char* argv[]) {
 			file3 = "../BeamKeys_" + std::to_string(myRank) + "_" + std::to_string(continueSteps) + ".bin";
 			file4 = "../BeamValues_" + std::to_string(myRank) + "_" + std::to_string(continueSteps) + ".bin";
 			cuGMEC.loadParticles<Beam>(file1, file2, file3, file4);
-			if constexpr (continueSteps == 0)
+			if (continueSteps == 0)
 				cuGMEC.computeEquilibriumPressure<Beam>();
 		}
 		else {
@@ -5753,7 +6037,7 @@ int main(int argc, char* argv[]) {
 	cuGMEC.memcpyHostToDevice();
 
 	if constexpr (std::is_same_v<ifStaggered, trueType>) {
-		cuGMEC.loadMHDEquilibrium(MHDStaggered);
+		cuGMEC.loadMHDEquilibrium(h_MHDStaggered);
 		cuGMEC.compressStaggeredCoefficient();
 		if constexpr (std::is_same_v<ifNablaPerp2A, trueType>)
 			cuGMEC.computeSparseMatrix<Resistive, trueType, trueType>();
@@ -6211,7 +6495,7 @@ int main(int argc, char* argv[]) {
 	std::vector<std::vector<cudssMatrix_t>>& dPbXs = cuGMEC.dPbXs;
 	std::vector<std::vector<cudssMatrix_t>>& dPbBs = cuGMEC.dPbBs;
 
-	if constexpr (std::is_same_v<ifContinue, trueType> && continueSteps != 0) {
+	if (std::is_same_v<ifContinue, trueType> && continueSteps != 0) {
 
 		for (int i = 0; i < devNums; i++) {
 			cudaSetDevice(localRank * devNums + i);
@@ -6518,7 +6802,7 @@ int main(int argc, char* argv[]) {
 
 	for (int outerLoop = 0; outerLoop < outerLoopMax; outerLoop++) {
 
-		if constexpr (outerLoopMax / 10 != 0) {
+		if (outerLoopMax / 10 != 0) {
 
 			if (outerLoop % (outerLoopMax / 10) == 0) {
 				if (myRank == 0) {
