@@ -2,8 +2,8 @@
 
 NVCC       ?= nvcc
 ARCH       ?= sm_80
-CUDSS_HOME ?= /home-ssd/Users/nsgm_pjj/cudss6
-NCCL_HOME  ?= /home-ssd/Users/nsgm_pjj/nccl
+CUDSS_HOME ?=
+NCCL_HOME  ?=
 
 SRC := src/cuGMEC_main.cu
 BIN := cuGMEC
