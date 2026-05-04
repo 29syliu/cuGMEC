@@ -704,7 +704,7 @@ int main(int argc, char* argv[]) {
         }
         ncclGroupEnd();
 
-        if constexpr (std::is_same_v<ifOutputPhaceSpaceDeltaF, trueType>) {
+        if constexpr (std::is_same_v<ifOutputPhaseSpaceDeltaF, trueType>) {
             forEachDev([&](int i) {
                 if constexpr (std::is_same_v<ifIon, trueType>)
                     PICDiagPhaseDeltaF<Ion, mhdReal, picReal><<<PICGridSize, PICBlockSize, 0, 0>>>(
@@ -738,7 +738,7 @@ int main(int argc, char* argv[]) {
             });
         }
 
-        if constexpr (std::is_same_v<ifOutputPhaceSpacePower, trueType> ||
+        if constexpr (std::is_same_v<ifOutputPhaseSpacePower, trueType> ||
                       std::is_same_v<ifOutputPitchSpacePower, trueType>) {
             for (int mode = leftN; mode <= rightN; mode++) {
                 int modeIdx = mode - leftN;
@@ -750,7 +750,7 @@ int main(int argc, char* argv[]) {
                     const size_t pitchOffset =
                         ((size_t)outputIdx / outputSteps * (rightN - leftN + 1) + modeIdx) * gridVpara * gridVperp;
 
-                    if constexpr (std::is_same_v<ifOutputPhaceSpacePower, trueType>) {
+                    if constexpr (std::is_same_v<ifOutputPhaseSpacePower, trueType>) {
                         if constexpr (std::is_same_v<ifIon, trueType>)
                             PICDiagPhasePower<Ion, mhdReal, picReal, ifFLRPIC, gyroNums>
                                 <<<PICGridSize, PICBlockSize, 0, 0>>>(pic1d[i], pic2d[i], pic3d[i], Ion_keys_in[i],

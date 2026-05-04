@@ -49,7 +49,6 @@ const int devNums = 4;
 const int gridNx = 256;
 const int gridNy = 32;
 const int gridNz = 96;
-const int gridGhost = 2;
 const int ppcNums = 256;
 
 /*-------------------------------MHD Setting------------------------------*/
@@ -150,7 +149,6 @@ const picReal IonVb = 0.0;
 const picReal IonDeltaV = 0.0;
 const picReal IonLambda0 = 0.0;
 const picReal IonDeltaLambda2 = 0.0;
-const picReal IonDragRate = 0.0;
 
 using ifAlpha = trueType;
 const disType AlphaType = Slowing0;
@@ -165,7 +163,6 @@ const picReal AlphaVb = 0.0;
 const picReal AlphaDeltaV = 0.0;
 const picReal AlphaLambda0 = 0.0;
 const picReal AlphaDeltaLambda2 = 0.0;
-const picReal AlphaDragRate = 0.0;
 
 using ifBeam = trueType;
 const disType BeamType = Slowing2;
@@ -180,11 +177,9 @@ const picReal BeamVb = 0.0;
 const picReal BeamDeltaV = 0.0;
 const picReal BeamLambda0 = 0.4;
 const picReal BeamDeltaLambda2 = 1.0 / (4.5 * 4.5);
-const picReal BeamDragRate = 0.0;
 
 /*-------------------------------Run Setting------------------------------*/
 
-using ifContinue = falseType;
 using ifDiagAmplitude = trueType;
 using ifDiagFrequency = trueType;
 using ifDiagEparallel = trueType;
@@ -205,11 +200,11 @@ const int gridE = 96;
 const int gridPphi = 128;
 const int gridLambda = 48;
 const int ppcPhase = 2048;
-using ifOutputPhaceSpaceJacobian = trueType;
-using ifOutputPhaceSpaceFrequency = falseType;
-using ifOutputPhaceSpaceF0 = falseType;
-using ifOutputPhaceSpaceDeltaF = falseType;
-using ifOutputPhaceSpacePower = falseType;
+using ifOutputPhaseSpaceJacobian = trueType;
+using ifOutputPhaseSpaceFrequency = falseType;
+using ifOutputPhaseSpaceF0 = falseType;
+using ifOutputPhaseSpaceDeltaF = falseType;
+using ifOutputPhaseSpacePower = falseType;
 
 const int gridVpara = 128;
 const int gridVperp = 64;
@@ -219,10 +214,11 @@ using ifOutputPitchSpaceF0 = falseType;
 using ifOutputPitchSpaceDeltaF = falseType;
 using ifOutputPitchSpacePower = falseType;
 
-const double dt = 0.02;
+using ifContinue = falseType;
 const int continueSteps = 0;
-const int ratioDt = 1;
+const double dt = 0.02;
 const int totalSteps = 20000;
+const int ratioDt = 1;
 const int sortSteps = 25;
 const int diagSteps = 1;
 const int outputSteps = 2500;

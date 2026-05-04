@@ -875,7 +875,7 @@ class HybridModel {
 
         if constexpr (std::is_same_v<ifContinue, falseType>) {
 
-            if constexpr (std::is_same_v<ifOutputPhaceSpaceF0, trueType>) {
+            if constexpr (std::is_same_v<ifOutputPhaseSpaceF0, trueType>) {
                 if constexpr (std::is_same_v<::ifIon, trueType>)
                     computePhaseSpaceF0<Ion, IonType, IonSpace, IonVelocity, gridE, gridPphi, gridLambda, ppcPhase>(
                         initialDir);
@@ -899,7 +899,7 @@ class HybridModel {
                         initialDir);
             }
 
-            if constexpr (std::is_same_v<ifOutputPhaceSpaceJacobian, trueType>) {
+            if constexpr (std::is_same_v<ifOutputPhaseSpaceJacobian, trueType>) {
                 if constexpr (std::is_same_v<::ifIon, trueType>)
                     computePhaseSpaceJacobian<Ion, gridE, gridPphi, gridLambda, ppcPhase>(initialDir);
                 if constexpr (std::is_same_v<::ifAlpha, trueType>)
@@ -917,7 +917,7 @@ class HybridModel {
                     computePitchSpaceJacobian<Beam, gridVpara, gridVperp, ppcPitch>(initialDir);
             }
 
-            if constexpr (std::is_same_v<ifOutputPhaceSpaceFrequency, trueType>) {
+            if constexpr (std::is_same_v<ifOutputPhaseSpaceFrequency, trueType>) {
 
                 auto diagPhaseOrbit = [&]<picType species, typename... Guards>(picReal** d_mapping, picReal** h_mapping,
                                                                                const std::string& mappingFile) {
@@ -1482,7 +1482,7 @@ class HybridModel {
         if (ifOutputdPb)
             DeviceAllocator.allocateDeviceArrays(localId, devNums, outputTotalSize, d_totaldPb);
 
-        if constexpr (std::is_same_v<ifOutputPhaceSpaceDeltaF, trueType>) {
+        if constexpr (std::is_same_v<ifOutputPhaseSpaceDeltaF, trueType>) {
             if (ifIon)
                 DeviceAllocator.allocateDeviceArrays(localId, devNums, h_IonPhaseDeltaF.size(), d_IonPhaseDeltaF);
             if (ifAlpha)
@@ -1491,7 +1491,7 @@ class HybridModel {
                 DeviceAllocator.allocateDeviceArrays(localId, devNums, h_BeamPhaseDeltaF.size(), d_BeamPhaseDeltaF);
         }
 
-        if constexpr (std::is_same_v<ifOutputPhaceSpacePower, trueType>) {
+        if constexpr (std::is_same_v<ifOutputPhaseSpacePower, trueType>) {
             if (ifIon)
                 DeviceAllocator.allocateDeviceArrays(localId, devNums, h_IonPhasePower.size(), d_IonPhasePower);
             if (ifAlpha)
@@ -1825,7 +1825,7 @@ class HybridModel {
         if (ifOutputdPb)
             DeviceAllocator.releaseDeviceArrays(localId, devNums, d_totaldPb);
 
-        if constexpr (std::is_same_v<ifOutputPhaceSpaceDeltaF, trueType>) {
+        if constexpr (std::is_same_v<ifOutputPhaseSpaceDeltaF, trueType>) {
             if (ifIon)
                 DeviceAllocator.releaseDeviceArrays(localId, devNums, d_IonPhaseDeltaF);
             if (ifAlpha)
@@ -1834,7 +1834,7 @@ class HybridModel {
                 DeviceAllocator.releaseDeviceArrays(localId, devNums, d_BeamPhaseDeltaF);
         }
 
-        if constexpr (std::is_same_v<ifOutputPhaceSpacePower, trueType>) {
+        if constexpr (std::is_same_v<ifOutputPhaseSpacePower, trueType>) {
             if (ifIon)
                 DeviceAllocator.releaseDeviceArrays(localId, devNums, d_IonPhasePower);
             if (ifAlpha)
@@ -2213,7 +2213,7 @@ class HybridModel {
                 reduceField(h_BeamDiffusivity, d_BeamDiffusivity);
         }
 
-        if constexpr (std::is_same_v<ifOutputPhaceSpaceDeltaF, trueType>) {
+        if constexpr (std::is_same_v<ifOutputPhaseSpaceDeltaF, trueType>) {
             if (ifIon)
                 reduceField(h_IonPhaseDeltaF, d_IonPhaseDeltaF);
             if (ifAlpha)
@@ -2222,7 +2222,7 @@ class HybridModel {
                 reduceField(h_BeamPhaseDeltaF, d_BeamPhaseDeltaF);
         }
 
-        if constexpr (std::is_same_v<ifOutputPhaceSpacePower, trueType>) {
+        if constexpr (std::is_same_v<ifOutputPhaseSpacePower, trueType>) {
             if (ifIon)
                 reduceField(h_IonPhasePower, d_IonPhasePower);
             if (ifAlpha)
@@ -2470,7 +2470,7 @@ class HybridModel {
             if (ifOutputdPb)
                 writeBin(finalDir + "/totaldPb.bin", h_totaldPb.data(), sizeof(mhdReal) * h_totaldPb.size());
 
-            if constexpr (std::is_same_v<ifOutputPhaceSpaceDeltaF, trueType>) {
+            if constexpr (std::is_same_v<ifOutputPhaseSpaceDeltaF, trueType>) {
 
                 const size_t snapShots = (size_t)(totalSteps / outputSteps + 1);
 
@@ -2512,7 +2512,7 @@ class HybridModel {
                              sizeof(mhdReal) * h_BeamPhaseDeltaF.size());
             }
 
-            if constexpr (std::is_same_v<ifOutputPhaceSpacePower, trueType>) {
+            if constexpr (std::is_same_v<ifOutputPhaseSpacePower, trueType>) {
 
                 auto updateBoundary = [&](std::vector<mhdReal>& buf) {
                     for (int snapShot = 0; snapShot < totalSteps / outputSteps + 1; snapShot++) {
