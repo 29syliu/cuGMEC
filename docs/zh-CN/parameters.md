@@ -23,7 +23,7 @@
 | `outputDir` | 字符串路径 | 输出文件目录。 |  | `const std::string outputDir = "/path/to/output";` |
 | `MHDCollocated` | `.bin` 文件名 | collocated MHD 平衡文件。 |  | `const std::string MHDCollocated = "MHDCollocated.bin";` |
 | `MHDStaggered` | `.bin` 文件名 | staggered MHD 平衡文件。 | 仅 `ifStaggered=trueType` 时需要。 | `const std::string MHDStaggered = "MHDStaggered.bin";` |
-| `<Species>PhaseSpaceMapping` | `.bin` 文件名 | 相空间轨道映射文件。 | 仅 `ifOutputPhaseSpaceFrequency=trueType` 时需要。 | `const std::string IonPhaseSpaceMapping = "IonPhaseSpaceMapping.bin";` |
+| `<Species>PhaseSpaceMapping` | `.bin` 文件名 | 相空间轨道映射文件。 | 仅 `ifOutputPhaseSpaceOrbit=trueType` 时需要。 | `const std::string IonPhaseSpaceMapping = "IonPhaseSpaceMapping.bin";` |
 
 ## 归一化参数
 
@@ -166,7 +166,7 @@
 | `gridLambda` | 正整数 | `Lambda` 方向 phase-space 网格数。 |  | `const int gridLambda = 48;` |
 | `ppcPhase` | 正整数 | 每种离子在每一个 phase-space 网格内的平均粒子数。 |  | `const int ppcPhase = 2048;` |
 | `ifOutputPhaseSpaceJacobian` | `trueType` / `falseType` | 是否输出 phase-space Jacobian。 | 初始阶段输出。 | `using ifOutputPhaseSpaceJacobian = trueType;` |
-| `ifOutputPhaseSpaceFrequency` | `trueType` / `falseType` | 是否输出 phase-space 轨道频率。 | 需要 `<Species>PhaseSpaceMapping` 文件。 | `using ifOutputPhaseSpaceFrequency = falseType;` |
+| `ifOutputPhaseSpaceOrbit` | `trueType` / `falseType` | 是否输出 phase-space 轨道频率。 | 需要 `<Species>PhaseSpaceMapping` 文件。 | `using ifOutputPhaseSpaceOrbit = falseType;` |
 | `ifOutputPhaseSpaceF0` | `trueType` / `falseType` | 是否输出 phase-space 平衡分布函数。 | 初始阶段输出。 | `using ifOutputPhaseSpaceF0 = falseType;` |
 | `ifOutputPhaseSpaceDeltaF` | `trueType` / `falseType` | 是否输出 phase-space 扰动分布函数。 |  | `using ifOutputPhaseSpaceDeltaF = falseType;` |
 | `ifOutputPhaseSpacePower` | `trueType` / `falseType` | 是否输出 phase-space 波粒作用功率。 |  | `using ifOutputPhaseSpacePower = falseType;` |

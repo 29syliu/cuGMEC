@@ -23,7 +23,7 @@ Notation:
 | `outputDir` | String path | Output file directory. |  | `const std::string outputDir = "/path/to/output";` |
 | `MHDCollocated` | `.bin` file name | Collocated MHD equilibrium file. |  | `const std::string MHDCollocated = "MHDCollocated.bin";` |
 | `MHDStaggered` | `.bin` file name | Staggered MHD equilibrium file. | Required only when `ifStaggered=trueType`. | `const std::string MHDStaggered = "MHDStaggered.bin";` |
-| `<Species>PhaseSpaceMapping` | `.bin` file name | Phase-space orbit mapping file. | Required only when `ifOutputPhaseSpaceFrequency=trueType`. | `const std::string IonPhaseSpaceMapping = "IonPhaseSpaceMapping.bin";` |
+| `<Species>PhaseSpaceMapping` | `.bin` file name | Phase-space orbit mapping file. | Required only when `ifOutputPhaseSpaceOrbit=trueType`. | `const std::string IonPhaseSpaceMapping = "IonPhaseSpaceMapping.bin";` |
 
 ## Normalization Parameters
 
@@ -166,7 +166,7 @@ Notation:
 | `gridLambda` | Positive integer | Number of phase-space grid points in the `Lambda` direction. |  | `const int gridLambda = 48;` |
 | `ppcPhase` | Positive integer | Average number of particles per species in each phase-space grid cell. |  | `const int ppcPhase = 2048;` |
 | `ifOutputPhaseSpaceJacobian` | `trueType` / `falseType` | Whether to output the phase-space Jacobian. | Output during the initialization stage. | `using ifOutputPhaseSpaceJacobian = trueType;` |
-| `ifOutputPhaseSpaceFrequency` | `trueType` / `falseType` | Whether to output phase-space orbit frequencies. | Requires the `<Species>PhaseSpaceMapping` file. | `using ifOutputPhaseSpaceFrequency = falseType;` |
+| `ifOutputPhaseSpaceOrbit` | `trueType` / `falseType` | Whether to output phase-space orbit frequencies. | Requires the `<Species>PhaseSpaceMapping` file. | `using ifOutputPhaseSpaceOrbit = falseType;` |
 | `ifOutputPhaseSpaceF0` | `trueType` / `falseType` | Whether to output the phase-space equilibrium distribution function. | Output during the initialization stage. | `using ifOutputPhaseSpaceF0 = falseType;` |
 | `ifOutputPhaseSpaceDeltaF` | `trueType` / `falseType` | Whether to output the phase-space perturbed distribution function. |  | `using ifOutputPhaseSpaceDeltaF = falseType;` |
 | `ifOutputPhaseSpacePower` | `trueType` / `falseType` | Whether to output phase-space wave-particle interaction power. |  | `using ifOutputPhaseSpacePower = falseType;` |

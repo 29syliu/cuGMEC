@@ -1,20 +1,23 @@
 %% cuGMEC MHD 诊断可视化脚本
-% 本脚本用于可视化 MHD 部分的诊断。
-% 它会根据 cuGMEC_param.h 中的开关，读取已启用的 MHD 相关诊断和输出。
 
+%{
+
+本脚本用于可视化 MHD 部分的诊断。
+它会根据 cuGMEC_param.h 中的开关，读取已启用的 MHD 相关诊断和输出。
+
+请确保 inputDir 下有：
+standard2D.mat, plot2D.mat, normalization2D.mat, NTP.mat, cuGMEC_param.h, BSI
+
+请确保 outputDir 下有当前已启用诊断和输出对应的 .bin 文件，例如：
+amplitude.bin, RealMode.bin, ImagMode.bin, frequency.bin, Epara.bin,
+EparaES.bin, MaxwellDrive.bin, ReynoldsDrive.bin, ZonalDrive.bin,
+Phi.bin, A.bin, dNe.bin, dTe.bin, dPi.bin, dPa.bin, dPb.bin,
+totalPhi.bin, totalA.bin, totaldNe.bin, totaldTe.bin,
+totaldPi.bin, totaldPa.bin, totaldPb.bin
+
+%}
 
 %% 用户设置
-
-
-% 请确保 inputDir 下有：
-% standard2D.mat, plot2D.mat, normalization2D.mat, NTP.mat, cuGMEC_param.h, BSI
-
-% 请确保 outputDir 下有当前已启用诊断和输出对应的 .bin 文件，例如：
-% amplitude.bin, RealMode.bin, ImagMode.bin, frequency.bin, Epara.bin,
-% EparaES.bin, MaxwellDrive.bin, ReynoldsDrive.bin, ZonalDrive.bin,
-% Phi.bin, A.bin, dNe.bin, dTe.bin, dPi.bin, dPa.bin, dPb.bin,
-% totalPhi.bin, totalA.bin, totaldNe.bin, totaldTe.bin,
-% totaldPi.bin, totaldPa.bin, totaldPb.bin
 
 
 inputDir = 'C:\Users\Desktop\test';

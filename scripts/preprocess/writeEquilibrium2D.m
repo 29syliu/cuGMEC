@@ -241,6 +241,22 @@ fip = fopen([outputPath, equilibriumName],'wb');
 fwrite(fip,Output_data,'double');
 fclose(fip);
 
+%% Phase-space mapping variables
+
+MP = mi;
+QE = e;
+B = B / B0;
+J = Jxyz / J0;
+psip = psip / (B0*L0^2);
+SFAcovyz = gcovSFA{2,3} / L0^2;
+SFAcovyz = SFAcovyz(:,1+ghost:size(B,2)+ghost);
+theta = theta_pest;
+
+normalizationFile = fullfile(outputPath, 'normalization2D.mat');
+save(normalizationFile, ...
+    'MP', 'QE', 'B', 'J', 'psip', 'SFAcovyz', ...
+    'q', 'R', 'Z', 'rho', 'theta', '-append');
+
 %% function
 
 function [f, df_dr] = poly1d(poly, rho)

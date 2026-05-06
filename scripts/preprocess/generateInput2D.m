@@ -1,5 +1,4 @@
-
-%%
+%% cuGMEC 二维输入文件生成脚本
 
 %{
 
@@ -49,8 +48,8 @@ close all
 addpath('C:\Users\Desktop\preprocess\MATLAB')
 addpath('C:\Users\Desktop\preprocess\MATLAB\BSI')
 
-inputPath = 'C:\Users\Desktop\ITER\';
-outputPath = 'C:\Users\Desktop\ITER\';
+inputPath = 'C:\Users\Desktop\';
+outputPath = 'C:\Users\Desktop\';
 equilibriumName = 'MHDCollocated_256_32.bin';
 
 if ~exist(outputPath, 'dir')

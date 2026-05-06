@@ -45,6 +45,10 @@
 
 #include "cuGMEC_setup.h"
 
+template <int ratioDt, picType particle, typename orbitReal>
+__global__ void PICDiagOrbit(orbitReal* __restrict__ pic1d, orbitReal* __restrict__ pic2d,
+                             orbitReal* __restrict__ phaseSpaceMapping);
+
 #define RESET "\033[0m"
 #define RED "\033[31m"
 #define BLUE "\033[34m"
@@ -917,10 +921,10 @@ class HybridModel {
                     computePitchSpaceJacobian<Beam, gridVpara, gridVperp, ppcPitch>(initialDir);
             }
 
-            if constexpr (std::is_same_v<ifOutputPhaseSpaceFrequency, trueType>) {
+            if constexpr (std::is_same_v<ifOutputPhaseSpaceOrbit, trueType>) {
 
-                auto diagPhaseOrbit = [&]<picType species, typename... Guards>(picReal** d_mapping, picReal** h_mapping,
-                                                                               const std::string& mappingFile) {
+                auto diagPhaseOrbit = [&]<picType species, typename... Guards>(
+                                          picReal**& d_mapping, picReal**& h_mapping, const std::string& mappingFile) {
                     if constexpr (allTrue<Guards...>) {
                         const char* displayName = "";
                         if constexpr (species == Ion)
@@ -931,6 +935,13 @@ class HybridModel {
                             displayName = "beam particles";
 
                         loadPhaseSpaceMapping<species>(inputDir + "/" + mappingFile);
+                        Allocator H2DAllocator;
+                        for (int i = 0; i < devNums; i++) {
+                            CUDACHECK(cudaSetDevice(localId * devNums + i));
+                            H2DAllocator.hostToDevice(cellNx * 30, 0, 0, d_pic1d[i], h_pic1d[0]);
+                            H2DAllocator.hostToDevice(cellNy * cellNx * 72, 0, 0, d_pic2d[i], h_pic2d[0]);
+                        }
+
                         if (hostId == 0)
                             std::cout << BOLDYELLOW << "Start: Compute equilibrium orbit of " << displayName << "."
                                       << RESET << std::endl;
@@ -954,7 +965,7 @@ class HybridModel {
                                        sizeof(picReal) * gridE * gridPphi * gridLambda * 2 * 13,
                                        cudaMemcpyDeviceToHost);
                         }
-                        computePhaseSpaceFrequency<species>(inputDir + "/" + mappingFile, initialDir);
+                        computePhaseSpaceOrbit<species>(inputDir + "/" + mappingFile, initialDir);
                     }
                 };
 
@@ -6429,6 +6440,8 @@ class HybridModel {
             d_picPhaseMap = d_BeamPhaseSpaceMapping;
         }
 
+        const picReal initialTheta = -PI + ((gridNy / 2) - 0.5) * picGridDy;
+
         for (int i = 0; i < devNums; i++) {
             for (int picId = 0; picId < picPhase; picId++) {
 
@@ -6447,6 +6460,7 @@ class HybridModel {
                     h_picPhaseMap[i][picId * 13 + 0] = 5.5;
 
                 h_picPhaseMap[i][picId * 13 + 1] = rhos[picId];
+                h_picPhaseMap[i][picId * 13 + 2] = initialTheta;
                 h_picPhaseMap[i][picId * 13 + 3] = vparas[picId];
                 h_picPhaseMap[i][picId * 13 + 4] = mus[picId];
                 h_picPhaseMap[i][picId * 13 + 9] = 0.5;
@@ -6465,7 +6479,7 @@ class HybridModel {
         }
     }
     template <int picType>
-    void computePhaseSpaceFrequency(std::string file, std::string initialDir) {
+    void computePhaseSpaceOrbit(std::string file, std::string initialDir) {
 
         if (hostId == 0) {
 
@@ -6532,11 +6546,11 @@ class HybridModel {
             std::string fileName;
 
             if constexpr (picType == 0)
-                fileName = initialDir + "/IonPhaseSpaceFrequency.bin";
+                fileName = initialDir + "/IonPhaseSpaceOrbit.bin";
             else if constexpr (picType == 1)
-                fileName = initialDir + "/AlphaPhaseSpaceFrequency.bin";
+                fileName = initialDir + "/AlphaPhaseSpaceOrbit.bin";
             else if constexpr (picType == 2)
-                fileName = initialDir + "/BeamPhaseSpaceFrequency.bin";
+                fileName = initialDir + "/BeamPhaseSpaceOrbit.bin";
 
             output.open(fileName.c_str(), std::ios::out | std::ios::binary);
             output.write(reinterpret_cast<char*>(phaseSpaceFrequency.data()), sizeof(double) * picPhase * 9);
