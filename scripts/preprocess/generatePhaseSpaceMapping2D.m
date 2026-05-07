@@ -23,7 +23,7 @@ IonPhaseSpaceMapping.bin，AlphaPhaseSpaceMapping.bin 或 BeamPhaseSpaceMapping.
 
 %% (1)
 
-inputPath = 'C:\Users\Desktop\ITER\';
+inputPath = 'C:\Users\Desktop\test';
 outputPath = inputPath;
 
 plotGeometry = true;
@@ -32,17 +32,17 @@ phaseSpaceFile = fullfile(inputPath, 'normalization2D.mat');
 %% (2)
 
 gridE = 64;
-gridPphi = 64;
-gridLambda = 64;
+gridPphi = 256;
+gridLambda = 128;
 
 % 增加数组元素即可在一次运行中生成多个物种。
 % name 只能是 Ion、Alpha 或 Beam。
 speciesList = struct( ...
-    'name', {'Alpha'}, ...
-    'Mass', {4.0}, ...
-    'Char', {2.0}, ...
-    'Vmin', {0.0733}, ...
-    'Vmax', {1.466});
+    'name', {'Ion', 'Alpha', 'Beam'}, ...
+    'Mass', {2.5, 4.0, 2.0}, ...
+    'Char', {1.0, 2.0, 1.0}, ...
+    'Vmin', {0.0135, 0.0733, 0.0552}, ...
+    'Vmax', {0.54, 1.466, 1.104});
 
 %% (3)
 
