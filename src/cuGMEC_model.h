@@ -879,30 +879,6 @@ class HybridModel {
 
         if constexpr (std::is_same_v<ifContinue, falseType>) {
 
-            if constexpr (std::is_same_v<ifOutputPhaseSpaceF0, trueType>) {
-                if constexpr (std::is_same_v<::ifIon, trueType>)
-                    computePhaseSpaceF0<Ion, IonType, IonSpace, IonVelocity, gridE, gridPphi, gridLambda, ppcPhase>(
-                        initialDir);
-                if constexpr (std::is_same_v<::ifAlpha, trueType>)
-                    computePhaseSpaceF0<Alpha, AlphaType, AlphaSpace, AlphaVelocity, gridE, gridPphi, gridLambda,
-                                        ppcPhase>(initialDir);
-                if constexpr (std::is_same_v<::ifBeam, trueType>)
-                    computePhaseSpaceF0<Beam, BeamType, BeamSpace, BeamVelocity, gridE, gridPphi, gridLambda, ppcPhase>(
-                        initialDir);
-            }
-
-            if constexpr (std::is_same_v<ifOutputPitchSpaceF0, trueType>) {
-                if constexpr (std::is_same_v<::ifIon, trueType>)
-                    computePitchSpaceF0<Ion, IonType, IonSpace, IonVelocity, gridVpara, gridVperp, ppcPitch>(
-                        initialDir);
-                if constexpr (std::is_same_v<::ifAlpha, trueType>)
-                    computePitchSpaceF0<Alpha, AlphaType, AlphaSpace, AlphaVelocity, gridVpara, gridVperp, ppcPitch>(
-                        initialDir);
-                if constexpr (std::is_same_v<::ifBeam, trueType>)
-                    computePitchSpaceF0<Beam, BeamType, BeamSpace, BeamVelocity, gridVpara, gridVperp, ppcPitch>(
-                        initialDir);
-            }
-
             if constexpr (std::is_same_v<ifOutputPhaseSpaceJacobian, trueType>) {
                 if constexpr (std::is_same_v<::ifIon, trueType>)
                     computePhaseSpaceJacobian<Ion, gridE, gridPphi, gridLambda, ppcPhase>(initialDir);
@@ -1002,6 +978,33 @@ class HybridModel {
             if constexpr (std::is_same_v<::ifBeam, trueType>) {
                 loadParticles<Beam, BeamType, BeamSpace, BeamVelocity>();
                 computeEquilibriumPressure<Beam>(initialDir);
+            }
+        }
+
+        if constexpr (std::is_same_v<ifContinue, falseType>) {
+
+            if constexpr (std::is_same_v<ifOutputPhaseSpaceF0, trueType>) {
+                if constexpr (std::is_same_v<::ifIon, trueType>)
+                    computePhaseSpaceF0<Ion, IonType, IonSpace, IonVelocity, gridE, gridPphi, gridLambda, ppcPhase>(
+                        initialDir);
+                if constexpr (std::is_same_v<::ifAlpha, trueType>)
+                    computePhaseSpaceF0<Alpha, AlphaType, AlphaSpace, AlphaVelocity, gridE, gridPphi, gridLambda,
+                                        ppcPhase>(initialDir);
+                if constexpr (std::is_same_v<::ifBeam, trueType>)
+                    computePhaseSpaceF0<Beam, BeamType, BeamSpace, BeamVelocity, gridE, gridPphi, gridLambda, ppcPhase>(
+                        initialDir);
+            }
+
+            if constexpr (std::is_same_v<ifOutputPitchSpaceF0, trueType>) {
+                if constexpr (std::is_same_v<::ifIon, trueType>)
+                    computePitchSpaceF0<Ion, IonType, IonSpace, IonVelocity, gridVpara, gridVperp, ppcPitch>(
+                        initialDir);
+                if constexpr (std::is_same_v<::ifAlpha, trueType>)
+                    computePitchSpaceF0<Alpha, AlphaType, AlphaSpace, AlphaVelocity, gridVpara, gridVperp, ppcPitch>(
+                        initialDir);
+                if constexpr (std::is_same_v<::ifBeam, trueType>)
+                    computePitchSpaceF0<Beam, BeamType, BeamSpace, BeamVelocity, gridVpara, gridVperp, ppcPitch>(
+                        initialDir);
             }
         }
 
@@ -4915,7 +4918,7 @@ class HybridModel {
         double minE, maxE, dE;
         double minPphi, maxPphi, dPphi;
         double minLambda, maxLambda, dLambda;
-        double Mass, Char, Vmin, Vmax, Vb, DeltaV, Lambda0, DeltaLambda2;
+        double Mass, Char, Vmin, Vmax, Vb, DeltaV, Lambda0, DeltaLambda2, partConst;
 
         double drho = RHO1 - RHO0;
         double psitmax = PSITMAX / (B0 * L0 * L0);
@@ -4931,6 +4934,7 @@ class HybridModel {
             DeltaV = IonDeltaV;
             Lambda0 = IonLambda0;
             DeltaLambda2 = IonDeltaLambda2;
+            partConst = IonConst;
 
         } else if constexpr (picType == 1) {
 
@@ -4942,6 +4946,7 @@ class HybridModel {
             DeltaV = AlphaDeltaV;
             Lambda0 = AlphaLambda0;
             DeltaLambda2 = AlphaDeltaLambda2;
+            partConst = AlphaConst;
 
         } else if constexpr (picType == 2) {
 
@@ -4953,6 +4958,7 @@ class HybridModel {
             DeltaV = BeamDeltaV;
             Lambda0 = BeamLambda0;
             DeltaLambda2 = BeamDeltaLambda2;
+            partConst = BeamConst;
         }
 
         minE = 0.5 * Mass * std::pow(Vmin, 2.0);
@@ -5381,6 +5387,14 @@ class HybridModel {
             }
         }
 
+        const double f0Scale = (static_cast<double>(gridNx) * gridNy * gridNz * ppcNums) /
+                               (static_cast<double>(gridE) * gridPphi * gridLambda * ppcPhase) *
+                               partConst * tubes;
+
+#pragma omp parallel for num_threads(devNums)
+        for (size_t index = 0; index < f0Len; index++)
+            f0[index] *= f0Scale;
+
         if (hostId == 0) {
 
             std::ofstream output;
@@ -5419,7 +5433,7 @@ class HybridModel {
 
         double minVpara, maxVpara, dVpara;
         double minVperp, maxVperp, dVperp;
-        double Mass, Vmin, Vmax, Vb, DeltaV, Lambda0, DeltaLambda2;
+        double Mass, Vmin, Vmax, Vb, DeltaV, Lambda0, DeltaLambda2, partConst;
 
         if constexpr (picType == 0) {
 
@@ -5430,6 +5444,7 @@ class HybridModel {
             DeltaV = IonDeltaV;
             Lambda0 = IonLambda0;
             DeltaLambda2 = IonDeltaLambda2;
+            partConst = IonConst;
 
         } else if constexpr (picType == 1) {
 
@@ -5440,6 +5455,7 @@ class HybridModel {
             DeltaV = AlphaDeltaV;
             Lambda0 = AlphaLambda0;
             DeltaLambda2 = AlphaDeltaLambda2;
+            partConst = AlphaConst;
 
         } else if constexpr (picType == 2) {
 
@@ -5450,6 +5466,7 @@ class HybridModel {
             DeltaV = BeamDeltaV;
             Lambda0 = BeamLambda0;
             DeltaLambda2 = BeamDeltaLambda2;
+            partConst = BeamConst;
         }
 
         minVpara = (picType == 2) ? 0.0 : -Vmax;
@@ -5801,6 +5818,14 @@ class HybridModel {
                     pitchSpaceF0[i][j] *= 2;
             }
         }
+
+        const double f0Scale = (static_cast<double>(gridNx) * gridNy * gridNz * ppcNums) /
+                               (static_cast<double>(gridVpara) * gridVperp * ppcPitch) *
+                               partConst * tubes;
+
+#pragma omp parallel for num_threads(devNums)
+        for (size_t index = 0; index < f0Len; index++)
+            f0[index] *= f0Scale;
 
         if (hostId == 0) {
 
