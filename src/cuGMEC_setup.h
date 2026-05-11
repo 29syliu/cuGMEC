@@ -106,10 +106,10 @@ using ifPIC = std::conditional<std::is_same_v<ifIon, trueType> || std::is_same_v
 using ifLocal = std::conditional<gridNz == 8 || gridNz == 16 || gridNz == 32, trueType, falseType>::type;
 
 const int MRK4BlockDimx = (gridNz == 8) ? 8 : (gridNz == 16) ? 16 : (gridNz == 32) ? 32 : 16;
-const int MRK4BlockDimy = 2;
+const int MRK4BlockDimy = (devNy >= 2) ? 2 : 1;
 const int MRK4BlockDimz = 4;
 const int MRK4GridDimx = gridNx / MRK4BlockDimz;
-const int MRK4GridDimy = gridNy / hostNums / devNums / MRK4BlockDimy;
+const int MRK4GridDimy = devNy / MRK4BlockDimy;
 const int MRK4GridDimz = gridNz / MRK4BlockDimx;
 
 const int GhostBlockDimx = (gridNz == 8) ? 8 : (gridNz == 16) ? 16 : (gridNz == 32) ? 32 : 16;

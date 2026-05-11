@@ -265,16 +265,53 @@ int main(int argc, char* argv[]) {
 
     auto haloExchange = [&]<typename... Guards>(auto... fields) {
         if constexpr (allTrue<Guards...>) {
-            for (int i = 0; i < devNums; i++) {
-                cudaSetDevice(localRank * devNums + i);
-                (
-                    [&](mhdReal** field) {
-                        ncclSend(field[i] + ncclLeftSend, gridGhost * gridNxz, ncclType, ncclLeftNei[i], comms[i], 0);
-                        ncclRecv(field[i] + ncclRightRecv, gridGhost * gridNxz, ncclType, ncclRightNei[i], comms[i], 0);
-                        ncclSend(field[i] + ncclRightSend, gridGhost * gridNxz, ncclType, ncclRightNei[i], comms[i], 0);
-                        ncclRecv(field[i] + ncclLeftRecv, gridGhost * gridNxz, ncclType, ncclLeftNei[i], comms[i], 0);
-                    }(fields),
-                    ...);
+            if constexpr (devNy >= gridGhost) {
+                for (int i = 0; i < devNums; i++) {
+                    cudaSetDevice(localRank * devNums + i);
+                    (
+                        [&](mhdReal** field) {
+                            ncclSend(field[i] + ncclLeftSend, gridGhost * gridNxz, ncclType, ncclLeftNei[i], comms[i],
+                                     0);
+                            ncclRecv(field[i] + ncclRightRecv, gridGhost * gridNxz, ncclType, ncclRightNei[i], comms[i],
+                                     0);
+                            ncclSend(field[i] + ncclRightSend, gridGhost * gridNxz, ncclType, ncclRightNei[i], comms[i],
+                                     0);
+                            ncclRecv(field[i] + ncclLeftRecv, gridGhost * gridNxz, ncclType, ncclLeftNei[i], comms[i],
+                                     0);
+                        }(fields),
+                        ...);
+                }
+            } else {
+                for (int g = 0; g < gridGhost; g++) {
+                    for (int i = 0; i < devNums; i++) {
+                        cudaSetDevice(localRank * devNums + i);
+
+                        const int ncclSelf = myRank * devNums + i;
+                        const int ncclTotal = nRanks * devNums;
+                        const int ncclLayerShift = g / devNy + 1;
+                        const int ncclLayerId = g % devNy;
+
+                        const int ncclLeftLayerNei = (ncclSelf - ncclLayerShift + ncclTotal) % ncclTotal;
+                        const int ncclRightLayerNei = (ncclSelf + ncclLayerShift) % ncclTotal;
+                        const int ncclLeftLayerSend = (gridGhost + ncclLayerId) * gridNxz;
+                        const int ncclRightLayerSend = (gridGhost + devNy - 1 - ncclLayerId) * gridNxz;
+                        const int ncclLeftLayerRecv = (gridGhost - 1 - g) * gridNxz;
+                        const int ncclRightLayerRecv = (gridGhost + devNy + g) * gridNxz;
+
+                        (
+                            [&](mhdReal** field) {
+                                ncclSend(field[i] + ncclLeftLayerSend, gridNxz, ncclType, ncclLeftLayerNei, comms[i],
+                                         0);
+                                ncclRecv(field[i] + ncclRightLayerRecv, gridNxz, ncclType, ncclRightLayerNei, comms[i],
+                                         0);
+                                ncclSend(field[i] + ncclRightLayerSend, gridNxz, ncclType, ncclRightLayerNei, comms[i],
+                                         0);
+                                ncclRecv(field[i] + ncclLeftLayerRecv, gridNxz, ncclType, ncclLeftLayerNei, comms[i],
+                                         0);
+                            }(fields),
+                            ...);
+                    }
+                }
             }
         }
     };
