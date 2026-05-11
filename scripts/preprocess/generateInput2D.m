@@ -94,7 +94,7 @@ TbWindow = size(rhoSample,2);
 PbOrder = 6;
 PbWindow = 22;
 
-run fitProfile1D
+run writeProfile1D
 
 %% (3)
 

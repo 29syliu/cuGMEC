@@ -190,6 +190,10 @@ resonance.harmonic         : 共振线轨道谐波 l；叠加到 phase 图时也
 resonance.harmonicRange    : l min / l max 滑块允许范围。
 interactive      : 0 不交互；1 滑块释放后更新；2 拖动滑块时连续更新。
 %}
+% For phase quantity interactive=1/2, resonance.branch may also be a list,
+% for example {'para','anti'}, {'para','trapped'}, {'anti','trapped'},
+% {'para','anti','trapped'}, ["para","anti"], or 'all'. The remaining
+% resonance parameters and sliders are shared by all selected branches.
 picWorkspace.phaseQuantity = runPICPhaseQuantityPlot(picPhaseData, phaseSpaceOrbit, meta, picPhaseQuantityOpt);
 
 %% 可视化 phase power
@@ -1103,7 +1107,7 @@ function plotPhaseQuantityInteractive(picPhaseData, phaseSpaceOrbit, meta, opt, 
             parseTimeIndex(opt.timeIndex, timeDimensionSize(quantityData)), 1, timeDimensionSize(quantityData))];
     end
     controls = [controls, integerSliderControl('contourCount', 'contours', contourCount, 0, max(20, 2 * contourCount))];
-    controls = appendResonanceControls(controls, opt.resonance, true);
+    controls = appendResonanceControls(controls, opt.resonance, true, true);
 
     plotInteractiveMap(sprintf('%s %s phase-space slice', speciesLabel, quantityField), controls, dynamicUpdate, ...
         @computePlotData, @renderMap);
@@ -1116,7 +1120,7 @@ function plotPhaseQuantityInteractive(picPhaseData, phaseSpaceOrbit, meta, opt, 
         [fieldData, timeIndexText] = selectQuantityFrame(quantityData, isTimeDependent, tempTimeIndex);
         [Z, xVec, yVec, xlabelText, ylabelText, sliceTitle] = slicePhaseField( ...
             dim, values.sliceIndex, fieldData, speciesData);
-        resOpt = resonanceOptionsFromValues(opt.resonance, values);
+        resOpt = resonanceOptionsFromValues(opt.resonance, values, true);
         titleText = phaseQuantityTitleText(speciesLabel, quantityLatex, sliceTitle, timeIndexText, resOpt);
         statusText = sprintf('%s %s, %s index = %d%s, contours = %d', ...
             speciesLabel, quantityField, char(opt.fixedCoordinate), values.sliceIndex, timeIndexText, values.contourCount);
@@ -1478,21 +1482,28 @@ function plotData = attachResonanceOverlay(plotData, phaseSpaceOrbit, speciesLab
     end
 
     orbitData = phaseSpaceOrbit.(speciesLabel);
-    resOpt = validatedResonanceOptions(resOpt);
+    resOpt = validatedResonanceOverlayOptions(resOpt);
+    branchNames = resonanceBranchNames(resOpt);
     harmonicValues = resonanceHarmonicValues(resOpt);
-    hasZero = false(size(harmonicValues));
+    hasZero = false(1, numel(branchNames) * numel(harmonicValues));
     physicalN = resOpt.toroidalMode;
-    for iHarmonic = 1:numel(harmonicValues)
-        lineOpt = resOpt;
-        lineOpt.harmonic = harmonicValues(iHarmonic);
-        [residualHz, physicalN] = calculateResonanceResidualField(orbitData, lineOpt, meta);
-        [resZ, ~, ~, ~, ~, ~] = slicePhaseField(dim, idx, residualHz, orbitData);
-        plotData.resonanceOverlays(iHarmonic).Z = resZ;
-        plotData.resonanceOverlays(iHarmonic).label = sprintf('l = %d', harmonicValues(iHarmonic));
-        plotData.resonanceOverlays(iHarmonic).harmonic = harmonicValues(iHarmonic);
-        hasZero(iHarmonic) = residualHasZeroContour(resZ);
+    iOverlay = 0;
+    for iBranch = 1:numel(branchNames)
+        for iHarmonic = 1:numel(harmonicValues)
+            iOverlay = iOverlay + 1;
+            lineOpt = resOpt;
+            lineOpt.branch = branchNames{iBranch};
+            lineOpt.harmonic = harmonicValues(iHarmonic);
+            [residualHz, physicalN] = calculateResonanceResidualField(orbitData, lineOpt, meta);
+            [resZ, ~, ~, ~, ~, ~] = slicePhaseField(dim, idx, residualHz, orbitData);
+            plotData.resonanceOverlays(iOverlay).Z = resZ;
+            plotData.resonanceOverlays(iOverlay).label = resonanceOverlayLabel( ...
+                branchNames{iBranch}, harmonicValues(iHarmonic), numel(branchNames));
+            plotData.resonanceOverlays(iOverlay).harmonic = harmonicValues(iHarmonic);
+            hasZero(iOverlay) = residualHasZeroContour(resZ);
+        end
     end
-    plotData.status = [plotData.status ', ' resonanceStatusText('', resOpt, physicalN, hasZero)];
+    plotData.status = [plotData.status ', ' resonanceOverlayStatusText('', resOpt, physicalN, branchNames, hasZero)];
 end
 
 function [quantityData, quantityField, quantityLatex, isTimeDependent] = resolvePhaseQuantity(speciesData, quantityName)
@@ -2089,7 +2100,7 @@ function plotInteractiveMap(figName, controls, dynamicUpdate, computePlotData, r
     end
 end
 
-function controls = appendResonanceControls(controls, resOpt, useHarmonicBounds)
+function controls = appendResonanceControls(controls, resOpt, useHarmonicBounds, allowMultipleBranches)
 
     if ~isfield(resOpt, 'enabled') || ~resOpt.enabled
         return;
@@ -2097,8 +2108,17 @@ function controls = appendResonanceControls(controls, resOpt, useHarmonicBounds)
     if nargin < 3
         useHarmonicBounds = false;
     end
+    if nargin < 4
+        allowMultipleBranches = false;
+    end
 
-    resOpt = validatedResonanceOptions(resOpt);
+    if allowMultipleBranches
+        resOpt = validatedResonanceOverlayOptions(resOpt);
+        branchNames = resonanceBranchNames(resOpt);
+    else
+        resOpt = validatedResonanceOptions(resOpt);
+        branchNames = {resOpt.branch};
+    end
     freqRange = normalizeSliderRange(resOpt.frequencyHzRange, resOpt.frequencyHz, 'frequencyHzRange', false);
     nRange = normalizeSliderRange(resOpt.toroidalModeRange, resOpt.toroidalMode, 'toroidalModeRange', true);
     lBounds = [resOpt.harmonicMin, resOpt.harmonicMax];
@@ -2111,7 +2131,7 @@ function controls = appendResonanceControls(controls, resOpt, useHarmonicBounds)
     controls = [controls, ...
         numericSliderControl('resFrequencyHz', 'f/Hz', resOpt.frequencyHz, freqRange(1), freqRange(2), 501), ...
         integerSliderControl('resToroidalMode', 'n', resOpt.toroidalMode, nRange(1), nRange(2))];
-    if ~strcmp(resOpt.branch, 'trapped')
+    if any(~strcmp(branchNames, 'trapped'))
         mRange = normalizeSliderRange(resOpt.poloidalModeRange, resOpt.poloidalMode, 'poloidalModeRange', true);
         mRange(1) = max(0, mRange(1));
         if mRange(1) == mRange(2)
@@ -2128,10 +2148,13 @@ function controls = appendResonanceControls(controls, resOpt, useHarmonicBounds)
     end
 end
 
-function resOpt = resonanceOptionsFromValues(resOpt, values)
+function resOpt = resonanceOptionsFromValues(resOpt, values, allowMultipleBranches)
 
     if ~isfield(resOpt, 'enabled') || ~resOpt.enabled
         return;
+    end
+    if nargin < 3
+        allowMultipleBranches = false;
     end
     if isfield(values, 'resFrequencyHz')
         resOpt.frequencyHz = values.resFrequencyHz;
@@ -2153,7 +2176,11 @@ function resOpt = resonanceOptionsFromValues(resOpt, values)
     if isfield(values, 'resHarmonicMax')
         resOpt.harmonicMax = values.resHarmonicMax;
     end
-    resOpt = validatedResonanceOptions(resOpt);
+    if allowMultipleBranches
+        resOpt = validatedResonanceOverlayOptions(resOpt);
+    else
+        resOpt = validatedResonanceOptions(resOpt);
+    end
 end
 
 function resOpt = validatedResonanceOptions(resOpt)
@@ -2166,6 +2193,23 @@ function resOpt = validatedResonanceOptions(resOpt)
     resOpt.toroidalMode = readNonnegativeIntegerScalar(resOpt.toroidalMode, 'toroidalMode');
     if ~strcmp(resOpt.branch, 'trapped')
         resOpt.poloidalMode = readNonnegativeIntegerScalar(resOpt.poloidalMode, 'poloidalMode');
+    end
+    resOpt = normalizeResonanceHarmonicOptions(resOpt);
+end
+
+function resOpt = validatedResonanceOverlayOptions(resOpt)
+
+    if ~isfield(resOpt, 'enabled')
+        resOpt.enabled = true;
+    end
+    branchNames = normalizeResonanceBranches(resOpt.branch);
+    resOpt.branch = branchNames;
+    resOpt.frequencyHz = validateFiniteScalar(resOpt.frequencyHz, 'frequencyHz');
+    resOpt.toroidalMode = readNonnegativeIntegerScalar(resOpt.toroidalMode, 'toroidalMode');
+    if any(~strcmp(branchNames, 'trapped'))
+        resOpt.poloidalMode = readNonnegativeIntegerScalar(resOpt.poloidalMode, 'poloidalMode');
+    elseif ~isfield(resOpt, 'poloidalMode') || isempty(resOpt.poloidalMode)
+        resOpt.poloidalMode = 0;
     end
     resOpt = normalizeResonanceHarmonicOptions(resOpt);
 end
@@ -2203,6 +2247,20 @@ end
 function harmonicValues = resonanceHarmonicValues(resOpt)
 
     harmonicValues = resOpt.harmonicMin:resOpt.harmonicMax;
+end
+
+function branchNames = resonanceBranchNames(resOpt)
+
+    branchNames = normalizeResonanceBranches(resOpt.branch);
+end
+
+function label = resonanceOverlayLabel(branchName, harmonic, nBranch)
+
+    if nBranch > 1
+        label = sprintf('%s, l = %d', branchName, harmonic);
+    else
+        label = sprintf('l = %d', harmonic);
+    end
 end
 
 function titleText = simpleTitleText(speciesLabel, quantityLatex, sliceTitle, extraLatex)
@@ -2274,6 +2332,24 @@ function text = resonanceStatusText(speciesLabel, resOpt, physicalN, hasZero)
     else
         text = sprintf('%sres %s, f = %.6g Hz, n = %d, m = %d, %s, zero = %s', ...
             prefix, resOpt.branch, resOpt.frequencyHz, physicalN, resOpt.poloidalMode, harmonicText, zeroText);
+    end
+end
+
+function text = resonanceOverlayStatusText(speciesLabel, resOpt, physicalN, branchNames, hasZero)
+
+    zeroText = resonanceZeroText(hasZero);
+    harmonicText = resonanceHarmonicStatusText(resOpt);
+    branchText = strjoin(branchNames, '/');
+    prefix = '';
+    if ~isempty(speciesLabel)
+        prefix = [speciesLabel ' '];
+    end
+    if any(~strcmp(branchNames, 'trapped'))
+        text = sprintf('%sres %s, f = %.6g Hz, n = %d, m = %d, %s, zero = %s', ...
+            prefix, branchText, resOpt.frequencyHz, physicalN, resOpt.poloidalMode, harmonicText, zeroText);
+    else
+        text = sprintf('%sres %s, f = %.6g Hz, n = %d, %s, zero = %s', ...
+            prefix, branchText, resOpt.frequencyHz, physicalN, harmonicText, zeroText);
     end
 end
 
@@ -2538,6 +2614,34 @@ function branchName = normalizeResonanceBranch(branchText)
     if ~ismember(branchName, {'para', 'anti', 'trapped'})
         error('resonance branch 必须为 "para"、"anti" 或 "trapped"。');
     end
+end
+
+function branchNames = normalizeResonanceBranches(branchText)
+
+    if iscell(branchText)
+        rawNames = branchText(:).';
+    elseif isstring(branchText)
+        rawNames = cellstr(branchText(:).');
+    else
+        branchText = char(branchText);
+        rawNames = regexp(strtrim(branchText), '[,;|\s]+', 'split');
+    end
+
+    branchNames = {};
+    for iName = 1:numel(rawNames)
+        nameText = lower(strtrim(char(rawNames{iName})));
+        if isempty(nameText)
+            continue;
+        elseif strcmp(nameText, 'all')
+            branchNames = [branchNames, {'para', 'anti', 'trapped'}]; %#ok<AGROW>
+        else
+            branchNames{end + 1} = normalizeResonanceBranch(nameText); %#ok<AGROW>
+        end
+    end
+
+    assert(~isempty(branchNames), ...
+        'resonance branch must include at least one of "para", "anti", or "trapped".');
+    branchNames = unique(branchNames, 'stable');
 end
 
 function [unitScale, colorbarLabel] = frequencyUnitScale(unitText)
