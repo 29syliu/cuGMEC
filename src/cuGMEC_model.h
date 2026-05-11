@@ -843,6 +843,8 @@ class HybridModel {
             if constexpr (std::is_same_v<ifStaggered, trueType>)
                 fs::copy_file(inputDir + "/" + MHDStaggered, finalDir + "/" + MHDStaggered,
                               fs::copy_options::overwrite_existing);
+            if (fs::exists("src/cuGMEC_param.h"))
+                fs::copy_file("src/cuGMEC_param.h", finalDir + "/cuGMEC_param.h", fs::copy_options::overwrite_existing);
 
             if constexpr (std::is_same_v<ifContinue, falseType> || continueSteps == 0) {
                 fs::copy_file(inputDir + "/" + MHDCollocated, initialDir + "/" + MHDCollocated,
@@ -5388,8 +5390,7 @@ class HybridModel {
         }
 
         const double f0Scale = (static_cast<double>(gridNx) * gridNy * gridNz * ppcNums) /
-                               (static_cast<double>(gridE) * gridPphi * gridLambda * ppcPhase) *
-                               partConst * tubes;
+                               (static_cast<double>(gridE) * gridPphi * gridLambda * ppcPhase) * partConst * tubes;
 
 #pragma omp parallel for num_threads(devNums)
         for (size_t index = 0; index < f0Len; index++)
@@ -5820,8 +5821,7 @@ class HybridModel {
         }
 
         const double f0Scale = (static_cast<double>(gridNx) * gridNy * gridNz * ppcNums) /
-                               (static_cast<double>(gridVpara) * gridVperp * ppcPitch) *
-                               partConst * tubes;
+                               (static_cast<double>(gridVpara) * gridVperp * ppcPitch) * partConst * tubes;
 
 #pragma omp parallel for num_threads(devNums)
         for (size_t index = 0; index < f0Len; index++)
