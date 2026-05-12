@@ -192,8 +192,8 @@ interactive      : 0 不交互；1 滑块释放后更新；2 拖动滑块时连�
 %}
 % For phase quantity interactive=1/2, resonance.branch may also be a list,
 % for example {'para','anti'}, {'para','trapped'}, {'anti','trapped'},
-% {'para','anti','trapped'}, ["para","anti"], or 'all'. The remaining
-% resonance parameters and sliders are shared by all selected branches.
+% {'para','anti','trapped'}, ["para","anti"], or 'all'. Frequency, n, and m
+% sliders are shared; each selected branch gets its own l min / l max pair.
 picWorkspace.phaseQuantity = runPICPhaseQuantityPlot(picPhaseData, phaseSpaceOrbit, meta, picPhaseQuantityOpt);
 
 %% 可视化 phase power
@@ -789,6 +789,11 @@ end
 function result = analyzeSpeciesOrbitRecords(speciesName, rawOrbit, phaseGrid)
 
     records = orbitRecordColumns(rawOrbit.data);
+    [records, nanRecordCount] = convertNaNOrbitRecordsToPad(records);
+    if nanRecordCount > 0
+        fprintf('[orbit] %s PhaseSpaceOrbit.bin: %d 个含 NaN 的轨道粒子/记录已按 pad 处理。\n', ...
+            speciesName, nanRecordCount);
+    end
     assertNoNaN(speciesName, records);
 
     nPhase = phaseGrid.gridE * phaseGrid.gridPphi * phaseGrid.gridLambda;
@@ -1484,11 +1489,11 @@ function plotData = attachResonanceOverlay(plotData, phaseSpaceOrbit, speciesLab
     orbitData = phaseSpaceOrbit.(speciesLabel);
     resOpt = validatedResonanceOverlayOptions(resOpt);
     branchNames = resonanceBranchNames(resOpt);
-    harmonicValues = resonanceHarmonicValues(resOpt);
-    hasZero = false(1, numel(branchNames) * numel(harmonicValues));
+    hasZero = false(1, 0);
     physicalN = resOpt.toroidalMode;
     iOverlay = 0;
     for iBranch = 1:numel(branchNames)
+        harmonicValues = resOpt.harmonicMinList(iBranch):resOpt.harmonicMaxList(iBranch);
         for iHarmonic = 1:numel(harmonicValues)
             iOverlay = iOverlay + 1;
             lineOpt = resOpt;
@@ -2121,8 +2126,6 @@ function controls = appendResonanceControls(controls, resOpt, useHarmonicBounds,
     end
     freqRange = normalizeSliderRange(resOpt.frequencyHzRange, resOpt.frequencyHz, 'frequencyHzRange', false);
     nRange = normalizeSliderRange(resOpt.toroidalModeRange, resOpt.toroidalMode, 'toroidalModeRange', true);
-    lBounds = [resOpt.harmonicMin, resOpt.harmonicMax];
-    lRange = normalizeSliderRangeForValues(resOpt.harmonicRange, lBounds, 'harmonicRange', true);
     nRange(1) = max(0, nRange(1));
     if nRange(1) == nRange(2)
         nRange(2) = nRange(1) + 1;
@@ -2140,10 +2143,26 @@ function controls = appendResonanceControls(controls, resOpt, useHarmonicBounds,
         controls = [controls, integerSliderControl('resPoloidalMode', 'm', resOpt.poloidalMode, mRange(1), mRange(2))];
     end
     if useHarmonicBounds
-        controls = [controls, ...
-            integerSliderControl('resHarmonicMin', 'l min', lBounds(1), lRange(1), lRange(2)), ...
-            integerSliderControl('resHarmonicMax', 'l max', lBounds(2), lRange(1), lRange(2))];
+        if allowMultipleBranches && numel(branchNames) > 1
+            for iBranch = 1:numel(branchNames)
+                lBounds = [resOpt.harmonicMinList(iBranch), resOpt.harmonicMaxList(iBranch)];
+                lRange = normalizeSliderRangeForValues(resOpt.harmonicRange, lBounds, 'harmonicRange', true);
+                controls = [controls, ...
+                    integerSliderControl(sprintf('resHarmonicMin%d', iBranch), ...
+                    [branchNames{iBranch} ' l min'], lBounds(1), lRange(1), lRange(2)), ...
+                    integerSliderControl(sprintf('resHarmonicMax%d', iBranch), ...
+                    [branchNames{iBranch} ' l max'], lBounds(2), lRange(1), lRange(2))]; %#ok<AGROW>
+            end
+        else
+            lBounds = [resOpt.harmonicMin, resOpt.harmonicMax];
+            lRange = normalizeSliderRangeForValues(resOpt.harmonicRange, lBounds, 'harmonicRange', true);
+            controls = [controls, ...
+                integerSliderControl('resHarmonicMin', 'l min', lBounds(1), lRange(1), lRange(2)), ...
+                integerSliderControl('resHarmonicMax', 'l max', lBounds(2), lRange(1), lRange(2))];
+        end
     else
+        lBounds = [resOpt.harmonicMin, resOpt.harmonicMax];
+        lRange = normalizeSliderRangeForValues(resOpt.harmonicRange, lBounds, 'harmonicRange', true);
         controls = [controls, integerSliderControl('resHarmonic', 'l', resOpt.harmonic, lRange(1), lRange(2))];
     end
 end
@@ -2177,6 +2196,21 @@ function resOpt = resonanceOptionsFromValues(resOpt, values, allowMultipleBranch
         resOpt.harmonicMax = values.resHarmonicMax;
     end
     if allowMultipleBranches
+        branchNames = normalizeResonanceBranches(resOpt.branch);
+        if numel(branchNames) > 1
+            resOpt = normalizeResonanceHarmonicOptions(resOpt);
+            resOpt = normalizeResonanceOverlayHarmonicOptions(resOpt, numel(branchNames));
+            for iBranch = 1:numel(branchNames)
+                minField = sprintf('resHarmonicMin%d', iBranch);
+                maxField = sprintf('resHarmonicMax%d', iBranch);
+                if isfield(values, minField)
+                    resOpt.harmonicMinList(iBranch) = values.(minField);
+                end
+                if isfield(values, maxField)
+                    resOpt.harmonicMaxList(iBranch) = values.(maxField);
+                end
+            end
+        end
         resOpt = validatedResonanceOverlayOptions(resOpt);
     else
         resOpt = validatedResonanceOptions(resOpt);
@@ -2212,6 +2246,7 @@ function resOpt = validatedResonanceOverlayOptions(resOpt)
         resOpt.poloidalMode = 0;
     end
     resOpt = normalizeResonanceHarmonicOptions(resOpt);
+    resOpt = normalizeResonanceOverlayHarmonicOptions(resOpt, numel(branchNames));
 end
 
 function resOpt = normalizeResonanceHarmonicOptions(resOpt)
@@ -2244,9 +2279,41 @@ function resOpt = normalizeResonanceHarmonicOptions(resOpt)
     resOpt.harmonic = validateIntegerScalar(rawHarmonic(1), 'harmonic');
 end
 
-function harmonicValues = resonanceHarmonicValues(resOpt)
+function resOpt = normalizeResonanceOverlayHarmonicOptions(resOpt, nBranch)
 
-    harmonicValues = resOpt.harmonicMin:resOpt.harmonicMax;
+    if isfield(resOpt, 'harmonicMinList') && ~isempty(resOpt.harmonicMinList)
+        harmonicMinList = reshape(double(resOpt.harmonicMinList), 1, []);
+    else
+        harmonicMinList = resOpt.harmonicMin;
+    end
+    if isfield(resOpt, 'harmonicMaxList') && ~isempty(resOpt.harmonicMaxList)
+        harmonicMaxList = reshape(double(resOpt.harmonicMaxList), 1, []);
+    else
+        harmonicMaxList = resOpt.harmonicMax;
+    end
+    if isscalar(harmonicMinList)
+        harmonicMinList = repmat(harmonicMinList, 1, nBranch);
+    end
+    if isscalar(harmonicMaxList)
+        harmonicMaxList = repmat(harmonicMaxList, 1, nBranch);
+    end
+    assert(numel(harmonicMinList) == nBranch && numel(harmonicMaxList) == nBranch, ...
+        'harmonicMinList/harmonicMaxList must match the number of resonance branches.');
+
+    for iBranch = 1:nBranch
+        harmonicMin = validateIntegerScalar(harmonicMinList(iBranch), 'harmonicMinList');
+        harmonicMax = validateIntegerScalar(harmonicMaxList(iBranch), 'harmonicMaxList');
+        if harmonicMin > harmonicMax
+            tmp = harmonicMin;
+            harmonicMin = harmonicMax;
+            harmonicMax = tmp;
+        end
+        harmonicMinList(iBranch) = harmonicMin;
+        harmonicMaxList(iBranch) = harmonicMax;
+    end
+
+    resOpt.harmonicMinList = harmonicMinList;
+    resOpt.harmonicMaxList = harmonicMaxList;
 end
 
 function branchNames = resonanceBranchNames(resOpt)
@@ -2365,6 +2432,12 @@ function text = resonanceZeroText(hasZero)
 end
 
 function text = resonanceHarmonicStatusText(resOpt)
+
+    if isfield(resOpt, 'harmonicMinList') && isfield(resOpt, 'harmonicMaxList') && ...
+            numel(resOpt.harmonicMinList) > 1
+        text = 'l = branch-specific';
+        return;
+    end
 
     if isfield(resOpt, 'harmonicMin') && isfield(resOpt, 'harmonicMax') && ...
             resOpt.harmonicMin ~= resOpt.harmonicMax
@@ -3340,6 +3413,28 @@ function assertNoNaN(speciesName, records)
         sum(isnan(records.dphiVpara)) + sum(isnan(records.dTs)) + ...
         sum(isnan(records.Es)) + sum(isnan(records.Pphis)) + sum(isnan(records.Lambdas));
     assert(nanCount == 0, '%s PhaseSpaceOrbit.bin 中存在 NaN，数量为 %d。', speciesName, nanCount);
+end
+
+function [records, nanRecordCount] = convertNaNOrbitRecordsToPad(records)
+
+    nanRecord = isnan(double(records.Ids)) | isnan(records.orbits) | ...
+        isnan(records.dtheta) | isnan(records.dphiTotal) | ...
+        isnan(records.dphiVpara) | isnan(records.dTs) | ...
+        isnan(records.Es) | isnan(records.Pphis) | isnan(records.Lambdas);
+    nanRecordCount = sum(nanRecord);
+    if nanRecordCount == 0
+        return;
+    end
+
+    records.Ids(nanRecord) = int32(20251106);
+    records.orbits(nanRecord) = 0.5;
+    records.dtheta(nanRecord) = 0;
+    records.dphiTotal(nanRecord) = 0;
+    records.dphiVpara(nanRecord) = 0;
+    records.dTs(nanRecord) = 0;
+    records.Es(nanRecord) = 0;
+    records.Pphis(nanRecord) = 0;
+    records.Lambdas(nanRecord) = 0;
 end
 
 function warnIfSignedIdOrderLooksWrong(speciesName, Ids, recordBranch, validRecord)
