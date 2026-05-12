@@ -374,6 +374,47 @@ if hasTotalFieldResult
 end
 clear tmpShifted tmpAligned hasFieldResult hasTotalFieldResult
 
+%% 可视化单时间MHD极向模数
+
+mhdTotalPoloidalModeOpt = struct( ...
+    'enabled', true, ...
+    'names', mhdTotalFieldOpt.names, ...
+    'timeIndex', meta.nOutputTime, ...
+    'modeN', mhdTotalFieldOpt.modeN, ...
+    'toroidalAngle', mhdTotalFieldOpt.toroidalAngle, ...
+    'mRange', [1, 20], ...
+    'plotThreshold', 1e-8, ...
+    'minFFT', 0, ...
+    'normalize', true, ...
+    'radialAxis', 'rho', ...
+    'bsplineOrder', mhdTotalFieldOpt.bsplineOrder, ...
+    'xLim', [0, 1], ...
+    'xTicks', 0:0.2:1, ...
+    'yLim', [0, 1], ...
+    'yTicks', 0:0.25:1, ...
+    'titleFontSize', 14, ...
+    'labelFontSize', 14, ...
+    'axisFontSize', 12);
+%{
+enabled       : 是否绘图。
+names         : 可选 "Phi", "A", "dNe", "dTe", "dPi", "dPa", "dPb"；对应 totalPhi 等 total 场。
+timeIndex     : total 场量输出时间索引（1 到 nOutputTime）。
+modeN         : 真实物理环向模数 n；[] 表示全部有效 n；示例 [6 18 36]。
+toroidalAngle : 做极向截面的环向角 phi。
+mRange        : 绘制的极向模数 m 范围；示例 [1 20]。
+plotThreshold : 只绘制峰值超过全局峰值该比例的 m。
+minFFT        : 只绘制归一化峰值超过该值的 m。
+normalize     : 是否用所选 m 范围内的最大 FFT 幅值归一化。
+radialAxis    : 'rho' 表示横坐标为 sqrt(s)，'psi' 表示近似使用 rho^2。
+bsplineOrder  : B 样条阶数。
+xLim/xTicks   : 横坐标范围和刻度；[] 表示自动。
+yLim/yTicks   : 纵坐标范围和刻度；[] 表示自动。
+titleFontSize : 标题字号。
+labelFontSize : 坐标轴标签字号。
+axisFontSize  : 坐标轴字号。
+%}
+mhdWorkspace.totalPoloidalMode = runMHDPoloidalModePlot(mhdData.total, meta, mhdInput, mhdFieldGeom, mhdTotalPoloidalModeOpt);
+
 %% 局部函数
 
 function [shifted, aligned, hasResult] = extractShiftedAligned(workspace)
@@ -611,7 +652,7 @@ function workspace = runMHDFieldPlot(inputDir, meta, mhdFieldGeom, opt)
     end
 end
 
-function workspace = runMHDPoloidalModePlot(inputDir, meta, mhdInput, mhdFieldGeom, opt)
+function workspace = runMHDPoloidalModePlot(inputSource, meta, mhdInput, mhdFieldGeom, opt)
 
     workspace = struct('options', opt);
     if ~opt.enabled
@@ -623,24 +664,37 @@ function workspace = runMHDPoloidalModePlot(inputDir, meta, mhdInput, mhdFieldGe
         return;
     end
 
+    useTotalField = isstruct(inputSource) && isfield(opt, 'timeIndex') && ~isempty(opt.timeIndex);
     fieldNames = string(opt.names);
     for iField = 1:numel(fieldNames)
         fieldName = fieldNames(iField);
         fieldNameText = char(fieldName);
-        fieldFile = fullfile(inputDir, [fieldNameText '.bin']);
-        if ~isfile(fieldFile)
-            logSkipped(fieldNameText, '文件不存在');
-            continue;
-        end
+        if useTotalField
+            if ~isfield(inputSource, fieldNameText) || isempty(inputSource.(fieldNameText))
+                logSkipped(['total' fieldNameText], '未读取该场量');
+                continue;
+            end
+            totalData = inputSource.(fieldNameText);
+            timeIdx = parseTimeIndex(opt.timeIndex, size(totalData, 1));
+            fieldZYX = totalMHDFieldTimeSliceAsZYX(totalData, timeIdx);
+            fieldNameTextForPlot = ['total' fieldNameText];
+        else
+            fieldFile = fullfile(inputSource, [fieldNameText '.bin']);
+            if ~isfile(fieldFile)
+                logSkipped(fieldNameText, '文件不存在');
+                continue;
+            end
 
-        fieldZYX = readMHDFieldAsZYX(inputDir, fieldName, meta.mhdPrecision, meta.gridNy, meta.gridNx, meta.gridNz);
+            fieldZYX = readMHDFieldAsZYX(inputSource, fieldName, meta.mhdPrecision, meta.gridNy, meta.gridNx, meta.gridNz);
+            fieldNameTextForPlot = fieldNameText;
+        end
         [fieldModeIndex, fieldPhysicalN] = parseModeN(opt.modeN, meta.modeIndexAll, meta.physicalNAll, 'MHD 极向模数');
         fieldZYX = filterMHDToroidalModes(fieldZYX, meta.modeIndexAll, fieldModeIndex);
 
         [plotField, fftField, xVec, xLabelText, selectedM, yData, rawAmplitude] = ...
             calculateMHDPoloidalModeFFT(fieldZYX, mhdInput, mhdFieldGeom, opt);
         if isempty(selectedM)
-            logSkipped([fieldNameText ' poloidal mode plot'], '没有可绘制的极向模数');
+            logSkipped([fieldNameTextForPlot ' poloidal mode plot'], '没有可绘制的极向模数');
             continue;
         end
 
@@ -649,10 +703,16 @@ function workspace = runMHDPoloidalModePlot(inputDir, meta, mhdInput, mhdFieldGe
         else
             yLabelText = '$|U_m|$';
         end
-        titleText = sprintf('%s poloidal FFT', fieldNameText);
+        titleText = sprintf('%s poloidal FFT', fieldNameTextForPlot);
         legendText = compose('$m=%d$', selectedM);
-        statusText = sprintf('%s poloidal FFT: n=%s, m=%s', ...
-            fieldNameText, formatNumberList(fieldPhysicalN), formatNumberList(selectedM));
+        if useTotalField
+            statusText = sprintf('%s poloidal FFT: timeIndex=%d, t_a=%.6g, n=%s, m=%s', ...
+                fieldNameTextForPlot, timeIdx, meta.tOutput(timeIdx), ...
+                formatNumberList(fieldPhysicalN), formatNumberList(selectedM));
+        else
+            statusText = sprintf('%s poloidal FFT: n=%s, m=%s', ...
+                fieldNameTextForPlot, formatNumberList(fieldPhysicalN), formatNumberList(selectedM));
+        end
 
         plotData = linePlotData(xVec, yData, xLabelText, yLabelText, titleText, legendText, statusText);
         drawLinePlot(plotData, opt);
@@ -666,6 +726,9 @@ function workspace = runMHDPoloidalModePlot(inputDir, meta, mhdInput, mhdFieldGe
             'x', xVec, ...
             'm', selectedM, ...
             'physicalN', fieldPhysicalN);
+        if useTotalField
+            workspace.(fieldNameText).timeIndex = timeIdx;
+        end
     end
 end
 
