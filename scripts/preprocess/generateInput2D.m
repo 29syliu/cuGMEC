@@ -7,7 +7,7 @@
 
 2. 代码块 (1) 的参数含义
 addpath：MATLAB 预处理脚本目录和 BSI 目录的位置。
-inputPath：DESC 输出数据和 NTP.mat 所在目录。当前脚本会从该目录读取 standard2D.mat，refined2D.mat，NTP.mat。
+inputPath：DESC 输出数据和 NTP.mat 所在目录。当前脚本会从该目录读取 standard2D.mat，NTP.mat。
 outputPath：MATLAB 生成 cuGMEC 输入文件的输出目录。
 equilibriumName：最终生成的平衡输入二进制文件名，例如 MHDCollocated_256_32.bin。
 
@@ -45,8 +45,8 @@ normalization2D.mat 中包含 B0，L0，VA0，RHO0，RHO1，PSITMAX，IonBeta，
 
 clear all
 close all
-addpath('C:\Users\Desktop\preprocess\MATLAB')
-addpath('C:\Users\Desktop\preprocess\MATLAB\BSI')
+addpath('C:\Users\Desktop\preprocess')
+addpath('C:\Users\Desktop\preprocess\BSI')
 
 inputPath = 'C:\Users\Desktop\';
 outputPath = 'C:\Users\Desktop\';
@@ -57,7 +57,6 @@ if ~exist(outputPath, 'dir')
 end
 
 load(strcat(inputPath,'standard2D.mat'));
-load(strcat(inputPath,'refined2D.mat'));
 
 %% (2)
 

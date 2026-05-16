@@ -9,21 +9,16 @@ I1 = ones(N_rho,N_theta);
 
 order = uint64(5);
 
-isperiodic_1d = false;
 isperiodic_2d = [false,true]';
-range_1d = {[refined_rho(1,1),refined_rho(end,1)]};
-range_2d = {[refined_rho(1,1),refined_rho(end,1)];[refined_theta(1,1),refined_theta(1,1)+2*pi]};
+range_2d = {[double(rho(1,1)),double(rho(end,1))];[double(theta_pest(1,1)),double(theta_pest(1,1))+2*pi]};
 
-coor_interp_1d = rho(:,1);
-coor_interp_2d = [rho(:),theta_desc(:)];
+coor_interp_2d = double([rho(:),theta_pest(:)]);
 
-interp_1d_ = @(f, drho) bspline(order,isperiodic_1d,range_1d,f',coor_interp_1d,uint64(drho));
-interp_2d_ = @(f, drho, dtheta) reshape(bspline(order,isperiodic_2d,range_2d,f,coor_interp_2d,uint64([drho;dtheta])),N_rho,[]);
+interp_2d_ = @(f, drho, dtheta) reshape(bspline(order,isperiodic_2d,range_2d,double(f),coor_interp_2d,uint64([drho;dtheta])),N_rho,[]);
 
 interp_2d_d1_ = @(f) deal(interp_2d_(f,0,0),interp_2d_(f,1,0),interp_2d_(f,0,1));
-interp_2d_d2_ = @(f) deal(interp_2d_(f,0,0),interp_2d_(f,1,0),interp_2d_(f,0,1),interp_2d_(f,2,0),interp_2d_(f,1,1),interp_2d_(f,0,2));
 
-%% Interpolate q,gcov
+%% q derivative and zero toroidal derivatives
 
 dq_dr = -diota_dr./iota.^2;
 dq_dr2 = -diota_dr2./iota.^2 + 2*diota_dr.^2./iota.^3;
@@ -32,14 +27,19 @@ vars = ["r","t","z"];
 for i=1:3
     for j=i:3
         varname = ['gcov_',char(vars(i)),char(vars(j))];
-        eval(['d',varname,'_dr = interp_2d_(refined_',varname,',1,0);'])
-        eval(['d',varname,'_dt = interp_2d_(refined_',varname,',0,1);'])
-
         eval(['d',varname,'_dz = zeros(N_rho,N_theta);'])
         varname = ['gcon_',char(vars(i)),char(vars(j))];
         eval(['d',varname,'_dz = zeros(N_rho,N_theta);'])
     end
 end
+
+direct_names = ["xx","xy","xz","yy","yz","zz"];
+for n=1:numel(direct_names)
+    eval(['dPESTcon_',char(direct_names(n)),'_pz = zeros(N_rho,N_theta);']);
+    eval(['dPESTcov_',char(direct_names(n)),'_pz = zeros(N_rho,N_theta);']);
+end
+
+dJPEST_dphi = zeros(N_rho,N_theta);
 
 %% 2d variable
 
@@ -48,28 +48,10 @@ dB_drdz = zeros(N_rho,N_theta);
 dB_dtdz = zeros(N_rho,N_theta);
 dB_dz2 = zeros(N_rho,N_theta);
 
-dR_dz = zeros(N_rho,N_theta);
-dR_drdz = zeros(N_rho,N_theta);
-dR_dtdz = zeros(N_rho,N_theta);
-dR_dz2 = zeros(N_rho,N_theta);
-
-dZ_dz = zeros(N_rho,N_theta);
-dZ_drdz = zeros(N_rho,N_theta);
-dZ_dtdz = zeros(N_rho,N_theta);
-dZ_dz2 = zeros(N_rho,N_theta);
-
 dlambda_dz = zeros(N_rho,N_theta);
 dlambda_drdz = zeros(N_rho,N_theta);
 dlambda_dtdz = zeros(N_rho,N_theta);
 dlambda_dz2 = zeros(N_rho,N_theta);
-
-dR_drho=dR_dr+(-1).*dlambda_dr.*(I1+dlambda_dt).^(-1).*dR_dt;
-dR_dtheta=(I1+dlambda_dt).^(-1).*dR_dt;
-dR_dphi=(-1).*(I1+dlambda_dt).^(-1).*dlambda_dz.*dR_dt+dR_dz;
-
-dZ_drho=dZ_dr+(-1).*dlambda_dr.*(I1+dlambda_dt).^(-1).*dZ_dt;
-dZ_dtheta=(I1+dlambda_dt).^(-1).*dZ_dt;
-dZ_dphi=(-1).*(I1+dlambda_dt).^(-1).*dlambda_dz.*dZ_dt+dZ_dz;
 
 dB_drho=dB_dr+(-1).*dB_dt.*dlambda_dr.*(I1+dlambda_dt).^(-1);
 
@@ -832,12 +814,8 @@ title('Relative Error');
 
 %% Jpara/B
 
-[jp,djp_dr,djp_dt] = interp_2d_d1_(refined_Jpara);
-djp_dz = zeros(N_rho,N_theta);
-
-djp_drho=djp_dr+(-1).*dlambda_dr.*(I1+dlambda_dt).^(-1).*djp_dt;
-djp_dtheta=(I1+dlambda_dt).^(-1).*djp_dt;
-djp_dphi=(-1).*(I1+dlambda_dt).^(-1).*dlambda_dz.*djp_dt+djp_dz;
+[jp,djp_drho,djp_dtheta] = interp_2d_d1_(J_parallel);
+djp_dphi = zeros(N_rho,N_theta);
 
 jp_B = jp./B;
 djp_B_drho = (djp_drho.*B-dB_drho.*jp)./B.^2;
@@ -875,14 +853,13 @@ gcov_thetaphi = PESTcov_yz;
 gcov_phiphi = PESTcov_zz;
 
 vars = ["rho","theta","phi"];
-for i=1:3
-    for j=i:3
-        for k=1:3
-            varname = ['dgcon_',char(vars(i)),char(vars(j)),'_d',char(vars(k))];        
-            eval([varname,' = dgconPEST_d',char(vars(k)),'{',num2str(i),',',num2str(j),'};']);
-            varname = ['dgcov_',char(vars(i)),char(vars(j)),'_d',char(vars(k))];        
-            eval([varname,' = dgcovPEST_d',char(vars(k)),'{',num2str(i),',',num2str(j),'};']);
-        end
+metric_names = ["rhorho","rhotheta","rhophi","thetatheta","thetaphi","phiphi"];
+direct_names = ["xx","xy","xz","yy","yz","zz"];
+direct_vars = ["px","py","pz"];
+for n=1:numel(metric_names)
+    for k=1:3
+        eval(['dgcon_',char(metric_names(n)),'_d',char(vars(k)),' = dPESTcon_',char(direct_names(n)),'_',char(direct_vars(k)),';']);
+        eval(['dgcov_',char(metric_names(n)),'_d',char(vars(k)),' = dPESTcov_',char(direct_names(n)),'_',char(direct_vars(k)),';']);
     end
 end
 
@@ -1270,8 +1247,7 @@ dgcov_phiphi_dphi;
 
 %%
 
-nnz(dR_dphi+dZ_dphi+ ...
-    dB_dphi+dB_drhodphi+dB_dthetadphi+dB_dphi2+ ...
+nnz(dB_dphi+dB_drhodphi+dB_dthetadphi+dB_dphi2+ ...
     dJpest_dphi+ ...
     djp_B_dphi+ ...
     dgconPEST_dphi{1,1}+dgconPEST_dphi{1,2}+dgconPEST_dphi{1,3}+dgconPEST_dphi{2,2}+dgconPEST_dphi{2,3}+dgconPEST_dphi{3,3}+ ...
@@ -1280,7 +1256,3 @@ nnz(dR_dphi+dZ_dphi+ ...
     dgcovSFT_dz{1,1}+dgcovSFT_dz{1,2}+dgcovSFT_dz{1,3}+dgcovSFT_dz{2,2}+dgcovSFT_dz{2,3}+dgcovSFT_dz{3,3}+ ...
     nnz(dgconSFA_dz{1,1}+dgconSFA_dz{1,2}+dgconSFA_dz{1,3}+dgconSFA_dz{2,2}+dgconSFA_dz{2,3}+dgconSFA_dz{3,3}+ ...
     dgcovSFA_dz{1,1}+dgcovSFA_dz{1,2}+dgcovSFA_dz{1,3}+dgcovSFA_dz{2,2}+dgcovSFA_dz{2,3}+dgcovSFA_dz{3,3}))
-
-
-%%
-
