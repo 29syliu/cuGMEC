@@ -53,7 +53,7 @@ enum picType { Ion, Alpha, Beam };
 enum disType { Maxwell, Slowing0, Slowing1, Slowing2, Slowing3 };
 enum spaceType { spaceReal, spaceUniform };
 enum velocityType { velocityReal, velocityUniform };
-enum matrixType { Laplacian, Resistive, Perp2Phi, Perp2dNe, Perp2dTe, Perp2dPi, Perp2dPa, Perp2dPb };
+enum matrixType { Laplacian, Resistive, Perp2Phi, Perp2dNe, Perp2dTe, Perp2dP };
 using trueType = std::integral_constant<bool, true>;
 using falseType = std::integral_constant<bool, false>;
 template <typename... Ts>

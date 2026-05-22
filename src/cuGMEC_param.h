@@ -83,6 +83,7 @@ using ifStaggered = falseType;
 using ifNonlinearMHD = trueType;
 using ifEparallel = trueType;
 using ifFLRMHD = falseType;
+using ifQNeutrality = trueType;
 using ifMaxwellStress = trueType;
 using ifReynoldsStress = trueType;
 const mhdReal MaxwellStressCoef = 1.0;
@@ -108,27 +109,10 @@ using ifNablaPara4dTe = trueType;
 const mhdReal perp2dTe = 2.0e-7;
 const mhdReal para4dTe = 1.0e-7;
 
-using ifNablaPerp2dPi = trueType;
-using ifNablaPara4dPi = falseType;
-const mhdReal perp2dPi = 1.0e-6;
-const mhdReal para4dPi = 0.0;
-
-using ifNablaPerp2dPa = trueType;
-using ifNablaPara4dPa = falseType;
-const mhdReal perp2dPa = 1.0e-6;
-const mhdReal para4dPa = 0.0;
-
-using ifNablaPerp2dPb = trueType;
-using ifNablaPara4dPb = falseType;
-const mhdReal perp2dPb = 1.0e-6;
-const mhdReal para4dPb = 0.0;
-
-using ifConvolveAligned = trueType;
-const int convolveTimes = 1;
-const mhdReal convolveSigmaMax = 1.5;
-const mhdReal convolveSigmaMin = 0.05;
-const mhdReal convolveTSwitch = 200.0;
-const mhdReal convolveDtSwitch = 25.0;
+using ifNablaPerp2dP = trueType;
+using ifNablaPara4dP = falseType;
+const mhdReal perp2dP = 1.0e-6;
+const mhdReal para4dP = 0.0;
 
 /*-------------------------------PIC Setting------------------------------*/
 

@@ -9,7 +9,6 @@
 | 记号 | 代表 |
 |---|---|
 | `<Species>` | `Ion`、`Alpha`、`Beam` |
-| `<Field>` | `Phi`、`A`、`dNe`、`dTe`、`dPi`、`dPa`、`dPb` |
 | `<MHDField>` | `Phi`、`A`、`dNe`、`dTe` |
 | `<PICField>` | `dPi`、`dPa`、`dPb` |
 
@@ -68,8 +67,8 @@
 | `ifFilterN_dP` | `trueType` / `falseType` | 是否对 PIC 扰动压强进行环向滤波。 | 作用于 `dPi/dPa/dPb`。 | `using ifFilterN_dP = trueType;` |
 | `removeN_<MHDField>` | `{}` 或环向模数列表 | 从 MHD 场中移除指定环向模数。 |  | `constexpr std::array<int, 1> removeN_Phi = {7};` |
 | `removeN_dP` | `{}` 或环向模数列表 | 从 PIC 扰动压强中移除指定环向模数。 | 作用于 `dPi/dPa/dPb`。 | `constexpr std::array<int, 0> removeN_dP = {};` |
-| `selectNM_<MHDField>` | `{ {N, leftM, rightM}, ... }` | 对 MHD 场的指定环向模数进行极向滤波。 |  | `constexpr std::array<std::tuple<int, int, int>, 1> selectNM_Phi = {{{0, 0, 0}}};` |
-| `selectNM_dP` | `{ {N, leftM, rightM}, ... }` | 对 PIC 扰动压强的指定环向模数进行极向滤波。 | 作用于 `dPi/dPa/dPb`。 | `constexpr std::array<std::tuple<int, int, int>, 1> selectNM_dP = {{{0, 0, 1}}};` |
+| `selectNM_<MHDField>` | `{{{N, leftM, rightM}, ...}}` | 对 MHD 场的指定环向模数进行极向滤波。 |  | `constexpr std::array<std::tuple<int, int, int>, 1> selectNM_Phi = {{{0, 0, 0}}};` |
+| `selectNM_dP` | `{{{N, leftM, rightM}, ...}}` | 对 PIC 扰动压强的指定环向模数进行极向滤波。 | 作用于 `dPi/dPa/dPb`。 | `constexpr std::array<std::tuple<int, int, int>, 1> selectNM_dP = {{{0, 0, 1}}};` |
 
 ## MHD 物理开关
 
@@ -79,25 +78,24 @@
 | `ifNonlinearMHD` | `trueType` / `falseType` | 是否包含 MHD 非线性项。 |  | `using ifNonlinearMHD = trueType;` |
 | `ifEparallel` | `trueType` / `falseType` | 是否包含平行电场项。 |  | `using ifEparallel = trueType;` |
 | `ifFLRMHD` | `trueType` / `falseType` | 是否包含泊松方程中由背景热离子带来的 FLR 效应。 |  | `using ifFLRMHD = falseType;` |
+| `ifQNeutrality` | `trueType` / `falseType` | 是否由准中性条件计算电子密度扰动。 | 开启时，`dNe` 由涡量项和启用物种的扰动密度共同决定。 | `using ifQNeutrality = trueType;` |
 | `ifMaxwellStress` | `trueType` / `falseType` | 是否包含 Maxwell stress。 | 仅 `ifNonlinearMHD=trueType` 时有效。 | `using ifMaxwellStress = trueType;` |
 | `ifReynoldsStress` | `trueType` / `falseType` | 是否包含 Reynolds stress。 | 仅 `ifNonlinearMHD=trueType` 时有效。 | `using ifReynoldsStress = trueType;` |
 | `MaxwellStressCoef` | 实数 | Maxwell stress 系数。 | 仅 `ifMaxwellStress=trueType` 时有效。 | `const mhdReal MaxwellStressCoef = 1.0;` |
 | `ReynoldsStressCoef` | 实数 | Reynolds stress 系数。 | 仅 `ifReynoldsStress=trueType` 时有效。 | `const mhdReal ReynoldsStressCoef = 1.0;` |
 
-## 耗散和平滑
+## 耗散
 
 | 参数名 | 允许的值 | 含义 | 注意事项 | 示范 |
 |---|---|---|---|---|
-| `ifNablaPerp2<Field>` | `trueType` / `falseType` | 是否对场施加垂直方向二阶耗散。 |  | `using ifNablaPerp2Phi = trueType;` |
-| `perp2<Field>` | 正实数 | 垂直二阶耗散系数。 |  | `const mhdReal perp2Phi = 1.0e-7;` |
-| `ifNablaPara4<Field>` | `trueType` / `falseType` | 是否对场施加平行方向四阶耗散。 |  | `using ifNablaPara4Phi = trueType;` |
-| `para4<Field>` | 正实数 | 平行四阶耗散系数。 |  | `const mhdReal para4Phi = 1.0e-6;` |
-| `ifConvolveAligned` | `trueType` / `falseType` | 是否对 PIC 扰动压强在沿场线方向施加高斯平滑。 |  | `using ifConvolveAligned = trueType;` |
-| `convolveTimes` | 正整数 | 每次平滑重复次数。 |  | `const int convolveTimes = 1;` |
-| `convolveSigmaMax` | 正实数 | 高斯核标准差最大值。 |  | `const mhdReal convolveSigmaMax = 1.5;` |
-| `convolveSigmaMin` | 正实数 | 高斯核标准差阈值。 |  | `const mhdReal convolveSigmaMin = 0.05;` |
-| `convolveTSwitch` | 正实数 | 平滑开启时间，按阿尔芬时间归一化。 |  | `const mhdReal convolveTSwitch = 200.0;` |
-| `convolveDtSwitch` | 正实数 | 平滑过渡时间，按阿尔芬时间归一化。 |  | `const mhdReal convolveDtSwitch = 25.0;` |
+| `ifNablaPerp2<MHDField>` | `trueType` / `falseType` | 是否对 MHD 场施加垂直方向二阶耗散。 |  | `using ifNablaPerp2Phi = trueType;` |
+| `perp2<MHDField>` | 正实数 | MHD 场的垂直二阶耗散系数。 |  | `const mhdReal perp2Phi = 1.0e-7;` |
+| `ifNablaPara4<MHDField>` | `trueType` / `falseType` | 是否对 MHD 场施加平行方向四阶耗散。 |  | `using ifNablaPara4Phi = trueType;` |
+| `para4<MHDField>` | 正实数 | MHD 场的平行四阶耗散系数。 |  | `const mhdReal para4Phi = 1.0e-6;` |
+| `ifNablaPerp2dP` | `trueType` / `falseType` | 是否对 PIC 扰动压强施加垂直方向二阶耗散。 | 作用于 `dPi/dPa/dPb`。 | `using ifNablaPerp2dP = trueType;` |
+| `perp2dP` | 正实数 | PIC 扰动压强的垂直二阶耗散系数。 | 作用于 `dPi/dPa/dPb`。 | `const mhdReal perp2dP = 1.0e-6;` |
+| `ifNablaPara4dP` | `trueType` / `falseType` | 是否对 PIC 扰动压强施加平行方向四阶耗散。 | 作用于 `dPi/dPa/dPb`。 | `using ifNablaPara4dP = falseType;` |
+| `para4dP` | 正实数 | PIC 扰动压强的平行四阶耗散系数。 | 作用于 `dPi/dPa/dPb`。 | `const mhdReal para4dP = 0.0;` |
 
 ## PIC 物理开关
 

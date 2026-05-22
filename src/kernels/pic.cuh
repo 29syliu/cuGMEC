@@ -115,10 +115,11 @@ __global__ void PICAlignedGhost(type* __restrict__ d_qtheta, type* __restrict__ 
     dP_mid[offset3d + gridGhost * gridNxz] += field;
 }
 
-template <int ratioDt, picType particle, disType distribution, typename nonlinear, typename mhdReal, typename picReal>
+template <int ratioDt, picType particle, disType distribution, typename nonlinear, typename QNeutrality,
+          typename mhdReal, typename picReal>
 __global__ void DriftAlignedRK4(picReal* __restrict__ pic1d, picReal* __restrict__ pic2d, picReal* __restrict__ pic3d,
                                 int* __restrict__ pic_keys_in, picReal* __restrict__ pic_values_in,
-                                mhdReal* __restrict__ dP_mid) {
+                                mhdReal* __restrict__ dP_mid, mhdReal* __restrict__ dN_mid) {
 
     int illegal;
     int i, j, k;
@@ -128,7 +129,7 @@ __global__ void DriftAlignedRK4(picReal* __restrict__ pic1d, picReal* __restrict
     picReal li, lj, lk;
     picReal coes[8] = {};
 
-    picReal dx, dy, dz, dis, mu;
+    picReal dx, dy, dz, disP, mu;
     picReal ddt[5] = {};
     picReal vec0[5] = {};
     picReal vec1[5] = {};
@@ -514,7 +515,7 @@ __global__ void DriftAlignedRK4(picReal* __restrict__ pic1d, picReal* __restrict
 
         FieldGather1d2d<4>(tileId, coes, pic2d, J, B);
 
-        dis = (partMass * vec2[3] * vec2[3] + mu * B) * vec2[4] / J * partConst / 2;
+        disP = (partMass * vec2[3] * vec2[3] + mu * B) * vec2[4] / J * partConst / 2;
 
         for (int index = 0; index < 4; index++)
             coes[index + 4] = coes[index];
@@ -539,14 +540,27 @@ __global__ void DriftAlignedRK4(picReal* __restrict__ pic1d, picReal* __restrict
         j = gridNxz;
         k = (k + 1 + gridNz) % gridNz - k;
 
-        atomicAdd(&dP_mid[qId], static_cast<mhdReal>(coes[0] * dis));
-        atomicAdd(&dP_mid[qId + i], static_cast<mhdReal>(coes[1] * dis));
-        atomicAdd(&dP_mid[qId + j], static_cast<mhdReal>(coes[2] * dis));
-        atomicAdd(&dP_mid[qId + i + j], static_cast<mhdReal>(coes[3] * dis));
-        atomicAdd(&dP_mid[qId + k], static_cast<mhdReal>(coes[4] * dis));
-        atomicAdd(&dP_mid[qId + i + k], static_cast<mhdReal>(coes[5] * dis));
-        atomicAdd(&dP_mid[qId + j + k], static_cast<mhdReal>(coes[6] * dis));
-        atomicAdd(&dP_mid[qId + i + j + k], static_cast<mhdReal>(coes[7] * dis));
+        atomicAdd(&dP_mid[qId], static_cast<mhdReal>(coes[0] * disP));
+        atomicAdd(&dP_mid[qId + i], static_cast<mhdReal>(coes[1] * disP));
+        atomicAdd(&dP_mid[qId + j], static_cast<mhdReal>(coes[2] * disP));
+        atomicAdd(&dP_mid[qId + i + j], static_cast<mhdReal>(coes[3] * disP));
+        atomicAdd(&dP_mid[qId + k], static_cast<mhdReal>(coes[4] * disP));
+        atomicAdd(&dP_mid[qId + i + k], static_cast<mhdReal>(coes[5] * disP));
+        atomicAdd(&dP_mid[qId + j + k], static_cast<mhdReal>(coes[6] * disP));
+        atomicAdd(&dP_mid[qId + i + j + k], static_cast<mhdReal>(coes[7] * disP));
+
+        if constexpr (std::is_same_v<QNeutrality, trueType>) {
+            picReal disN = vec2[4] / J * partConst * pitchB0 * pitchB0 / 2 / mu0 / (mp * va * va) * l0 * l0 * l0;
+
+            atomicAdd(&dN_mid[qId], static_cast<mhdReal>(coes[0] * disN));
+            atomicAdd(&dN_mid[qId + i], static_cast<mhdReal>(coes[1] * disN));
+            atomicAdd(&dN_mid[qId + j], static_cast<mhdReal>(coes[2] * disN));
+            atomicAdd(&dN_mid[qId + i + j], static_cast<mhdReal>(coes[3] * disN));
+            atomicAdd(&dN_mid[qId + k], static_cast<mhdReal>(coes[4] * disN));
+            atomicAdd(&dN_mid[qId + i + k], static_cast<mhdReal>(coes[5] * disN));
+            atomicAdd(&dN_mid[qId + j + k], static_cast<mhdReal>(coes[6] * disN));
+            atomicAdd(&dN_mid[qId + i + j + k], static_cast<mhdReal>(coes[7] * disN));
+        }
 
         for (int index = 0; index < 7; index++)
             pic_keys_in[picId + index * picDev] = cellId;
@@ -558,11 +572,11 @@ __global__ void DriftAlignedRK4(picReal* __restrict__ pic1d, picReal* __restrict
     }
 }
 
-template <int ratioDt, int gyroNums, picType particle, disType distribution, typename nonlinear, typename mhdReal,
-          typename picReal>
+template <int ratioDt, int gyroNums, picType particle, disType distribution, typename nonlinear, typename QNeutrality,
+          typename mhdReal, typename picReal>
 __global__ void GyroAlignedRK4(picReal* __restrict__ pic1d, picReal* __restrict__ pic2d, picReal* __restrict__ pic3d,
                                int* __restrict__ pic_keys_in, picReal* __restrict__ pic_values_in,
-                               mhdReal* __restrict__ dP_mid) {
+                               mhdReal* __restrict__ dP_mid, mhdReal* __restrict__ dN_mid) {
 
     int illegal;
     int i, j, k;
@@ -572,7 +586,7 @@ __global__ void GyroAlignedRK4(picReal* __restrict__ pic1d, picReal* __restrict_
     picReal li, lj, lk;
     picReal coes[8] = {};
 
-    picReal dx, dy, dz, dis, mu;
+    picReal dx, dy, dz, disP, mu;
     picReal ddt[5] = {};
     picReal vec0[5] = {};
     picReal vec1[5] = {};
@@ -1212,7 +1226,7 @@ __global__ void GyroAlignedRK4(picReal* __restrict__ pic1d, picReal* __restrict_
                 coes[index] *= (hy[index] + sy[index] * dy);
             FieldGather1d2d<4>(tileId, coes, pic2d, J, B);
 
-            dis = (partMass * vec2[3] * vec2[3] + mu * B) * vec2[4] / J * partConst / 2 / gyroNums;
+            disP = (partMass * vec2[3] * vec2[3] + mu * B) * vec2[4] / J * partConst / 2 / gyroNums;
 
             for (int index = 0; index < 4; index++)
                 coes[index + 4] = coes[index];
@@ -1237,14 +1251,28 @@ __global__ void GyroAlignedRK4(picReal* __restrict__ pic1d, picReal* __restrict_
             j = gridNxz;
             k = (k + 1 + gridNz) % gridNz - k;
 
-            atomicAdd(&dP_mid[qId], static_cast<mhdReal>(coes[0] * dis));
-            atomicAdd(&dP_mid[qId + i], static_cast<mhdReal>(coes[1] * dis));
-            atomicAdd(&dP_mid[qId + j], static_cast<mhdReal>(coes[2] * dis));
-            atomicAdd(&dP_mid[qId + i + j], static_cast<mhdReal>(coes[3] * dis));
-            atomicAdd(&dP_mid[qId + k], static_cast<mhdReal>(coes[4] * dis));
-            atomicAdd(&dP_mid[qId + i + k], static_cast<mhdReal>(coes[5] * dis));
-            atomicAdd(&dP_mid[qId + j + k], static_cast<mhdReal>(coes[6] * dis));
-            atomicAdd(&dP_mid[qId + i + j + k], static_cast<mhdReal>(coes[7] * dis));
+            atomicAdd(&dP_mid[qId], static_cast<mhdReal>(coes[0] * disP));
+            atomicAdd(&dP_mid[qId + i], static_cast<mhdReal>(coes[1] * disP));
+            atomicAdd(&dP_mid[qId + j], static_cast<mhdReal>(coes[2] * disP));
+            atomicAdd(&dP_mid[qId + i + j], static_cast<mhdReal>(coes[3] * disP));
+            atomicAdd(&dP_mid[qId + k], static_cast<mhdReal>(coes[4] * disP));
+            atomicAdd(&dP_mid[qId + i + k], static_cast<mhdReal>(coes[5] * disP));
+            atomicAdd(&dP_mid[qId + j + k], static_cast<mhdReal>(coes[6] * disP));
+            atomicAdd(&dP_mid[qId + i + j + k], static_cast<mhdReal>(coes[7] * disP));
+
+            if constexpr (std::is_same_v<QNeutrality, trueType>) {
+                picReal disN =
+                    vec2[4] / J * partConst * pitchB0 * pitchB0 / 2 / mu0 / (mp * va * va) * l0 * l0 * l0 / gyroNums;
+
+                atomicAdd(&dN_mid[qId], static_cast<mhdReal>(coes[0] * disN));
+                atomicAdd(&dN_mid[qId + i], static_cast<mhdReal>(coes[1] * disN));
+                atomicAdd(&dN_mid[qId + j], static_cast<mhdReal>(coes[2] * disN));
+                atomicAdd(&dN_mid[qId + i + j], static_cast<mhdReal>(coes[3] * disN));
+                atomicAdd(&dN_mid[qId + k], static_cast<mhdReal>(coes[4] * disN));
+                atomicAdd(&dN_mid[qId + i + k], static_cast<mhdReal>(coes[5] * disN));
+                atomicAdd(&dN_mid[qId + j + k], static_cast<mhdReal>(coes[6] * disN));
+                atomicAdd(&dN_mid[qId + i + j + k], static_cast<mhdReal>(coes[7] * disN));
+            }
         }
 
         for (int index = 0; index < 7; index++)

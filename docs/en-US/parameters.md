@@ -9,7 +9,6 @@ Notation:
 | Notation | Meaning |
 |---|---|
 | `<Species>` | `Ion`, `Alpha`, `Beam` |
-| `<Field>` | `Phi`, `A`, `dNe`, `dTe`, `dPi`, `dPa`, `dPb` |
 | `<MHDField>` | `Phi`, `A`, `dNe`, `dTe` |
 | `<PICField>` | `dPi`, `dPa`, `dPb` |
 
@@ -68,8 +67,8 @@ Notation:
 | `ifFilterN_dP` | `trueType` / `falseType` | Whether to apply toroidal filtering to the PIC perturbed pressure. | Applies to `dPi/dPa/dPb`. | `using ifFilterN_dP = trueType;` |
 | `removeN_<MHDField>` | `{}` or list of toroidal mode numbers | Remove the specified toroidal mode numbers from the MHD field. |  | `constexpr std::array<int, 1> removeN_Phi = {7};` |
 | `removeN_dP` | `{}` or list of toroidal mode numbers | Remove the specified toroidal mode numbers from the PIC perturbed pressure. | Applies to `dPi/dPa/dPb`. | `constexpr std::array<int, 0> removeN_dP = {};` |
-| `selectNM_<MHDField>` | `{ {N, leftM, rightM}, ... }` | Apply poloidal filtering to the specified toroidal mode numbers of the MHD field. |  | `constexpr std::array<std::tuple<int, int, int>, 1> selectNM_Phi = {{{0, 0, 0}}};` |
-| `selectNM_dP` | `{ {N, leftM, rightM}, ... }` | Apply poloidal filtering to the specified toroidal mode numbers of the PIC perturbed pressure. | Applies to `dPi/dPa/dPb`. | `constexpr std::array<std::tuple<int, int, int>, 1> selectNM_dP = {{{0, 0, 1}}};` |
+| `selectNM_<MHDField>` | `{{{N, leftM, rightM}, ...}}` | Apply poloidal filtering to the specified toroidal mode numbers of the MHD field. |  | `constexpr std::array<std::tuple<int, int, int>, 1> selectNM_Phi = {{{0, 0, 0}}};` |
+| `selectNM_dP` | `{{{N, leftM, rightM}, ...}}` | Apply poloidal filtering to the specified toroidal mode numbers of the PIC perturbed pressure. | Applies to `dPi/dPa/dPb`. | `constexpr std::array<std::tuple<int, int, int>, 1> selectNM_dP = {{{0, 0, 1}}};` |
 
 ## MHD Physics Switches
 
@@ -79,25 +78,24 @@ Notation:
 | `ifNonlinearMHD` | `trueType` / `falseType` | Whether to include MHD nonlinear terms. |  | `using ifNonlinearMHD = trueType;` |
 | `ifEparallel` | `trueType` / `falseType` | Whether to include the parallel electric-field term. |  | `using ifEparallel = trueType;` |
 | `ifFLRMHD` | `trueType` / `falseType` | Whether to include the FLR effect from background thermal ions in the Poisson equation. |  | `using ifFLRMHD = falseType;` |
+| `ifQNeutrality` | `trueType` / `falseType` | Whether to compute the electron density perturbation from quasi-neutrality. | When enabled, `dNe` is determined by the vorticity term and perturbed densities of enabled species. | `using ifQNeutrality = trueType;` |
 | `ifMaxwellStress` | `trueType` / `falseType` | Whether to include Maxwell stress. | Effective only when `ifNonlinearMHD=trueType`. | `using ifMaxwellStress = trueType;` |
 | `ifReynoldsStress` | `trueType` / `falseType` | Whether to include Reynolds stress. | Effective only when `ifNonlinearMHD=trueType`. | `using ifReynoldsStress = trueType;` |
 | `MaxwellStressCoef` | Real number | Maxwell stress coefficient. | Effective only when `ifMaxwellStress=trueType`. | `const mhdReal MaxwellStressCoef = 1.0;` |
 | `ReynoldsStressCoef` | Real number | Reynolds stress coefficient. | Effective only when `ifReynoldsStress=trueType`. | `const mhdReal ReynoldsStressCoef = 1.0;` |
 
-## Dissipation and Smoothing
+## Dissipation
 
 | Parameter | Allowed Values | Description | Notes | Example |
 |---|---|---|---|---|
-| `ifNablaPerp2<Field>` | `trueType` / `falseType` | Whether to apply second-order perpendicular dissipation to the field. |  | `using ifNablaPerp2Phi = trueType;` |
-| `perp2<Field>` | Positive real number | Second-order perpendicular dissipation coefficient. |  | `const mhdReal perp2Phi = 1.0e-7;` |
-| `ifNablaPara4<Field>` | `trueType` / `falseType` | Whether to apply fourth-order parallel dissipation to the field. |  | `using ifNablaPara4Phi = trueType;` |
-| `para4<Field>` | Positive real number | Fourth-order parallel dissipation coefficient. |  | `const mhdReal para4Phi = 1.0e-6;` |
-| `ifConvolveAligned` | `trueType` / `falseType` | Whether to apply Gaussian smoothing to the PIC perturbed pressure in the field-aligned direction. |  | `using ifConvolveAligned = trueType;` |
-| `convolveTimes` | Positive integer | Number of smoothing repetitions each time smoothing is applied. |  | `const int convolveTimes = 1;` |
-| `convolveSigmaMax` | Positive real number | Maximum standard deviation of the Gaussian kernel. |  | `const mhdReal convolveSigmaMax = 1.5;` |
-| `convolveSigmaMin` | Positive real number | Standard-deviation threshold of the Gaussian kernel. |  | `const mhdReal convolveSigmaMin = 0.05;` |
-| `convolveTSwitch` | Positive real number | Smoothing start time, normalized by Alfven time. |  | `const mhdReal convolveTSwitch = 200.0;` |
-| `convolveDtSwitch` | Positive real number | Smoothing transition time, normalized by Alfven time. |  | `const mhdReal convolveDtSwitch = 25.0;` |
+| `ifNablaPerp2<MHDField>` | `trueType` / `falseType` | Enable second-order perpendicular MHD-field dissipation. |  | `using ifNablaPerp2Phi = trueType;` |
+| `perp2<MHDField>` | Positive real number | Coefficient for second-order perpendicular MHD-field dissipation. |  | `const mhdReal perp2Phi = 1.0e-7;` |
+| `ifNablaPara4<MHDField>` | `trueType` / `falseType` | Enable fourth-order parallel MHD-field dissipation. |  | `using ifNablaPara4Phi = trueType;` |
+| `para4<MHDField>` | Positive real number | Coefficient for fourth-order parallel MHD-field dissipation. |  | `const mhdReal para4Phi = 1.0e-6;` |
+| `ifNablaPerp2dP` | `trueType` / `falseType` | Enable second-order perpendicular PIC-pressure dissipation. | Applies to `dPi/dPa/dPb`. | `using ifNablaPerp2dP = trueType;` |
+| `perp2dP` | Positive real number | Coefficient for second-order perpendicular PIC-pressure dissipation. | Applies to `dPi/dPa/dPb`. | `const mhdReal perp2dP = 1.0e-6;` |
+| `ifNablaPara4dP` | `trueType` / `falseType` | Enable fourth-order parallel PIC-pressure dissipation. | Applies to `dPi/dPa/dPb`. | `using ifNablaPara4dP = falseType;` |
+| `para4dP` | Positive real number | Coefficient for fourth-order parallel PIC-pressure dissipation. | Applies to `dPi/dPa/dPb`. | `const mhdReal para4dP = 0.0;` |
 
 ## PIC Physics Switches
 

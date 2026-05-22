@@ -124,9 +124,7 @@ int main(int argc, char* argv[]) {
                       .Phi = {toBool<ifNablaPerp2Phi>, perp2Phi},
                       .dNe = {toBool<ifNablaPerp2dNe>, perp2dNe},
                       .dTe = {toBool<ifNablaPerp2dTe>, perp2dTe},
-                      .dPi = {toBool<ifNablaPerp2dPi>, perp2dPi},
-                      .dPa = {toBool<ifNablaPerp2dPa>, perp2dPa},
-                      .dPb = {toBool<ifNablaPerp2dPb>, perp2dPb}},
+                      .dP = {toBool<ifNablaPerp2dP>, perp2dP}},
         .ion = {toBool<ifIon>, IonMass, IonChar, IonBeta, IonVmin, IonVmax, IonVb, IonDeltaV, IonLambda0,
                 IonDeltaLambda2},
         .alpha = {toBool<ifAlpha>, AlphaMass, AlphaChar, AlphaBeta, AlphaVmin, AlphaVmax, AlphaVb, AlphaDeltaV,
@@ -190,9 +188,7 @@ int main(int argc, char* argv[]) {
     CUDSSBIND(Phi)
     CUDSSBIND(dNe)
     CUDSSBIND(dTe)
-    CUDSSBIND(dPi)
-    CUDSSBIND(dPa)
-    CUDSSBIND(dPb)
+    CUDSSBIND(dP)
 
 #undef CUDSSBIND
 
@@ -221,7 +217,9 @@ int main(int argc, char* argv[]) {
     REF(pic1d); REF(pic2d); REF(pic3d);
     REF(globalA);  REF(globalPhi); REF(globalApt);
     REF(globalPa); REF(globalPi);  REF(globalPb);
+    REF(globalNa); REF(globalNi);  REF(globalNb);
     REF(dPa_midl); REF(dPa_midr); REF(dPi_midl); REF(dPi_midr); REF(dPb_midl); REF(dPb_midr);
+    REF(dNa_midl); REF(dNa_midr); REF(dNi_midl); REF(dNi_midr); REF(dNb_midl); REF(dNb_midr);
 
     REF(Alpha_offsets); REF(Alpha_keys_in); REF(Alpha_keys_out); REF(Alpha_values_in); REF(Alpha_values_out);
     REF(Ion_offsets);   REF(Ion_keys_in);   REF(Ion_keys_out);   REF(Ion_values_in);   REF(Ion_values_out);
@@ -243,6 +241,7 @@ int main(int argc, char* argv[]) {
     REF(Phi_yxz); REF(Phi_xzy); REF(A_yxz);   REF(A_xzy);
     REF(dNe_yxz); REF(dNe_xzy); REF(dTe_yxz); REF(dTe_xzy);
     REF(dPi_yxz); REF(dPi_xzy); REF(dPa_yxz); REF(dPa_xzy); REF(dPb_yxz); REF(dPb_xzy);
+    REF(dNi_yxz); REF(dNi_xzy); REF(dNa_yxz); REF(dNa_xzy); REF(dNb_yxz); REF(dNb_xzy);
 
     REF(nPlanR2Cs); REF(nPlanC2Rs); REF(nFreqd); REF(nFreqf);
     REF(mPlanR2Cs); REF(mPlanC2Rs); REF(mFreqd); REF(mFreqf);
@@ -319,6 +318,10 @@ int main(int argc, char* argv[]) {
     auto loadMHDPIC = [&]() {
         forEachDev([&](int i) {
             MHD2w<ifLocal><<<MRK4GridSize, MRK4BlockSize, 0, 0>>>(Phi_midl[i], w_midl[i], Phi2w[i]);
+            if constexpr (std::is_same_v<ifQNeutrality, trueType>) {
+                MHDQNeutrality2dNe<<<MRK4GridSize, MRK4BlockSize, 0, 0>>>(w_midl[i], dNi_midl[i], dNa_midl[i],
+                                                                          dNb_midl[i], dNe_midl[i]);
+            }
             MHD2dJpBdPePhi<ifNonlinearMHD, ifLocal, ifFLRMHD><<<MRK4GridSize, MRK4BlockSize, 0, 0>>>(
                 A_midl[i], dJpB_midl[i], A2dJpB[i], w_midl[i], Phi_midl[i], w2Phi[i], dNe_midl[i], dTe_midl[i],
                 dPe_midl[i], Ne0[i], Te0[i]);
@@ -331,6 +334,9 @@ int main(int argc, char* argv[]) {
         haloExchange.template operator()<ifIon>(dPi_midl);
         haloExchange.template operator()<ifAlpha>(dPa_midl);
         haloExchange.template operator()<ifBeam>(dPb_midl);
+        haloExchange.template operator()<ifIon, ifQNeutrality>(dNi_midl);
+        haloExchange.template operator()<ifAlpha, ifQNeutrality>(dNa_midl);
+        haloExchange.template operator()<ifBeam, ifQNeutrality>(dNb_midl);
         ncclGroupEnd();
     };
 
@@ -359,6 +365,10 @@ int main(int argc, char* argv[]) {
                     cudssExecute(cudssHandles[i][j], CUDSS_PHASE_SOLVE, laplacianConfigs[i][j], laplacianDatas[i][j],
                                  laplacianAs[i][j], laplacianXs[i][j], laplacianBs[i][j]);
                 }
+                if constexpr (std::is_same_v<ifQNeutrality, trueType>) {
+                    MHDQNeutrality2dNe<<<MRK4GridSize, MRK4BlockSize, 0, 0>>>(w_out[i], dNi_midl[i], dNa_midl[i],
+                                                                              dNb_midl[i], dNe_out[i]);
+                }
                 if constexpr (stage != 4) {
                     MHD2dJpBdPePhi<ifNonlinearMHD, ifLocal, ifFLRMHD><<<MRK4GridSize, MRK4BlockSize, 0, 0>>>(
                         A_out[i], dJpB_midl[i], A2dJpB[i], w_out[i], Phi_midl[i], w2Phi[i], dNe_out[i], dTe_out[i],
@@ -377,6 +387,10 @@ int main(int argc, char* argv[]) {
         } else {
             forEachDev([&](int i) {
                 MHD2w<ifLocal><<<MRK4GridSize, MRK4BlockSize, 0, 0>>>(Phi_midl[i], w_midl[i], Phi2w[i]);
+                if constexpr (std::is_same_v<ifQNeutrality, trueType>) {
+                    MHDQNeutrality2dNe<<<MRK4GridSize, MRK4BlockSize, 0, 0>>>(w_midl[i], dNi_midl[i], dNa_midl[i],
+                                                                              dNb_midl[i], dNe_midl[i]);
+                }
                 MHD2dJpBdPePhi<ifNonlinearMHD, ifLocal, ifFLRMHD><<<MRK4GridSize, MRK4BlockSize, 0, 0>>>(
                     A_midl[i], dJpB_midl[i], A2dJpB[i], w_midl[i], Phi_midl[i], w2Phi[i], dNe_midl[i], dTe_midl[i],
                     dPe_midl[i], Ne0[i], Te0[i]);
@@ -399,9 +413,12 @@ int main(int argc, char* argv[]) {
                                               mhdReal** midr) {
         if constexpr (allTrue<Guards...>) {
             forEachDev([&](int i) {
-                for (int j = 0; j < devNy; j++)
-                    cudssExecute(cudssHandles[i][j], CUDSS_PHASE_SOLVE, Configs[i][j], Datas[i][j], As[i][j], Xs[i][j],
-                                 Bs[i][j]);
+                for (int j = 0; j < devNy; j++) {
+                    CUDSSCHECK(cudssMatrixSetValues(Xs[i][j], midr[i] + (j + gridGhost) * gridNxz));
+                    CUDSSCHECK(cudssMatrixSetValues(Bs[i][j], midl[i] + (j + gridGhost) * gridNxz));
+                    CUDSSCHECK(cudssExecute(cudssHandles[i][j], CUDSS_PHASE_SOLVE, Configs[i][j], Datas[i][j], As[i][j],
+                                            Xs[i][j], Bs[i][j]));
+                }
                 cudaMemcpyAsync(midl[i], midr[i], sizeof(mhdReal) * (devNy + 2 * gridGhost) * gridNxz,
                                 cudaMemcpyDeviceToDevice, 0);
             });
@@ -424,46 +441,6 @@ int main(int argc, char* argv[]) {
 
             forEachDev([&](int i) {
                 MHDNablaPara4<Tag, ifLocal><<<MRK4GridSize, MRK4BlockSize, 0, 0>>>(qtheta[i], midl[i], midr[i]);
-            });
-        }
-    };
-
-    auto convolveAligned = [&]<typename... Guards>(mhdReal** in, mhdReal** out) {
-        if constexpr (allTrue<Guards...>) {
-            const mhdReal currentTime = (continueSteps + currentStep) * mhdGridDt;
-            const mhdReal convolveSigma =
-                convolveSigmaMax / 2 * (1 + std::tanh((currentTime - convolveTSwitch) / convolveDtSwitch));
-            if (convolveSigma < convolveSigmaMin)
-                return;
-
-            const mhdReal gw0 = 1 / (1 + 2 * std::exp(mhdReal(-0.5) / (convolveSigma * convolveSigma)) +
-                                     2 * std::exp(mhdReal(-2.0) / (convolveSigma * convolveSigma)));
-            const mhdReal gw1 = gw0 * std::exp(mhdReal(-0.5) / (convolveSigma * convolveSigma));
-            const mhdReal gw2 = gw0 * std::exp(mhdReal(-2.0) / (convolveSigma * convolveSigma));
-
-            forEachDev([&](int i) {
-                MHDShifted2A<0, ifLocal><<<MRK4GridSize, MRK4BlockSize, 0, 0>>>(qtheta[i], in[i], out[i]);
-            });
-
-            ncclGroupStart();
-            for (int i = 0; i < devNums; i++) {
-                cudaSetDevice(localRank * devNums + i);
-                ncclAllGather(out[i] + gridGhost * gridNxz, globalPhi[i] + gridGhost * gridNxz, devNy * gridNxz,
-                              ncclType, comms[i], 0);
-            }
-            ncclGroupEnd();
-
-            forEachDev([&](int i) {
-                mhdReal* src = globalPhi[i];
-                mhdReal* dst = globalA[i];
-                for (int n = 0; n < convolveTimes; n++) {
-                    MHDAlignedGhost<ifLocal><<<GhostGridSize, GhostBlockSize, 0, 0>>>(qtheta[i], src);
-                    MHDGaussianAverage<<<M2PGridSize, M2PBlockSize, 0, 0>>>(src, dst, gw0, gw1, gw2);
-                    std::swap(src, dst);
-                }
-                cudaMemcpyAsync(out[i], src + (myRank * hostNy + i * devNy) * gridNxz,
-                                sizeof(mhdReal) * (devNy + 2 * gridGhost) * gridNxz, cudaMemcpyDeviceToDevice, 0);
-                MHDShifted2A<1, ifLocal><<<MRK4GridSize, MRK4BlockSize, 0, 0>>>(qtheta[i], out[i], in[i]);
             });
         }
     };
@@ -871,18 +848,18 @@ int main(int argc, char* argv[]) {
         }
     };
 
-    auto runPICRK4 = [&]<picType particle, disType distribution, typename... Guards>(int** keys_in, picReal** values_in,
-                                                                                     mhdReal** globalP) {
+    auto runPICRK4 = [&]<picType particle, disType distribution, typename... Guards>(
+                         int** keys_in, picReal** values_in, mhdReal** globalP, mhdReal** globalN) {
         if constexpr (allTrue<Guards...>) {
             forEachDev([&](int i) {
                 if constexpr (std::is_same_v<ifFLRPIC, trueType>)
-                    GyroAlignedRK4<ratioDt, gyroNums, particle, distribution, ifNonlinearPIC, mhdReal, picReal>
-                        <<<PICGridSize, PICBlockSize, 0, 0>>>(pic1d[i], pic2d[i], pic3d[i], keys_in[i], values_in[i],
-                                                              globalP[i]);
+                    GyroAlignedRK4<ratioDt, gyroNums, particle, distribution, ifNonlinearPIC, ifQNeutrality, mhdReal,
+                                   picReal><<<PICGridSize, PICBlockSize, 0, 0>>>(
+                        pic1d[i], pic2d[i], pic3d[i], keys_in[i], values_in[i], globalP[i], globalN[i]);
                 else
-                    DriftAlignedRK4<ratioDt, particle, distribution, ifNonlinearPIC, mhdReal, picReal>
+                    DriftAlignedRK4<ratioDt, particle, distribution, ifNonlinearPIC, ifQNeutrality, mhdReal, picReal>
                         <<<PICGridSize, PICBlockSize, 0, 0>>>(pic1d[i], pic2d[i], pic3d[i], keys_in[i], values_in[i],
-                                                              globalP[i]);
+                                                              globalP[i], globalN[i]);
             });
         }
     };
@@ -913,6 +890,10 @@ int main(int argc, char* argv[]) {
             forEachDev([&](int i) {
                 MHDShifted2A<1, ifLocal><<<MRK4GridSize, MRK4BlockSize, 0, 0>>>(
                     qtheta[i], dPi_midl[i], dPi_midr[i], dPa_midl[i], dPa_midr[i], dPb_midl[i], dPb_midr[i]);
+                if constexpr (std::is_same_v<ifQNeutrality, trueType>) {
+                    MHDShifted2A<1, ifLocal><<<MRK4GridSize, MRK4BlockSize, 0, 0>>>(
+                        qtheta[i], dNi_midl[i], dNi_midr[i], dNa_midl[i], dNa_midr[i], dNb_midl[i], dNb_midr[i]);
+                }
             });
 
             auto right2Left = [&]<typename... SubGuards>(mhdReal** midl, mhdReal** midr) {
@@ -927,6 +908,9 @@ int main(int argc, char* argv[]) {
             right2Left.template operator()<ifIon>(dPi_midl, dPi_midr);
             right2Left.template operator()<ifAlpha>(dPa_midl, dPa_midr);
             right2Left.template operator()<ifBeam>(dPb_midl, dPb_midr);
+            right2Left.template operator()<ifIon, ifQNeutrality>(dNi_midl, dNi_midr);
+            right2Left.template operator()<ifAlpha, ifQNeutrality>(dNa_midl, dNa_midr);
+            right2Left.template operator()<ifBeam, ifQNeutrality>(dNb_midl, dNb_midr);
         }
     };
 
@@ -1064,54 +1048,92 @@ int main(int argc, char* argv[]) {
 
             mhdToPIC.template operator()<ifPIC>();
 
-            runPICRK4.template operator()<Ion, IonType, ifIon>(Ion_keys_in, Ion_values_in, globalPi);
-            runPICRK4.template operator()<Alpha, AlphaType, ifAlpha>(Alpha_keys_in, Alpha_values_in, globalPa);
-            runPICRK4.template operator()<Beam, BeamType, ifBeam>(Beam_keys_in, Beam_values_in, globalPb);
+            runPICRK4.template operator()<Ion, IonType, ifIon>(Ion_keys_in, Ion_values_in, globalPi, globalNi);
+            runPICRK4.template operator()<Alpha, AlphaType, ifAlpha>(Alpha_keys_in, Alpha_values_in, globalPa,
+                                                                     globalNa);
+            runPICRK4.template operator()<Beam, BeamType, ifBeam>(Beam_keys_in, Beam_values_in, globalPb, globalNb);
 
             ncclGroupStart();
             allReducePressure.template operator()<ifIon>(globalPi);
             allReducePressure.template operator()<ifAlpha>(globalPa);
             allReducePressure.template operator()<ifBeam>(globalPb);
+            allReducePressure.template operator()<ifIon, ifQNeutrality>(globalNi);
+            allReducePressure.template operator()<ifAlpha, ifQNeutrality>(globalNa);
+            allReducePressure.template operator()<ifBeam, ifQNeutrality>(globalNb);
             ncclGroupEnd();
 
             updateAlignedGhost.template operator()<ifIon>(globalPi, dPi_midl);
             updateAlignedGhost.template operator()<ifAlpha>(globalPa, dPa_midl);
             updateAlignedGhost.template operator()<ifBeam>(globalPb, dPb_midl);
+            updateAlignedGhost.template operator()<ifIon, ifQNeutrality>(globalNi, dNi_midl);
+            updateAlignedGhost.template operator()<ifAlpha, ifQNeutrality>(globalNa, dNa_midl);
+            updateAlignedGhost.template operator()<ifBeam, ifQNeutrality>(globalNb, dNb_midl);
 
             picToMHD.template operator()<ifPIC>();
 
-            nablaPerp2.template operator()<ifNablaPerp2dPi, ifIon>(dPiConfigs, dPiDatas, dPiAs, dPiXs, dPiBs, dPi_midl,
-                                                                   dPi_midr);
-            nablaPerp2.template operator()<ifNablaPerp2dPa, ifAlpha>(dPaConfigs, dPaDatas, dPaAs, dPaXs, dPaBs,
-                                                                     dPa_midl, dPa_midr);
-            nablaPerp2.template operator()<ifNablaPerp2dPb, ifBeam>(dPbConfigs, dPbDatas, dPbAs, dPbXs, dPbBs, dPb_midl,
-                                                                    dPb_midr);
+            nablaPerp2.template operator()<ifNablaPerp2dP, ifIon>(dPConfigs, dPDatas, dPAs, dPXs, dPBs, dPi_midl,
+                                                                  dPi_midr);
+            nablaPerp2.template operator()<ifNablaPerp2dP, ifAlpha>(dPConfigs, dPDatas, dPAs, dPXs, dPBs, dPa_midl,
+                                                                    dPa_midr);
+            nablaPerp2.template operator()<ifNablaPerp2dP, ifBeam>(dPConfigs, dPDatas, dPAs, dPXs, dPBs, dPb_midl,
+                                                                   dPb_midr);
+            nablaPerp2.template operator()<ifNablaPerp2dNe, ifIon, ifQNeutrality>(dNeConfigs, dNeDatas, dNeAs, dNeXs,
+                                                                                  dNeBs, dNi_midl, dNi_midr);
+            nablaPerp2.template operator()<ifNablaPerp2dNe, ifAlpha, ifQNeutrality>(dNeConfigs, dNeDatas, dNeAs, dNeXs,
+                                                                                    dNeBs, dNa_midl, dNa_midr);
+            nablaPerp2.template operator()<ifNablaPerp2dNe, ifBeam, ifQNeutrality>(dNeConfigs, dNeDatas, dNeAs, dNeXs,
+                                                                                   dNeBs, dNb_midl, dNb_midr);
 
-            nablaPara4.template operator()<4, ifNablaPara4dPi, ifIon>(dPi_midl, dPi_midr);
-            nablaPara4.template operator()<5, ifNablaPara4dPa, ifAlpha>(dPa_midl, dPa_midr);
-            nablaPara4.template operator()<6, ifNablaPara4dPb, ifBeam>(dPb_midl, dPb_midr);
-
-            convolveAligned.template operator()<ifConvolveAligned>(dPi_midl, dPi_midr);
-            convolveAligned.template operator()<ifConvolveAligned>(dPa_midl, dPa_midr);
-            convolveAligned.template operator()<ifConvolveAligned>(dPb_midl, dPb_midr);
+            nablaPara4.template operator()<4, ifNablaPara4dP, ifIon>(dPi_midl, dPi_midr);
+            nablaPara4.template operator()<4, ifNablaPara4dP, ifAlpha>(dPa_midl, dPa_midr);
+            nablaPara4.template operator()<4, ifNablaPara4dP, ifBeam>(dPb_midl, dPb_midr);
+            nablaPara4.template operator()<2, ifNablaPara4dNe, ifIon, ifQNeutrality>(dNi_midl, dNi_midr);
+            nablaPara4.template operator()<2, ifNablaPara4dNe, ifAlpha, ifQNeutrality>(dNa_midl, dNa_midr);
+            nablaPara4.template operator()<2, ifNablaPara4dNe, ifBeam, ifQNeutrality>(dNb_midl, dNb_midr);
 
             filterModeN.template operator()<ifFilterN_dP, ifIon>(dPi_midl, leftN, rightN);
             filterModeN.template operator()<ifFilterN_dP, ifAlpha>(dPa_midl, leftN, rightN);
             filterModeN.template operator()<ifFilterN_dP, ifBeam>(dPb_midl, leftN, rightN);
+            filterModeN.template operator()<ifFilterN_dNe, ifIon, ifQNeutrality>(dNi_midl, leftN, rightN);
+            filterModeN.template operator()<ifFilterN_dNe, ifAlpha, ifQNeutrality>(dNa_midl, leftN, rightN);
+            filterModeN.template operator()<ifFilterN_dNe, ifBeam, ifQNeutrality>(dNb_midl, leftN, rightN);
 
             removeModeN.template operator()<removeN_dP, ifIon>(dPi_midl, dPi_midr);
             removeModeN.template operator()<removeN_dP, ifAlpha>(dPa_midl, dPa_midr);
             removeModeN.template operator()<removeN_dP, ifBeam>(dPb_midl, dPb_midr);
+            removeModeN.template operator()<removeN_dNe, ifIon, ifQNeutrality>(dNi_midl, dNi_midr);
+            removeModeN.template operator()<removeN_dNe, ifAlpha, ifQNeutrality>(dNa_midl, dNa_midr);
+            removeModeN.template operator()<removeN_dNe, ifBeam, ifQNeutrality>(dNb_midl, dNb_midr);
 
             selectModeNM.template operator()<selectNM_dP, ifIon>(dPi_midl, dPi_midr, dPi_yxz, dPi_xzy);
             selectModeNM.template operator()<selectNM_dP, ifAlpha>(dPa_midl, dPa_midr, dPa_yxz, dPa_xzy);
             selectModeNM.template operator()<selectNM_dP, ifBeam>(dPb_midl, dPb_midr, dPb_yxz, dPb_xzy);
+            selectModeNM.template operator()<selectNM_dNe, ifIon, ifQNeutrality>(dNi_midl, dNi_midr, dNi_yxz, dNi_xzy);
+            selectModeNM.template operator()<selectNM_dNe, ifAlpha, ifQNeutrality>(dNa_midl, dNa_midr, dNa_yxz,
+                                                                                   dNa_xzy);
+            selectModeNM.template operator()<selectNM_dNe, ifBeam, ifQNeutrality>(dNb_midl, dNb_midr, dNb_yxz, dNb_xzy);
 
             ncclGroupStart();
             haloExchange.template operator()<ifIon>(dPi_midl);
             haloExchange.template operator()<ifAlpha>(dPa_midl);
             haloExchange.template operator()<ifBeam>(dPb_midl);
+            haloExchange.template operator()<ifIon, ifQNeutrality>(dNi_midl);
+            haloExchange.template operator()<ifAlpha, ifQNeutrality>(dNa_midl);
+            haloExchange.template operator()<ifBeam, ifQNeutrality>(dNb_midl);
             ncclGroupEnd();
+
+            if constexpr (std::is_same_v<ifQNeutrality, trueType>) {
+                forEachDev([&](int i) {
+                    MHDQNeutrality2dNe<<<MRK4GridSize, MRK4BlockSize, 0, 0>>>(w_midl[i], dNi_midl[i], dNa_midl[i],
+                                                                              dNb_midl[i], dNe_midl[i]);
+                    MHD2dJpBdPePhi<ifNonlinearMHD, ifLocal, falseType><<<MRK4GridSize, MRK4BlockSize, 0, 0>>>(
+                        A_midl[i], dJpB_midl[i], A2dJpB[i], w_midl[i], Phi_midl[i], w2Phi[i], dNe_midl[i], dTe_midl[i],
+                        dPe_midl[i], Ne0[i], Te0[i]);
+                });
+                ncclGroupStart();
+                haloExchange(dNe_midl, dJpB_midl, dPe_midl);
+                ncclGroupEnd();
+            }
         }
 
         sortParticles.template operator()<ifIon>(Ion_storage, Ion_storage_bytes, Ion_keys_in, Ion_keys_out,

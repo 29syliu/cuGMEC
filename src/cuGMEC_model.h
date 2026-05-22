@@ -89,7 +89,7 @@ struct HybridModelConfig {
 
     struct Scale          { int devNums, hostNums, hostId, localId, gridNx, gridNy, gridNz, gridGhost, ppcNums, tubes; } scale;
     struct Normalization  { double B0, L0, VA0, RHO0, RHO1, PSITMAX, dt; } norm;
-    struct HyperDiffusion { HyperDiffPair A, Phi, dNe, dTe, dPi, dPa, dPb; } hyperDiff;
+    struct HyperDiffusion { HyperDiffPair A, Phi, dNe, dTe, dP; } hyperDiff;
     struct SpeciesConfig  { bool enable; double mass, charge, beta, vmin, vmax, vb, deltaV, lambda0, deltaLambda2; } ion, alpha, beam;
     struct Time           { int total, diag, output; } time;
     struct Filter         { int leftN, rightN; } filter;
@@ -123,8 +123,7 @@ class HybridModel {
           PSITMAX{cfg.norm.PSITMAX}, NormQE{QE / (B0 * L0 * L0 / MU0 / VA0)}, dt{cfg.norm.dt},
 
           nablaPerp2A{cfg.hyperDiff.A}, nablaPerp2Phi{cfg.hyperDiff.Phi}, nablaPerp2dNe{cfg.hyperDiff.dNe},
-          nablaPerp2dTe{cfg.hyperDiff.dTe}, nablaPerp2dPi{cfg.hyperDiff.dPi}, nablaPerp2dPa{cfg.hyperDiff.dPa},
-          nablaPerp2dPb{cfg.hyperDiff.dPb},
+          nablaPerp2dTe{cfg.hyperDiff.dTe}, nablaPerp2dP{cfg.hyperDiff.dP},
 
           ifIon{cfg.ion.enable}, IonMass{cfg.ion.mass}, IonChar{cfg.ion.charge}, IonBeta{cfg.ion.beta},
           IonVmin{cfg.ion.vmin}, IonVmax{cfg.ion.vmax}, IonVb{cfg.ion.vb}, IonDeltaV{cfg.ion.deltaV},
@@ -205,9 +204,7 @@ class HybridModel {
 	const HybridModelConfig::HyperDiffPair nablaPerp2Phi;
 	const HybridModelConfig::HyperDiffPair nablaPerp2dNe;
 	const HybridModelConfig::HyperDiffPair nablaPerp2dTe;
-	const HybridModelConfig::HyperDiffPair nablaPerp2dPi;
-	const HybridModelConfig::HyperDiffPair nablaPerp2dPa;
-	const HybridModelConfig::HyperDiffPair nablaPerp2dPb;
+	const HybridModelConfig::HyperDiffPair nablaPerp2dP;
 
 	const bool ifIon;
 	const double IonMass;
@@ -390,6 +387,9 @@ class HybridModel {
 	mhdReal** d_dPi_midl; mhdReal** d_dPi_midr;
 	mhdReal** d_dPa_midl; mhdReal** d_dPa_midr;
 	mhdReal** d_dPb_midl; mhdReal** d_dPb_midr;
+	mhdReal** d_dNi_midl; mhdReal** d_dNi_midr;
+	mhdReal** d_dNa_midl; mhdReal** d_dNa_midr;
+	mhdReal** d_dNb_midl; mhdReal** d_dNb_midr;
 	mhdReal** d_Apt_midl; mhdReal** d_Apt_midr;
 
 	/*-----------------------------------------------Coefficient Compression on GPU-----------------------------------------------*/
@@ -462,17 +462,9 @@ class HybridModel {
 	int** d_dTeCsrC;
 	mhdReal** d_dTeCsrV;
 
-	int** d_dPiCsrR;
-	int** d_dPiCsrC;
-	mhdReal** d_dPiCsrV;
-
-	int** d_dPaCsrR;
-	int** d_dPaCsrC;
-	mhdReal** d_dPaCsrV;
-
-	int** d_dPbCsrR;
-	int** d_dPbCsrC;
-	mhdReal** d_dPbCsrV;
+	int** d_dPCsrR;
+	int** d_dPCsrC;
+	mhdReal** d_dPCsrV;
 
 	std::vector<std::vector<cudaStream_t>> cudaStreams;
 	std::vector<std::vector<cudssHandle_t>> cudssHandles;
@@ -507,23 +499,11 @@ class HybridModel {
 	std::vector<std::vector<cudssMatrix_t>> dTeXs;
 	std::vector<std::vector<cudssMatrix_t>> dTeBs;
 
-	std::vector<std::vector<cudssConfig_t>> dPiConfigs;
-	std::vector<std::vector<cudssData_t>> dPiDatas;
-	std::vector<std::vector<cudssMatrix_t>> dPiAs;
-	std::vector<std::vector<cudssMatrix_t>> dPiXs;
-	std::vector<std::vector<cudssMatrix_t>> dPiBs;
-
-	std::vector<std::vector<cudssConfig_t>> dPaConfigs;
-	std::vector<std::vector<cudssData_t>> dPaDatas;
-	std::vector<std::vector<cudssMatrix_t>> dPaAs;
-	std::vector<std::vector<cudssMatrix_t>> dPaXs;
-	std::vector<std::vector<cudssMatrix_t>> dPaBs;
-
-	std::vector<std::vector<cudssConfig_t>> dPbConfigs;
-	std::vector<std::vector<cudssData_t>> dPbDatas;
-	std::vector<std::vector<cudssMatrix_t>> dPbAs;
-	std::vector<std::vector<cudssMatrix_t>> dPbXs;
-	std::vector<std::vector<cudssMatrix_t>> dPbBs;
+	std::vector<std::vector<cudssConfig_t>> dPConfigs;
+	std::vector<std::vector<cudssData_t>> dPDatas;
+	std::vector<std::vector<cudssMatrix_t>> dPAs;
+	std::vector<std::vector<cudssMatrix_t>> dPXs;
+	std::vector<std::vector<cudssMatrix_t>> dPBs;
 
 	/*------------------------------------------------------Particle in Cell------------------------------------------------------*/
 
@@ -541,9 +521,13 @@ class HybridModel {
 	mhdReal*** h_globalPi;
 	mhdReal*** h_globalPa;
 	mhdReal*** h_globalPb;
+	mhdReal*** h_globalNi;
+	mhdReal*** h_globalNa;
+	mhdReal*** h_globalNb;
 
 	mhdReal** d_globalA; mhdReal** d_globalPhi; mhdReal** d_globalApt;
 	mhdReal** d_globalPi; mhdReal** d_globalPa; mhdReal** d_globalPb;
+	mhdReal** d_globalNi; mhdReal** d_globalNa; mhdReal** d_globalNb;
 
 	picReal** h_pic1d; picReal** h_pic2d; picReal** h_pic3d;
 	picReal** d_pic1d; picReal** d_pic2d; picReal** d_pic3d;
@@ -642,6 +626,9 @@ class HybridModel {
 	mhdReal** d_dPi_yxz; mhdReal** d_dPi_xzy;
 	mhdReal** d_dPa_yxz; mhdReal** d_dPa_xzy;
 	mhdReal** d_dPb_yxz; mhdReal** d_dPb_xzy;
+	mhdReal** d_dNi_yxz; mhdReal** d_dNi_xzy;
+	mhdReal** d_dNa_yxz; mhdReal** d_dNa_xzy;
+	mhdReal** d_dNb_yxz; mhdReal** d_dNb_xzy;
 
 	/*----------------------------------------------cuFFT Plan and Frequency Buffer-----------------------------------------------*/
 
@@ -870,12 +857,8 @@ class HybridModel {
             computeSparseMatrix<Perp2dNe, trueType, trueType>();
         if constexpr (std::is_same_v<ifNablaPerp2dTe, trueType>)
             computeSparseMatrix<Perp2dTe, trueType, trueType>();
-        if constexpr (std::is_same_v<ifNablaPerp2dPi, trueType>)
-            computeSparseMatrix<Perp2dPi, trueType, trueType>();
-        if constexpr (std::is_same_v<ifNablaPerp2dPa, trueType>)
-            computeSparseMatrix<Perp2dPa, trueType, trueType>();
-        if constexpr (std::is_same_v<ifNablaPerp2dPb, trueType>)
-            computeSparseMatrix<Perp2dPb, trueType, trueType>();
+        if constexpr (std::is_same_v<ifNablaPerp2dP, trueType>)
+            computeSparseMatrix<Perp2dP, trueType, trueType>();
 
         /*----------------------------------Phase-Space Diagnostics-----------------------------------*/
 
@@ -1153,7 +1136,8 @@ class HybridModel {
         HostAllocator.allocateHostArrays(cellNy * cellNx, 72, h_pic2d);
         HostAllocator.allocateHostArrays(gridNyPlusGhost, gridNx * gridNzPlusGhost * 8, h_pic3d);
 
-        HostAllocator.allocateHostArrays(gridNyPlusGhost, gridNx, gridNz, h_globalPi, h_globalPa, h_globalPb);
+        HostAllocator.allocateHostArrays(gridNyPlusGhost, gridNx, gridNz, h_globalPi, h_globalPa, h_globalPb,
+                                         h_globalNi, h_globalNa, h_globalNb);
 
         /*-------------------------------------Diagnostic on CPU--------------------------------------*/
 
@@ -1328,7 +1312,7 @@ class HybridModel {
         }
 
         HostAllocator.releaseHostArrays(h_pic1d, h_pic2d, h_pic3d);
-        HostAllocator.releaseHostArrays(h_globalPi, h_globalPa, h_globalPb);
+        HostAllocator.releaseHostArrays(h_globalPi, h_globalPa, h_globalPb, h_globalNi, h_globalNa, h_globalNb);
 
         if (hostId == 0) {
             logDone();
@@ -1351,7 +1335,8 @@ class HybridModel {
             localId, devNums, (devNy + 2 * gridGhost) * gridNxz, d_w_beg, d_w_midl, d_w_midr, d_w_end, d_A_beg,
             d_A_midl, d_A_midr, d_A_end, d_dNe_beg, d_dNe_midl, d_dNe_midr, d_dNe_end, d_dTe_beg, d_dTe_midl,
             d_dTe_midr, d_dTe_end, d_Phi_midl, d_Phi_midr, d_dJpB_midl, d_dJpB_midr, d_dPe_midl, d_dPe_midr, d_dPi_midl,
-            d_dPi_midr, d_dPa_midl, d_dPa_midr, d_dPb_midl, d_dPb_midr, d_Apt_midl, d_Apt_midr);
+            d_dPi_midr, d_dPa_midl, d_dPa_midr, d_dPb_midl, d_dPb_midr, d_dNi_midl, d_dNi_midr, d_dNa_midl, d_dNa_midr,
+            d_dNb_midl, d_dNb_midr, d_Apt_midl, d_Apt_midr);
 
         /*-------------------------------Coefficient Compression on GPU-------------------------------*/
 
@@ -1437,7 +1422,8 @@ class HybridModel {
         DeviceAllocator.allocateDeviceArrays(localId, devNums, gridNyPlusGhost * gridNx * gridNzPlusGhost * 8, d_pic3d);
 
         DeviceAllocator.allocateDeviceArrays(localId, devNums, gridNyPlusGhost * gridNxz, d_globalA, d_globalPhi,
-                                             d_globalApt, d_globalPi, d_globalPa, d_globalPb);
+                                             d_globalApt, d_globalPi, d_globalPa, d_globalPb, d_globalNi, d_globalNa,
+                                             d_globalNb);
 
         /*-------------------------------------Diagnostic on GPU--------------------------------------*/
 
@@ -1538,7 +1524,8 @@ class HybridModel {
 
         DeviceAllocator.allocateDeviceArrays(localId, devNums, gridNy * gridNxz, d_Phi_yxz, d_Phi_xzy, d_A_yxz, d_A_xzy,
                                              d_dNe_yxz, d_dNe_xzy, d_dTe_yxz, d_dTe_xzy, d_dPi_yxz, d_dPi_xzy,
-                                             d_dPa_yxz, d_dPa_xzy, d_dPb_yxz, d_dPb_xzy);
+                                             d_dPa_yxz, d_dPa_xzy, d_dPb_yxz, d_dPb_xzy, d_dNi_yxz, d_dNi_xzy,
+                                             d_dNa_yxz, d_dNa_xzy, d_dNb_yxz, d_dNb_xzy);
 
         /*------------------------------cuFFT Plan and Frequency Buffer-------------------------------*/
 
@@ -1612,7 +1599,8 @@ class HybridModel {
                                             d_A_midr, d_A_end, d_dNe_beg, d_dNe_midl, d_dNe_midr, d_dNe_end, d_dTe_beg,
                                             d_dTe_midl, d_dTe_midr, d_dTe_end, d_Phi_midl, d_Phi_midr, d_dJpB_midl,
                                             d_dJpB_midr, d_dPe_midl, d_dPe_midr, d_dPi_midl, d_dPi_midr, d_dPa_midl,
-                                            d_dPa_midr, d_dPb_midl, d_dPb_midr, d_Apt_midl, d_Apt_midr);
+                                            d_dPa_midr, d_dPb_midl, d_dPb_midr, d_dNi_midl, d_dNi_midr, d_dNa_midl,
+                                            d_dNa_midr, d_dNb_midl, d_dNb_midr, d_Apt_midl, d_Apt_midr);
 
         /*-------------------------------Coefficient Compression on GPU-------------------------------*/
 
@@ -1666,12 +1654,8 @@ class HybridModel {
             DeviceAllocator.releaseDeviceArrays(localId, devNums, d_dNeCsrR, d_dNeCsrC, d_dNeCsrV);
         if (nablaPerp2dTe.enable)
             DeviceAllocator.releaseDeviceArrays(localId, devNums, d_dTeCsrR, d_dTeCsrC, d_dTeCsrV);
-        if (nablaPerp2dPi.enable)
-            DeviceAllocator.releaseDeviceArrays(localId, devNums, d_dPiCsrR, d_dPiCsrC, d_dPiCsrV);
-        if (nablaPerp2dPa.enable)
-            DeviceAllocator.releaseDeviceArrays(localId, devNums, d_dPaCsrR, d_dPaCsrC, d_dPaCsrV);
-        if (nablaPerp2dPb.enable)
-            DeviceAllocator.releaseDeviceArrays(localId, devNums, d_dPbCsrR, d_dPbCsrC, d_dPbCsrV);
+        if (nablaPerp2dP.enable)
+            DeviceAllocator.releaseDeviceArrays(localId, devNums, d_dPCsrR, d_dPCsrC, d_dPCsrV);
 
         for (int i = 0; i < devNums; i++) {
 
@@ -1721,31 +1705,13 @@ class HybridModel {
                     CUDSSCHECK(cudssMatrixDestroy(dTeBs[i][j]));
                 }
 
-                if (nablaPerp2dPi.enable) {
+                if (nablaPerp2dP.enable) {
 
-                    CUDSSCHECK(cudssConfigDestroy(dPiConfigs[i][j]));
-                    CUDSSCHECK(cudssDataDestroy(cudssHandles[i][j], dPiDatas[i][j]));
-                    CUDSSCHECK(cudssMatrixDestroy(dPiAs[i][j]));
-                    CUDSSCHECK(cudssMatrixDestroy(dPiXs[i][j]));
-                    CUDSSCHECK(cudssMatrixDestroy(dPiBs[i][j]));
-                }
-
-                if (nablaPerp2dPa.enable) {
-
-                    CUDSSCHECK(cudssConfigDestroy(dPaConfigs[i][j]));
-                    CUDSSCHECK(cudssDataDestroy(cudssHandles[i][j], dPaDatas[i][j]));
-                    CUDSSCHECK(cudssMatrixDestroy(dPaAs[i][j]));
-                    CUDSSCHECK(cudssMatrixDestroy(dPaXs[i][j]));
-                    CUDSSCHECK(cudssMatrixDestroy(dPaBs[i][j]));
-                }
-
-                if (nablaPerp2dPb.enable) {
-
-                    CUDSSCHECK(cudssConfigDestroy(dPbConfigs[i][j]));
-                    CUDSSCHECK(cudssDataDestroy(cudssHandles[i][j], dPbDatas[i][j]));
-                    CUDSSCHECK(cudssMatrixDestroy(dPbAs[i][j]));
-                    CUDSSCHECK(cudssMatrixDestroy(dPbXs[i][j]));
-                    CUDSSCHECK(cudssMatrixDestroy(dPbBs[i][j]));
+                    CUDSSCHECK(cudssConfigDestroy(dPConfigs[i][j]));
+                    CUDSSCHECK(cudssDataDestroy(cudssHandles[i][j], dPDatas[i][j]));
+                    CUDSSCHECK(cudssMatrixDestroy(dPAs[i][j]));
+                    CUDSSCHECK(cudssMatrixDestroy(dPXs[i][j]));
+                    CUDSSCHECK(cudssMatrixDestroy(dPBs[i][j]));
                 }
 
                 CUDSSCHECK(cudssDestroy(cudssHandles[i][j]));
@@ -1785,7 +1751,7 @@ class HybridModel {
 
         DeviceAllocator.releaseDeviceArrays(localId, devNums, d_pic1d, d_pic2d, d_pic3d);
         DeviceAllocator.releaseDeviceArrays(localId, devNums, d_globalA, d_globalPhi, d_globalApt, d_globalPi,
-                                            d_globalPa, d_globalPb);
+                                            d_globalPa, d_globalPb, d_globalNi, d_globalNa, d_globalNb);
 
         /*-------------------------------------Diagnostic on GPU--------------------------------------*/
 
@@ -1881,7 +1847,8 @@ class HybridModel {
 
         DeviceAllocator.releaseDeviceArrays(localId, devNums, d_Phi_yxz, d_Phi_xzy, d_A_yxz, d_A_xzy, d_dNe_yxz,
                                             d_dNe_xzy, d_dTe_yxz, d_dTe_xzy, d_dPi_yxz, d_dPi_xzy, d_dPa_yxz, d_dPa_xzy,
-                                            d_dPb_yxz, d_dPb_xzy);
+                                            d_dPb_yxz, d_dPb_xzy, d_dNi_yxz, d_dNi_xzy, d_dNa_yxz, d_dNa_xzy, d_dNb_yxz,
+                                            d_dNb_xzy);
 
         /*------------------------------cuFFT Plan and Frequency Buffer-------------------------------*/
 
@@ -2071,7 +2038,9 @@ class HybridModel {
                 h_Phi[0][0], d_Phi_midr[i], h_Phi[0][0], d_dJpB_midl[i], h_dJpB[0][0], d_dJpB_midr[i], h_dJpB[0][0],
                 d_dPe_midl[i], h_dPe[0][0], d_dPe_midr[i], h_dPe[0][0], d_dPi_midl[i], h_globalPi[0][0], d_dPi_midr[i],
                 h_globalPi[0][0], d_dPa_midl[i], h_globalPa[0][0], d_dPa_midr[i], h_globalPa[0][0], d_dPb_midl[i],
-                h_globalPb[0][0], d_dPb_midr[i], h_globalPb[0][0], d_Apt_midl[i], h_dPe[0][0], d_Apt_midr[i],
+                h_globalPb[0][0], d_dPb_midr[i], h_globalPb[0][0], d_dNi_midl[i], h_globalNi[0][0], d_dNi_midr[i],
+                h_globalNi[0][0], d_dNa_midl[i], h_globalNa[0][0], d_dNa_midr[i], h_globalNa[0][0], d_dNb_midl[i],
+                h_globalNb[0][0], d_dNb_midr[i], h_globalNb[0][0], d_Apt_midl[i], h_dPe[0][0], d_Apt_midr[i],
                 h_dPe[0][0], d_w_beg[i], h_w[0][0], d_w_midl[i], h_w[0][0], d_w_midr[i], h_dPe[0][0], d_w_end[i],
                 h_dPe[0][0], d_A_beg[i], h_A[0][0], d_A_midl[i], h_A[0][0], d_A_midr[i], h_dPe[0][0], d_A_end[i],
                 h_dPe[0][0], d_dNe_beg[i], h_dNe[0][0], d_dNe_midl[i], h_dNe[0][0], d_dNe_midr[i], h_dPe[0][0],
@@ -2134,7 +2103,8 @@ class HybridModel {
             H2DAllocator.hostToDevice(gridNyPlusGhost * gridNx * gridNzPlusGhost * 8, 0, 0, d_pic3d[i], h_pic3d[0]);
 
             H2DAllocator.hostToDevice(gridNyPlusGhost * gridNxz, 0, 0, d_globalPi[i], h_dPe[0][0], d_globalPa[i],
-                                      h_dPe[0][0], d_globalPb[i], h_dPe[0][0]);
+                                      h_dPe[0][0], d_globalPb[i], h_dPe[0][0], d_globalNi[i], h_dPe[0][0],
+                                      d_globalNa[i], h_dPe[0][0], d_globalNb[i], h_dPe[0][0]);
 
             H2DAllocator.hostToDevice(gridNyPlusGhost * gridNxz, 0, 0, d_globalA[i], h_dPe[0][0], d_globalPhi[i],
                                       h_dPe[0][0], d_globalApt[i], h_dPe[0][0]);
@@ -2265,7 +2235,7 @@ class HybridModel {
                 reduceField(h_BeamPitchPower, d_BeamPitchPower);
         }
 
-        /*--------------------------------MHD Perturbation (10 fields)--------------------------------*/
+        /*--------------------------------MHD Perturbation (13 fields)--------------------------------*/
 
         auto gatherField = [&](mhdReal* hostBase, mhdReal** midlSrc) {
             std::vector<mhdReal> localSlab(hostSlabLen);
@@ -2288,6 +2258,9 @@ class HybridModel {
         gatherField(h_globalPi[0][0], d_dPi_midl);
         gatherField(h_globalPa[0][0], d_dPa_midl);
         gatherField(h_globalPb[0][0], d_dPb_midl);
+        gatherField(h_globalNi[0][0], d_dNi_midl);
+        gatherField(h_globalNa[0][0], d_dNa_midl);
+        gatherField(h_globalNb[0][0], d_dNb_midl);
 
         /*-------------------------------Output Totals (7 conditional)--------------------------------*/
 
@@ -2662,8 +2635,11 @@ class HybridModel {
             writeBin(finalDir + "/dPi.bin", h_globalPi[0][0] + gridGhost * gridNxz, sizeof(mhdReal) * gridNy * gridNxz);
             writeBin(finalDir + "/dPa.bin", h_globalPa[0][0] + gridGhost * gridNxz, sizeof(mhdReal) * gridNy * gridNxz);
             writeBin(finalDir + "/dPb.bin", h_globalPb[0][0] + gridGhost * gridNxz, sizeof(mhdReal) * gridNy * gridNxz);
+            writeBin(finalDir + "/dNi.bin", h_globalNi[0][0] + gridGhost * gridNxz, sizeof(mhdReal) * gridNy * gridNxz);
+            writeBin(finalDir + "/dNa.bin", h_globalNa[0][0] + gridGhost * gridNxz, sizeof(mhdReal) * gridNy * gridNxz);
+            writeBin(finalDir + "/dNb.bin", h_globalNb[0][0] + gridGhost * gridNxz, sizeof(mhdReal) * gridNy * gridNxz);
 
-            std::vector<mhdReal> MHDFinalPerturbation(gridNy * gridNxz * 7);
+            std::vector<mhdReal> MHDFinalPerturbation(gridNy * gridNxz * 10);
 
             for (int j = 0; j < gridNy; j++) {
                 for (int i = 0; i < gridNx; i++) {
@@ -2682,6 +2658,12 @@ class HybridModel {
                             h_globalPa[j + gridGhost][i][k];
                         MHDFinalPerturbation[j * gridNxz + i * gridNz + k + 6 * gridNy * gridNxz] =
                             h_globalPb[j + gridGhost][i][k];
+                        MHDFinalPerturbation[j * gridNxz + i * gridNz + k + 7 * gridNy * gridNxz] =
+                            h_globalNi[j + gridGhost][i][k];
+                        MHDFinalPerturbation[j * gridNxz + i * gridNz + k + 8 * gridNy * gridNxz] =
+                            h_globalNa[j + gridGhost][i][k];
+                        MHDFinalPerturbation[j * gridNxz + i * gridNz + k + 9 * gridNy * gridNxz] =
+                            h_globalNb[j + gridGhost][i][k];
                     }
                 }
             }
@@ -2837,6 +2819,9 @@ class HybridModel {
                     h_globalPi[j + gridGhost][i][k] = binaryData[j * gridNxz + i * gridNz + k + 4 * gridNy * gridNxz];
                     h_globalPa[j + gridGhost][i][k] = binaryData[j * gridNxz + i * gridNz + k + 5 * gridNy * gridNxz];
                     h_globalPb[j + gridGhost][i][k] = binaryData[j * gridNxz + i * gridNz + k + 6 * gridNy * gridNxz];
+                    h_globalNi[j + gridGhost][i][k] = binaryData[j * gridNxz + i * gridNz + k + 7 * gridNy * gridNxz];
+                    h_globalNa[j + gridGhost][i][k] = binaryData[j * gridNxz + i * gridNz + k + 8 * gridNy * gridNxz];
+                    h_globalNb[j + gridGhost][i][k] = binaryData[j * gridNxz + i * gridNz + k + 9 * gridNy * gridNxz];
                 }
             }
         }
@@ -2883,7 +2868,7 @@ class HybridModel {
         }
 
         if (hostId == 0) {
-            std::vector<mhdReal> buf(gridNy * gridNxz * 7, 0);
+            std::vector<mhdReal> buf(gridNy * gridNxz * 10, 0);
             for (int j = 0; j < gridNy; j++)
                 for (int i = 0; i < gridNx; i++)
                     for (int k = 0; k < gridNz; k++)
@@ -3646,9 +3631,7 @@ class HybridModel {
                                            : matrixType == 2 ? "NablaPerp2Phi"
                                            : matrixType == 3 ? "NablaPerp2dNe"
                                            : matrixType == 4 ? "NablaPerp2dTe"
-                                           : matrixType == 5 ? "NablaPerp2dPi"
-                                           : matrixType == 6 ? "NablaPerp2dPa"
-                                                             : "NablaPerp2dPb";
+                                                             : "NablaPerp2dP";
 
         auto&& [csrR, csrC, csrV] = [&]() {
             if constexpr (matrixType == 0)
@@ -3661,12 +3644,8 @@ class HybridModel {
                 return std::tie(d_dNeCsrR, d_dNeCsrC, d_dNeCsrV);
             else if constexpr (matrixType == 4)
                 return std::tie(d_dTeCsrR, d_dTeCsrC, d_dTeCsrV);
-            else if constexpr (matrixType == 5)
-                return std::tie(d_dPiCsrR, d_dPiCsrC, d_dPiCsrV);
-            else if constexpr (matrixType == 6)
-                return std::tie(d_dPaCsrR, d_dPaCsrC, d_dPaCsrV);
             else
-                return std::tie(d_dPbCsrR, d_dPbCsrC, d_dPbCsrV);
+                return std::tie(d_dPCsrR, d_dPCsrC, d_dPCsrV);
         }();
 
         auto&& [Configs, Datas, As, Xs, Bs] = [&]() {
@@ -3680,12 +3659,8 @@ class HybridModel {
                 return std::tie(dNeConfigs, dNeDatas, dNeAs, dNeXs, dNeBs);
             else if constexpr (matrixType == 4)
                 return std::tie(dTeConfigs, dTeDatas, dTeAs, dTeXs, dTeBs);
-            else if constexpr (matrixType == 5)
-                return std::tie(dPiConfigs, dPiDatas, dPiAs, dPiXs, dPiBs);
-            else if constexpr (matrixType == 6)
-                return std::tie(dPaConfigs, dPaDatas, dPaAs, dPaXs, dPaBs);
             else
-                return std::tie(dPbConfigs, dPbDatas, dPbAs, dPbXs, dPbBs);
+                return std::tie(dPConfigs, dPDatas, dPAs, dPXs, dPBs);
         }();
 
         auto& xField = [&]() -> mhdReal**& {
@@ -3699,12 +3674,8 @@ class HybridModel {
                 return d_dNe_midr;
             else if constexpr (matrixType == 4)
                 return d_dTe_midr;
-            else if constexpr (matrixType == 5)
-                return d_dPi_midr;
-            else if constexpr (matrixType == 6)
-                return d_dPa_midr;
             else
-                return d_dPb_midr;
+                return d_dPi_midr;
         }();
         auto& bField = [&]() -> mhdReal**& {
             if constexpr (matrixType == 0)
@@ -3717,12 +3688,8 @@ class HybridModel {
                 return d_dNe_midl;
             else if constexpr (matrixType == 4)
                 return d_dTe_midl;
-            else if constexpr (matrixType == 5)
-                return d_dPi_midl;
-            else if constexpr (matrixType == 6)
-                return d_dPa_midl;
             else
-                return d_dPb_midl;
+                return d_dPi_midl;
         }();
 
         constexpr auto realType = std::is_same_v<mhdReal, double> ? CUDA_R_64F : CUDA_R_32F;
@@ -3753,12 +3720,8 @@ class HybridModel {
                     coef = nablaPerp2dNe.coef;
                 else if constexpr (matrixType == 4)
                     coef = nablaPerp2dTe.coef;
-                else if constexpr (matrixType == 5)
-                    coef = nablaPerp2dPi.coef;
-                else if constexpr (matrixType == 6)
-                    coef = nablaPerp2dPa.coef;
                 else
-                    coef = nablaPerp2dPb.coef;
+                    coef = nablaPerp2dP.coef;
                 return {h_F_perp2[j][i],
                         -h_F_px_perp2[j][i] * dt * coef,
                         -h_F_pz_perp2[j][i] * dt * coef,

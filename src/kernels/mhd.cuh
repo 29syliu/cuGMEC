@@ -883,6 +883,33 @@ __global__ void MHD2dJpBdPePhi(type* __restrict__ A_mid, type* __restrict__ dJpB
         dPe_mid[offset3d] = dNe * Te0 + Ne0 * dTe + dNe * dTe;
 }
 
+template <typename type>
+__global__ void MHDQNeutrality2dNe(type* __restrict__ w_mid, type* __restrict__ dNi_mid, type* __restrict__ dNa_mid,
+                                   type* __restrict__ dNb_mid, type* __restrict__ dNe_mid) {
+
+    /*-------------------------------------Related Index--------------------------------------*/
+
+    int i = blockIdx.x * blockDim.z + threadIdx.z;
+    int j = blockIdx.y * blockDim.y + threadIdx.y;
+    int k = blockIdx.z * blockDim.x + threadIdx.x;
+    int offset3d = (j + gridGhost) * gridNxz + i * gridNz + k;
+
+    /*------------------------------------Quasi-Neutrality------------------------------------*/
+
+    type dNe = w_mid[offset3d] / NormQE;
+
+    if constexpr (std::is_same_v<ifIon, trueType>)
+        dNe += IonChar * dNi_mid[offset3d];
+    if constexpr (std::is_same_v<ifAlpha, trueType>)
+        dNe += AlphaChar * dNa_mid[offset3d];
+    if constexpr (std::is_same_v<ifBeam, trueType>)
+        dNe += BeamChar * dNb_mid[offset3d];
+
+    /*------------------------------------Electron Density------------------------------------*/
+
+    dNe_mid[offset3d] = dNe;
+}
+
 template <typename local, typename type>
 __global__ void MHD2w(type* __restrict__ Phi_mid, type* __restrict__ w_mid, type* __restrict__ d_Phi2w) {
 
@@ -1073,11 +1100,7 @@ __global__ void MHDNablaPara4(type* __restrict__ d_qtheta, type* __restrict__ d_
     else if constexpr (F == 3)
         para4 = para4dTe;
     else if constexpr (F == 4)
-        para4 = para4dPi;
-    else if constexpr (F == 5)
-        para4 = para4dPa;
-    else if constexpr (F == 6)
-        para4 = para4dPb;
+        para4 = para4dP;
 
     /*---------------------------------------NablaPara4---------------------------------------*/
 
@@ -1087,24 +1110,6 @@ __global__ void MHDNablaPara4(type* __restrict__ d_qtheta, type* __restrict__ d_
                      field_du, field_lr, field_py, nablaPara4);
 
     d_field[offset3d] -= mhdGridDt * para4 * nablaPara4;
-}
-
-template <typename type>
-__global__ void MHDGaussianAverage(type* __restrict__ field_in, type* __restrict__ field_out, type w0, type w1,
-                                   type w2) {
-
-    /*-------------------------------------Related Index--------------------------------------*/
-
-    int i = blockIdx.x * blockDim.z + threadIdx.z;
-    int j = blockIdx.y * blockDim.y + threadIdx.y;
-    int k = blockIdx.z * blockDim.x + threadIdx.x;
-    int offset3d = (j + gridGhost) * gridNxz + i * gridNz + k;
-
-    /*------------------------------------5pt Gaussian in y-----------------------------------*/
-
-    field_out[offset3d] = w0 * field_in[offset3d] +
-                          w1 * (field_in[offset3d - 1 * gridNxz] + field_in[offset3d + 1 * gridNxz]) +
-                          w2 * (field_in[offset3d - 2 * gridNxz] + field_in[offset3d + 2 * gridNxz]);
 }
 
 template <typename cufftType>
