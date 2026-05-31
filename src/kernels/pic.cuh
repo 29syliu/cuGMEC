@@ -175,7 +175,7 @@ __global__ void DriftAlignedRK4(picReal* __restrict__ pic1d, picReal* __restrict
         vec0[2] = pic_values_in[picId + 2 * picDev];
         vec0[3] = pic_values_in[picId + 3 * picDev];
         vec0[4] = pic_values_in[picId + 4 * picDev];
-        dis = pic_values_in[picId + 5 * picDev];
+        disP = pic_values_in[picId + 5 * picDev];
         mu = pic_values_in[picId + 6 * picDev];
 
         li = (vec0[0] - xbeg) / picGridDx;
@@ -265,9 +265,9 @@ __global__ void DriftAlignedRK4(picReal* __restrict__ pic1d, picReal* __restrict
             }
 
             if constexpr (std::is_same_v<nonlinear, trueType>)
-                ddt[4] *= (dis - vec1[4]);
+                ddt[4] *= (disP - vec1[4]);
             else
-                ddt[4] *= dis;
+                ddt[4] *= disP;
         };
 
         auto interpRK4 = [&]() {
@@ -639,7 +639,7 @@ __global__ void GyroAlignedRK4(picReal* __restrict__ pic1d, picReal* __restrict_
         vec0[2] = pic_values_in[picId + 2 * picDev];
         vec0[3] = pic_values_in[picId + 3 * picDev];
         vec0[4] = pic_values_in[picId + 4 * picDev];
-        dis = pic_values_in[picId + 5 * picDev];
+        disP = pic_values_in[picId + 5 * picDev];
         mu = pic_values_in[picId + 6 * picDev];
 
         li = (vec0[0] - xbeg) / picGridDx;
@@ -729,9 +729,9 @@ __global__ void GyroAlignedRK4(picReal* __restrict__ pic1d, picReal* __restrict_
             }
 
             if constexpr (std::is_same_v<nonlinear, trueType>)
-                ddt[4] *= (dis - vec1[4]);
+                ddt[4] *= (disP - vec1[4]);
             else
-                ddt[4] *= dis;
+                ddt[4] *= disP;
         };
 
         auto interpRK4 = [&]() {

@@ -53,6 +53,7 @@ Notation:
 | `tubes` | Positive integer | Simulate `1/tubes` of the toroidal domain. |  | `const int tubes = 6;` |
 | `leftN` | Nonnegative integer | Lower bound of the retained toroidal mode number in the `1/tubes` toroidal domain. | The actual toroidal mode range is `tubes*[leftN,rightN]`, with spacing `tubes`. | `const int leftN = 1;` |
 | `rightN` | Nonnegative integer | Upper bound of the retained toroidal mode number in the `1/tubes` toroidal domain. |  | `const int rightN = 6;` |
+| `refinedTimes` | Positive integer | Field-aligned interpolation refinement factor used by `selectNM_*` poloidal filtering. | The refined grid size is `gridNy * refinedTimes`. | `const int refinedTimes = 32;` |
 | `perturbLeftN` | Nonnegative integer | Lower bound of the initial perturbation toroidal mode number in the `1/tubes` toroidal domain. | The actual toroidal mode range is `tubes*[perturbLeftN,perturbRightN]`, with spacing `tubes`. | `const int perturbLeftN = 1;` |
 | `perturbRightN` | Nonnegative integer | Upper bound of the initial perturbation toroidal mode number in the `1/tubes` toroidal domain. |  | `const int perturbRightN = 6;` |
 | `perturbRadialIndex` | `1` to `gridNx` | Radial peak grid point of the initial Gaussian perturbation. |  | `const int perturbRadialIndex = 85;` |

@@ -1163,83 +1163,211 @@ __global__ void MHDFilterResizeN(type* __restrict__ d_field) {
     d_field[offset3d] /= gridNz;
 }
 
-template <typename cufftType>
-__global__ void MHDFilterModeM(cufftType* __restrict__ d_freq, int modeNumber) {
+template <typename type>
+__device__ void MHDSelectNMSinCos(const type& phase, type& sine, type& cosine) {
+
+    if constexpr (std::is_same_v<type, double>)
+        sincos(phase, &sine, &cosine);
+    else
+        sincosf(phase, &sine, &cosine);
+}
+
+template <typename cufftType, typename type>
+__device__ void MHDSelectNMRotateComplex(const cufftType& value, const type& phase, cufftType& result) {
+
+    type sine, cosine;
+    MHDSelectNMSinCos(phase, sine, cosine);
+
+    const type real = value.x;
+    const type imag = value.y;
+    result.x = real * cosine - imag * sine;
+    result.y = real * sine + imag * cosine;
+}
+
+template <typename cufftType, typename type>
+__global__ void MHDSelectNMExtractN(cufftType* __restrict__ d_freq, type* __restrict__ d_field,
+                                    cufftType* __restrict__ d_nmLocal, int toroidal) {
 
     /*-------------------------------------Related Index--------------------------------------*/
 
-    int offset = (blockIdx.x * blockDim.x + threadIdx.x) * mFFTFreqSize;
+    int index = blockIdx.x * blockDim.x + threadIdx.x;
 
-    /*-----------------------------------------Filter-----------------------------------------*/
+    int j = index / gridNx;
+    int i = index - j * gridNx;
+    int freqOffset = index * nFFTFreqSize + toroidal;
+    int offset3d = (j + gridGhost) * gridNxz + i * gridNz;
 
-    for (int mode = 0; mode < mFFTFreqSize; mode++) {
-        if (mode != modeNumber) {
+    /*--------------------------------------Envelope-----------------------------------------*/
 
-            d_freq[offset + mode].x = 0;
-            d_freq[offset + mode].y = 0;
-        }
+    cufftType envelope;
+    envelope.x = d_freq[freqOffset].x / gridNz;
+    envelope.y = -d_freq[freqOffset].y / gridNz;
+    d_nmLocal[index] = envelope;
+
+    /*--------------------------------------Subtract-----------------------------------------*/
+
+    int factor = (toroidal == 0 || toroidal == gridNz / 2) ? 1 : 2;
+    for (int k = 0; k < gridNz; k++) {
+        type sine, cosine;
+        type phase = 2 * PI * toroidal * k / gridNz;
+        MHDSelectNMSinCos(phase, sine, cosine);
+        d_field[offset3d + k] -= factor * (envelope.x * cosine + envelope.y * sine);
     }
 }
 
-template <typename cufftType>
-__global__ void MHDFilterModeM(cufftType* __restrict__ d_freq, int leftModeNumber, int rightModeNumber) {
+template <typename cufftType, typename type>
+__global__ void MHDSelectNMShifted2A(type* __restrict__ d_qtheta, cufftType* __restrict__ d_nmPest,
+                                     cufftType* __restrict__ d_nmAligned, int toroidal) {
 
     /*-------------------------------------Related Index--------------------------------------*/
 
-    int offset = (blockIdx.x * blockDim.x + threadIdx.x) * mFFTFreqSize;
+    int index = blockIdx.x * blockDim.x + threadIdx.x;
+
+    int j = index / gridNx;
+    int i = index - j * gridNx;
+    int offset2d = (j + gridGhost) * gridNx + i;
+
+    /*---------------------------------------Shift N------------------------------------------*/
+
+    type phase = -toroidal * tubes * d_qtheta[offset2d];
+    MHDSelectNMRotateComplex<cufftType, type>(d_nmPest[index], phase, d_nmAligned[index]);
+}
+
+template <typename cufftType, typename type>
+__global__ void MHDSelectNMAlignedGhost(type* __restrict__ d_qtheta, cufftType* __restrict__ d_nmGlobal, int toroidal) {
+
+    /*-------------------------------------Related Index--------------------------------------*/
+
+    int index = blockIdx.x * blockDim.x + threadIdx.x;
+
+    int j = index / gridNx;
+    int i = index - j * gridNx;
+    int offset2d = j * gridNx + i;
+
+    type deltaQtheta = (d_qtheta[offset2d + gridNx] - d_qtheta[offset2d]) * gridNy;
+    type physicalN = toroidal * tubes;
+
+    /*---------------------------------------Left Ghost---------------------------------------*/
+
+    int leftTarget = j * gridNx + i;
+    int leftSource = (gridNy + j) * gridNx + i;
+    type leftPhase = physicalN * deltaQtheta;
+    MHDSelectNMRotateComplex<cufftType, type>(d_nmGlobal[leftSource], leftPhase, d_nmGlobal[leftTarget]);
+
+    /*--------------------------------------Right Ghost---------------------------------------*/
+
+    int rightTarget = (gridNy + gridGhost + j) * gridNx + i;
+    int rightSource = (gridGhost + j) * gridNx + i;
+    type rightPhase = -physicalN * deltaQtheta;
+    MHDSelectNMRotateComplex<cufftType, type>(d_nmGlobal[rightSource], rightPhase, d_nmGlobal[rightTarget]);
+}
+
+template <typename cufftType, typename type>
+__global__ void MHDSelectNMRefineY(cufftType* __restrict__ d_nmGlobal, cufftType* __restrict__ d_nmRefined) {
+
+    /*-------------------------------------Related Index--------------------------------------*/
+
+    int index = blockIdx.x * blockDim.x + threadIdx.x;
+
+    int i = index / refinedNy;
+    int refinedIndex = index - i * refinedNy;
+
+    /*-----------------------------------------Refine-----------------------------------------*/
+
+    type globalIndex = (static_cast<type>(refinedIndex) + 1) / refinedTimes - 1;
+    int shift_j;
+    if constexpr (std::is_same_v<type, double>)
+        shift_j = __double2int_rd(globalIndex);
+    else
+        shift_j = __float2int_rd(globalIndex);
+    type shift_dj = globalIndex - shift_j;
+
+    cufftType value0 = d_nmGlobal[(shift_j - 1 + gridGhost) * gridNx + i];
+    cufftType value1 = d_nmGlobal[(shift_j + 0 + gridGhost) * gridNx + i];
+    cufftType value2 = d_nmGlobal[(shift_j + 1 + gridGhost) * gridNx + i];
+    cufftType value3 = d_nmGlobal[(shift_j + 2 + gridGhost) * gridNx + i];
+
+    const type c0 = -shift_dj * (-1 + shift_dj) * (-2 + shift_dj) / 6;
+    const type c1 = (1 + shift_dj) * (-1 + shift_dj) * (-2 + shift_dj) / 2;
+    const type c2 = -shift_dj * (1 + shift_dj) * (-2 + shift_dj) / 2;
+    const type c3 = shift_dj * (1 + shift_dj) * (-1 + shift_dj) / 6;
+
+    const type real = c0 * value0.x + c1 * value1.x + c2 * value2.x + c3 * value3.x;
+    const type imag = c0 * value0.y + c1 * value1.y + c2 * value2.y + c3 * value3.y;
+    d_nmRefined[index].x = real;
+    d_nmRefined[index].y = imag;
+}
+
+template <typename cufftType, typename type>
+__global__ void MHDSelectNMAligned2S(type* __restrict__ d_qtheta, cufftType* __restrict__ d_nmAligned,
+                                     cufftType* __restrict__ d_nmPest, int localIndex, int toroidal) {
+
+    /*-------------------------------------Related Index--------------------------------------*/
+
+    int index = blockIdx.x * blockDim.x + threadIdx.x;
+
+    int i = index / refinedNy;
+    int refinedIndex = index - i * refinedNy;
+    int offset2d = gridGhost * gridNx + i;
+
+    /*---------------------------------------Shift N------------------------------------------*/
+
+    type globalIndex = (static_cast<type>(refinedIndex) + 1) / refinedTimes - 1;
+    type qtheta = d_qtheta[offset2d] + (globalIndex - localIndex) * (d_qtheta[offset2d + gridNx] - d_qtheta[offset2d]);
+    type phase = toroidal * tubes * qtheta;
+
+    MHDSelectNMRotateComplex<cufftType, type>(d_nmAligned[index], phase, d_nmPest[index]);
+}
+
+template <typename cufftType>
+__global__ void MHDSelectNMFilterM(cufftType* __restrict__ d_freq, int leftModeNumber, int rightModeNumber) {
+
+    /*-------------------------------------Related Index--------------------------------------*/
+
+    int index = blockIdx.x * blockDim.x + threadIdx.x;
+
+    int mode = index % refinedNy;
+    int signedMode = (mode <= refinedNy / 2) ? mode : mode - refinedNy;
+    int absMode = (signedMode < 0) ? -signedMode : signedMode;
 
     /*-----------------------------------------Filter-----------------------------------------*/
 
-    for (int mode = 0; mode < mFFTFreqSize; mode++) {
-        if (mode < leftModeNumber || mode > rightModeNumber) {
-
-            d_freq[offset + mode].x = 0;
-            d_freq[offset + mode].y = 0;
-        }
+    if (absMode < leftModeNumber || absMode > rightModeNumber) {
+        d_freq[index].x = 0;
+        d_freq[index].y = 0;
     }
 }
 
-template <typename type>
-__global__ void MHDFilterResizeM(type* __restrict__ d_field) {
+template <typename cufftType, typename type>
+__global__ void MHDSelectNMAddMode(cufftType* __restrict__ d_nmRefined, type* __restrict__ d_field, int localIndex,
+                                   int toroidal) {
 
     /*-------------------------------------Related Index--------------------------------------*/
 
-    int i = blockIdx.x * blockDim.z + threadIdx.z;
-    int j = blockIdx.y * blockDim.y + threadIdx.y;
-    int k = blockIdx.z * blockDim.x + threadIdx.x;
-    int offset3d = (j + gridGhost) * gridNxz + i * gridNz + k;
+    int index = blockIdx.x * blockDim.x + threadIdx.x;
 
-    /*-----------------------------------------Resize-----------------------------------------*/
+    int j = index / gridNx;
+    int i = index - j * gridNx;
+    int globalIndex = localIndex + j;
+    int refinedIndex = refinedTimes * globalIndex + (refinedTimes - 1);
+    int refinedOffset = i * refinedNy + refinedIndex;
+    int offset3d = (j + gridGhost) * gridNxz + i * gridNz;
 
-    d_field[offset3d] /= gridNy;
-}
+    /*-----------------------------------------Coarsen----------------------------------------*/
 
-template <typename type>
-__global__ void MHDTransposeLeft(type* __restrict__ d_yxzField, type* __restrict__ d_xzyField) {
+    cufftType envelope = d_nmRefined[refinedOffset];
+    envelope.x /= refinedNy;
+    envelope.y /= refinedNy;
 
-    /*-------------------------------------Related Index--------------------------------------*/
+    /*------------------------------------------Add-------------------------------------------*/
 
-    int i = threadIdx.x;
-    int j = blockIdx.x;
-
-    /*-------------------------------------Transpose Left-------------------------------------*/
-
-    for (int k = 0; k < gridNz; k++)
-        d_xzyField[i * gridNz * gridNy + k * gridNy + j] = d_yxzField[j * gridNxz + i * gridNz + k];
-}
-
-template <typename type>
-__global__ void MHDTransposeRight(type* __restrict__ d_xzyField, type* __restrict__ d_yxzField) {
-
-    /*-------------------------------------Related Index--------------------------------------*/
-
-    int i = blockIdx.x;
-    int k = threadIdx.x;
-
-    /*------------------------------------Transpose Right-------------------------------------*/
-
-    for (int j = 0; j < gridNy; j++)
-        d_yxzField[j * gridNxz + i * gridNz + k] = d_xzyField[i * gridNz * gridNy + k * gridNy + j];
+    int factor = (toroidal == 0 || toroidal == gridNz / 2) ? 1 : 2;
+    for (int k = 0; k < gridNz; k++) {
+        type sine, cosine;
+        type phase = 2 * PI * toroidal * k / gridNz;
+        MHDSelectNMSinCos(phase, sine, cosine);
+        d_field[offset3d + k] += factor * (envelope.x * cosine + envelope.y * sine);
+    }
 }
 
 template <typename type>

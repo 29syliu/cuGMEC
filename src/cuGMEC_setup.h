@@ -42,6 +42,7 @@ const int gridNyPlusGhost = gridNy + 2 * gridGhost;
 const int gridNzPlusGhost = gridNz + 2 * gridGhost;
 const int hostNy = gridNy / hostNums;
 const int devNy = hostNy / devNums;
+const int refinedNy = gridNy * refinedTimes;
 
 const mhdReal NormQE = QE / (B0 * L0 * L0 / MU0 / VA0);
 const mhdReal NormMP = MP / (B0 * B0 * L0 * L0 * L0 / MU0 / VA0 / VA0);
@@ -126,6 +127,11 @@ const int M2PGridDimx = gridNx / M2PBlockDimz;
 const int M2PGridDimy = gridNy / M2PBlockDimy;
 const int M2PGridDimz = gridNz / M2PBlockDimx;
 
+const int NMBlockDimx = 256;
+const int LocalNMGridDimx = devNy * gridNx / NMBlockDimx;
+const int GhostNMGridDimx = gridGhost * gridNx / NMBlockDimx;
+const int RefinedNMGridDimx = refinedNy * gridNx / NMBlockDimx;
+
 const int pptNums = 32;
 const int PICBlockDimx = 128;
 const int PICGridDimx = picDev / pptNums / PICBlockDimx;
@@ -134,6 +140,4 @@ const int nFFTBatchSize = devNy * gridNx;
 const int nFFTTimeSize = gridNz;
 const int nFFTFreqSize = gridNz / 2 + 1;
 
-const int mFFTBatchSize = gridNx * gridNz;
-const int mFFTTimeSize = gridNy;
-const int mFFTFreqSize = gridNy / 2 + 1;
+const int mFFTTimeSize = refinedNy;

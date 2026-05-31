@@ -45,6 +45,8 @@
 
 #include "cuGMEC_setup.h"
 
+using mhdComplex = std::conditional_t<std::is_same_v<mhdReal, double>, cufftDoubleComplex, cufftComplex>;
+
 template <int ratioDt, picType particle, typename orbitReal>
 __global__ void PICDiagOrbit(orbitReal* __restrict__ pic1d, orbitReal* __restrict__ pic2d,
                              orbitReal* __restrict__ phaseSpaceMapping);
@@ -93,7 +95,8 @@ struct HybridModelConfig {
     struct SpeciesConfig  { bool enable; double mass, charge, beta, vmin, vmax, vb, deltaV, lambda0, deltaLambda2; } ion, alpha, beam;
     struct Time           { int total, diag, output; } time;
     struct Filter         { int leftN, rightN; } filter;
-    struct FFTSize        { int time, batch, freq; };  FFTSize nFFT, mFFT;
+    struct NFFTSize       { int time, batch, freq; };  NFFTSize nFFT;
+    struct MFFTSize       { int time; };               MFFTSize mFFT;
     struct DiagFlags      { bool amplitude, frequency, Eparallel, density, diffusivity, ZFDrive, checkNAN; } diag;
     struct OutputFlags    { bool Phi, A, dNe, dTe, dPi, dPa, dPb; } output;
 };
@@ -139,8 +142,7 @@ class HybridModel {
 
           totalSteps{cfg.time.total}, diagSteps{cfg.time.diag}, outputSteps{cfg.time.output}, leftN{cfg.filter.leftN},
           rightN{cfg.filter.rightN}, nFFTTimeSize{cfg.nFFT.time}, nFFTBatchSize{cfg.nFFT.batch},
-          nFFTFreqSize{cfg.nFFT.freq}, mFFTTimeSize{cfg.mFFT.time}, mFFTBatchSize{cfg.mFFT.batch},
-          mFFTFreqSize{cfg.mFFT.freq},
+          nFFTFreqSize{cfg.nFFT.freq}, mFFTTimeSize{cfg.mFFT.time},
 
           ifDiagAmplitude{cfg.diag.amplitude}, ifDiagFrequency{cfg.diag.frequency}, ifDiagEparallel{cfg.diag.Eparallel},
           ifDiagDensity{cfg.diag.density}, ifDiagDiffusivity{cfg.diag.diffusivity}, ifDiagZFDrive{cfg.diag.ZFDrive},
@@ -575,7 +577,7 @@ class HybridModel {
 	const int totalSteps, diagSteps, outputSteps;
 	const int leftN, rightN;
 	const int nFFTTimeSize, nFFTBatchSize, nFFTFreqSize;
-	const int mFFTTimeSize, mFFTBatchSize, mFFTFreqSize;
+	const int mFFTTimeSize;
 
 	const bool ifDiagAmplitude, ifDiagFrequency, ifDiagEparallel, ifDiagDensity, ifDiagDiffusivity, ifDiagZFDrive, ifCheckNAN;
 	const bool ifOutputPhi, ifOutputA, ifOutputdNe, ifOutputdTe, ifOutputdPi, ifOutputdPa, ifOutputdPb;
@@ -619,23 +621,13 @@ class HybridModel {
 
 	/*------------------------------------------------Select Mode NM Buffer on GPU------------------------------------------------*/
 
-	mhdReal** d_Phi_yxz; mhdReal** d_Phi_xzy;
-	mhdReal** d_A_yxz;   mhdReal** d_A_xzy;
-	mhdReal** d_dNe_yxz; mhdReal** d_dNe_xzy;
-	mhdReal** d_dTe_yxz; mhdReal** d_dTe_xzy;
-	mhdReal** d_dPi_yxz; mhdReal** d_dPi_xzy;
-	mhdReal** d_dPa_yxz; mhdReal** d_dPa_xzy;
-	mhdReal** d_dPb_yxz; mhdReal** d_dPb_xzy;
-	mhdReal** d_dNi_yxz; mhdReal** d_dNi_xzy;
-	mhdReal** d_dNa_yxz; mhdReal** d_dNa_xzy;
-	mhdReal** d_dNb_yxz; mhdReal** d_dNb_xzy;
+	mhdComplex** d_nmLocal;   mhdComplex** d_nmGlobal;   mhdComplex** d_nmRefined;
 
 	/*----------------------------------------------cuFFT Plan and Frequency Buffer-----------------------------------------------*/
 
 	std::vector<cufftHandle> d_nPlanR2Cs; std::vector<cufftHandle> d_nPlanC2Rs;
-	std::vector<cufftHandle> d_mPlanR2Cs; std::vector<cufftHandle> d_mPlanC2Rs;
+	std::vector<cufftHandle> d_mPlanC2Cs;
 	cufftDoubleComplex** d_nFreqd; cufftComplex** d_nFreqf;
-	cufftDoubleComplex** d_mFreqd; cufftComplex** d_mFreqf;
 
 	/*---------------------------------------------------CUB Radix Sort Storage---------------------------------------------------*/
 
@@ -1208,8 +1200,7 @@ class HybridModel {
 
         d_nPlanR2Cs.resize(devNums);
         d_nPlanC2Rs.resize(devNums);
-        d_mPlanR2Cs.resize(devNums);
-        d_mPlanC2Rs.resize(devNums);
+        d_mPlanC2Cs.resize(devNums);
         startEvents.resize(devNums);
         endEvents.resize(devNums);
         elapsedTime.resize(devNums);
@@ -1522,10 +1513,13 @@ class HybridModel {
 
         /*--------------------------------Select Mode NM Buffer on GPU--------------------------------*/
 
-        DeviceAllocator.allocateDeviceArrays(localId, devNums, gridNy * gridNxz, d_Phi_yxz, d_Phi_xzy, d_A_yxz, d_A_xzy,
-                                             d_dNe_yxz, d_dNe_xzy, d_dTe_yxz, d_dTe_xzy, d_dPi_yxz, d_dPi_xzy,
-                                             d_dPa_yxz, d_dPa_xzy, d_dPb_yxz, d_dPb_xzy, d_dNi_yxz, d_dNi_xzy,
-                                             d_dNa_yxz, d_dNa_xzy, d_dNb_yxz, d_dNb_xzy);
+        const size_t nmLocalSize = (size_t)devNy * gridNx;
+        const size_t nmGlobalSize = (size_t)(gridNy + 2 * gridGhost) * gridNx;
+        const size_t nmRefinedSize = (size_t)refinedNy * gridNx;
+
+        DeviceAllocator.allocateDeviceArrays(localId, devNums, nmLocalSize, d_nmLocal);
+        DeviceAllocator.allocateDeviceArrays(localId, devNums, nmGlobalSize, d_nmGlobal);
+        DeviceAllocator.allocateDeviceArrays(localId, devNums, nmRefinedSize, d_nmRefined);
 
         /*------------------------------cuFFT Plan and Frequency Buffer-------------------------------*/
 
@@ -1534,26 +1528,21 @@ class HybridModel {
             if constexpr (std::is_same_v<mhdReal, double>) {
                 CUFFTCHECK(cufftPlan1d(&d_nPlanR2Cs[i], nFFTTimeSize, CUFFT_D2Z, nFFTBatchSize));
                 CUFFTCHECK(cufftPlan1d(&d_nPlanC2Rs[i], nFFTTimeSize, CUFFT_Z2D, nFFTBatchSize));
-                CUFFTCHECK(cufftPlan1d(&d_mPlanR2Cs[i], mFFTTimeSize, CUFFT_D2Z, mFFTBatchSize));
-                CUFFTCHECK(cufftPlan1d(&d_mPlanC2Rs[i], mFFTTimeSize, CUFFT_Z2D, mFFTBatchSize));
+                CUFFTCHECK(cufftPlan1d(&d_mPlanC2Cs[i], mFFTTimeSize, CUFFT_Z2Z, gridNx));
             } else {
                 CUFFTCHECK(cufftPlan1d(&d_nPlanR2Cs[i], nFFTTimeSize, CUFFT_R2C, nFFTBatchSize));
                 CUFFTCHECK(cufftPlan1d(&d_nPlanC2Rs[i], nFFTTimeSize, CUFFT_C2R, nFFTBatchSize));
-                CUFFTCHECK(cufftPlan1d(&d_mPlanR2Cs[i], mFFTTimeSize, CUFFT_R2C, mFFTBatchSize));
-                CUFFTCHECK(cufftPlan1d(&d_mPlanC2Rs[i], mFFTTimeSize, CUFFT_C2R, mFFTBatchSize));
+                CUFFTCHECK(cufftPlan1d(&d_mPlanC2Cs[i], mFFTTimeSize, CUFFT_C2C, gridNx));
             }
             CUFFTCHECK(cufftSetStream(d_nPlanR2Cs[i], 0));
             CUFFTCHECK(cufftSetStream(d_nPlanC2Rs[i], 0));
-            CUFFTCHECK(cufftSetStream(d_mPlanR2Cs[i], 0));
-            CUFFTCHECK(cufftSetStream(d_mPlanC2Rs[i], 0));
+            CUFFTCHECK(cufftSetStream(d_mPlanC2Cs[i], 0));
         }
 
         if constexpr (std::is_same_v<mhdReal, double>) {
             DeviceAllocator.allocateDeviceArrays(localId, devNums, (size_t)nFFTBatchSize * nFFTFreqSize, d_nFreqd);
-            DeviceAllocator.allocateDeviceArrays(localId, devNums, (size_t)mFFTBatchSize * mFFTFreqSize, d_mFreqd);
         } else {
             DeviceAllocator.allocateDeviceArrays(localId, devNums, (size_t)nFFTBatchSize * nFFTFreqSize, d_nFreqf);
-            DeviceAllocator.allocateDeviceArrays(localId, devNums, (size_t)mFFTBatchSize * mFFTFreqSize, d_mFreqf);
         }
 
         /*------------------------------------CUB Radix Sort Outer------------------------------------*/
@@ -1845,25 +1834,23 @@ class HybridModel {
 
         /*--------------------------------Select Mode NM Buffer on GPU--------------------------------*/
 
-        DeviceAllocator.releaseDeviceArrays(localId, devNums, d_Phi_yxz, d_Phi_xzy, d_A_yxz, d_A_xzy, d_dNe_yxz,
-                                            d_dNe_xzy, d_dTe_yxz, d_dTe_xzy, d_dPi_yxz, d_dPi_xzy, d_dPa_yxz, d_dPa_xzy,
-                                            d_dPb_yxz, d_dPb_xzy, d_dNi_yxz, d_dNi_xzy, d_dNa_yxz, d_dNa_xzy, d_dNb_yxz,
-                                            d_dNb_xzy);
+        DeviceAllocator.releaseDeviceArrays(localId, devNums, d_nmLocal);
+        DeviceAllocator.releaseDeviceArrays(localId, devNums, d_nmGlobal);
+        DeviceAllocator.releaseDeviceArrays(localId, devNums, d_nmRefined);
 
         /*------------------------------cuFFT Plan and Frequency Buffer-------------------------------*/
 
         if constexpr (std::is_same_v<mhdReal, double>) {
-            DeviceAllocator.releaseDeviceArrays(localId, devNums, d_nFreqd, d_mFreqd);
+            DeviceAllocator.releaseDeviceArrays(localId, devNums, d_nFreqd);
         } else {
-            DeviceAllocator.releaseDeviceArrays(localId, devNums, d_nFreqf, d_mFreqf);
+            DeviceAllocator.releaseDeviceArrays(localId, devNums, d_nFreqf);
         }
 
         for (int i = 0; i < devNums; i++) {
             CUDACHECK(cudaSetDevice(localId * devNums + i));
             CUFFTCHECK(cufftDestroy(d_nPlanR2Cs[i]));
             CUFFTCHECK(cufftDestroy(d_nPlanC2Rs[i]));
-            CUFFTCHECK(cufftDestroy(d_mPlanR2Cs[i]));
-            CUFFTCHECK(cufftDestroy(d_mPlanC2Rs[i]));
+            CUFFTCHECK(cufftDestroy(d_mPlanC2Cs[i]));
         }
 
         /*---------------------------------------CUB Radix Sort---------------------------------------*/

@@ -53,6 +53,7 @@
 | `tubes` | 正整数 | 模拟 `1/tubes` 个环向区域。 |  | `const int tubes = 6;` |
 | `leftN` | 非负整数 | `1/tubes` 个环向区域里保留的环向模数下限。 | 实际环向模数范围为 `tubes*[leftN,rightN]`，间隔为 `tubes`。 | `const int leftN = 1;` |
 | `rightN` | 非负整数 | `1/tubes` 个环向区域里保留的环向模数上限。 |  | `const int rightN = 6;` |
+| `refinedTimes` | 正整数 | `selectNM_*` 极向滤波使用的沿场线方向插值细分倍数。 | 细分后网格数为 `gridNy * refinedTimes`。 | `const int refinedTimes = 32;` |
 | `perturbLeftN` | 非负整数 | `1/tubes` 个环向区域里初始扰动环向模数下限。 | 实际环向模数范围为 `tubes*[perturbLeftN,perturbRightN]`，间隔为 `tubes`。 | `const int perturbLeftN = 1;` |
 | `perturbRightN` | 非负整数 | `1/tubes` 个环向区域里初始扰动环向模数上限。 |  | `const int perturbRightN = 6;` |
 | `perturbRadialIndex` | `1` 到 `gridNx` | 初始高斯扰动的径向峰值网格点。 |  | `const int perturbRadialIndex = 85;` |

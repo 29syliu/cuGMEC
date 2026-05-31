@@ -25,9 +25,9 @@
 using mhdReal = double;
 using picReal = float;
 
-const std::string inputDir = "/home-ssd/Users/nsgm_pjj/ITER/0.08-0.90";
-const std::string outputDir = "/home-ssd/Users/nsgm_pjj/ITER/0.08-0.90/6_1-6_400";
-const std::string MHDCollocated = "MHDCollocated_256_32.bin";
+const std::string inputDir = "/home/imogen/cuGMEC/ITER";
+const std::string outputDir = "/home/imogen/cuGMEC/ITER";
+const std::string MHDCollocated = "MHDCollocated_384_32.bin";
 const std::string MHDStaggered = "MHDStaggered_256_32.bin";
 const std::string IonPhaseSpaceMapping = "IonPhaseSpaceMapping.bin";
 const std::string BeamPhaseSpaceMapping = "BeamPhaseSpaceMapping.bin";
@@ -44,22 +44,23 @@ const double PSITMAX = 18.868213504765762;
 
 /*------------------------------Scale Setting-----------------------------*/
 
-const int hostNums = 4;
-const int devNums = 4;
-const int gridNx = 256;
+const int hostNums = 1;
+const int devNums = 1;
+const int gridNx = 384;
 const int gridNy = 32;
-const int gridNz = 96;
+const int gridNz = 16;
 const int ppcNums = 256;
 
 /*-------------------------------MHD Setting------------------------------*/
 
-const int tubes = 6;
+const int tubes = 29;
 const int leftN = 1;
-const int rightN = 6;
+const int rightN = 1;
+const int refinedTimes = 32;
 
 const int perturbLeftN = 1;
-const int perturbRightN = 6;
-const int perturbRadialIndex = 85;
+const int perturbRightN = 1;
+const int perturbRadialIndex = 125;
 const mhdReal perturbWidth = 0.04;
 const mhdReal perturbAmplitude = 2.5e-9;
 
@@ -73,11 +74,11 @@ constexpr std::array<int, 0> removeN_A = {};
 constexpr std::array<int, 0> removeN_dNe = {};
 constexpr std::array<int, 0> removeN_dTe = {};
 constexpr std::array<int, 0> removeN_dP = {};
-constexpr std::array<std::tuple<int, int, int>, 1> selectNM_Phi = {{{0, 0, 0}}};
-constexpr std::array<std::tuple<int, int, int>, 1> selectNM_A = {{{0, 0, 1}}};
-constexpr std::array<std::tuple<int, int, int>, 1> selectNM_dNe = {{{0, 0, 1}}};
-constexpr std::array<std::tuple<int, int, int>, 1> selectNM_dTe = {{{0, 0, 1}}};
-constexpr std::array<std::tuple<int, int, int>, 1> selectNM_dP = {{{0, 0, 1}}};
+constexpr std::array<std::tuple<int, int, int>, 1> selectNM_Phi = {{{1, 0, 32}}};
+constexpr std::array<std::tuple<int, int, int>, 1> selectNM_A = {{{1, 0, 32}}};
+constexpr std::array<std::tuple<int, int, int>, 1> selectNM_dNe = {{{1, 0, 32}}};
+constexpr std::array<std::tuple<int, int, int>, 1> selectNM_dTe = {{{1, 0, 32}}};
+constexpr std::array<std::tuple<int, int, int>, 1> selectNM_dP = {{{1, 0, 32}}};
 
 using ifStaggered = falseType;
 using ifNonlinearMHD = trueType;
@@ -89,27 +90,27 @@ using ifReynoldsStress = trueType;
 const mhdReal MaxwellStressCoef = 1.0;
 const mhdReal ReynoldsStressCoef = 1.0;
 
-using ifNablaPerp2Phi = trueType;
-using ifNablaPara4Phi = trueType;
-const mhdReal perp2Phi = 2.0e-7;
+using ifNablaPerp2Phi = falseType;
+using ifNablaPara4Phi = falseType;
+const mhdReal perp2Phi = 1.0e-7;
 const mhdReal para4Phi = 1.0e-7;
 
-using ifNablaPerp2A = trueType;
-using ifNablaPara4A = trueType;
-const mhdReal perp2A = 2.0e-7;
+using ifNablaPerp2A = falseType;
+using ifNablaPara4A = falseType;
+const mhdReal perp2A = 1.0e-7;
 const mhdReal para4A = 1.0e-7;
 
-using ifNablaPerp2dNe = trueType;
-using ifNablaPara4dNe = trueType;
-const mhdReal perp2dNe = 2.0e-7;
+using ifNablaPerp2dNe = falseType;
+using ifNablaPara4dNe = falseType;
+const mhdReal perp2dNe = 1.0e-7;
 const mhdReal para4dNe = 1.0e-7;
 
-using ifNablaPerp2dTe = trueType;
-using ifNablaPara4dTe = trueType;
-const mhdReal perp2dTe = 2.0e-7;
+using ifNablaPerp2dTe = falseType;
+using ifNablaPara4dTe = falseType;
+const mhdReal perp2dTe = 1.0e-7;
 const mhdReal para4dTe = 1.0e-7;
 
-using ifNablaPerp2dP = trueType;
+using ifNablaPerp2dP = falseType;
 using ifNablaPara4dP = falseType;
 const mhdReal perp2dP = 1.0e-6;
 const mhdReal para4dP = 0.0;
@@ -120,7 +121,7 @@ using ifFLRPIC = trueType;
 using ifNonlinearPIC = trueType;
 const int gyroNums = 4;
 
-using ifIon = trueType;
+using ifIon = falseType;
 const disType IonType = Maxwell;
 const spaceType IonSpace = spaceReal;
 const velocityType IonVelocity = velocityUniform;
@@ -134,7 +135,7 @@ const picReal IonDeltaV = 0.0;
 const picReal IonLambda0 = 0.0;
 const picReal IonDeltaLambda2 = 0.0;
 
-using ifAlpha = trueType;
+using ifAlpha = falseType;
 const disType AlphaType = Slowing0;
 const spaceType AlphaSpace = spaceReal;
 const velocityType AlphaVelocity = velocityUniform;
@@ -148,7 +149,7 @@ const picReal AlphaDeltaV = 0.0;
 const picReal AlphaLambda0 = 0.0;
 const picReal AlphaDeltaLambda2 = 0.0;
 
-using ifBeam = trueType;
+using ifBeam = falseType;
 const disType BeamType = Slowing2;
 const spaceType BeamSpace = spaceReal;
 const velocityType BeamVelocity = velocityUniform;
@@ -184,7 +185,7 @@ const int gridE = 96;
 const int gridPphi = 128;
 const int gridLambda = 48;
 const int ppcPhase = 2048;
-using ifOutputPhaseSpaceJacobian = trueType;
+using ifOutputPhaseSpaceJacobian = falseType;
 using ifOutputPhaseSpaceOrbit = falseType;
 using ifOutputPhaseSpaceF0 = falseType;
 using ifOutputPhaseSpaceDeltaF = falseType;
@@ -193,7 +194,7 @@ using ifOutputPhaseSpacePower = falseType;
 const int gridVpara = 128;
 const int gridVperp = 64;
 const int ppcPitch = 2048;
-using ifOutputPitchSpaceJacobian = trueType;
+using ifOutputPitchSpaceJacobian = falseType;
 using ifOutputPitchSpaceF0 = falseType;
 using ifOutputPitchSpaceDeltaF = falseType;
 using ifOutputPitchSpacePower = falseType;
@@ -201,8 +202,8 @@ using ifOutputPitchSpacePower = falseType;
 using ifContinue = falseType;
 const int continueSteps = 0;
 const double dt = 0.02;
-const int totalSteps = 20000;
+const int totalSteps = 1;
 const int ratioDt = 1;
-const int sortSteps = 25;
+const int sortSteps = 1;
 const int diagSteps = 1;
 const int outputSteps = 2500;

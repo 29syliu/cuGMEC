@@ -134,7 +134,7 @@ int main(int argc, char* argv[]) {
         .time = {.total = totalSteps, .diag = diagSteps, .output = outputSteps},
         .filter = {.leftN = leftN, .rightN = rightN},
         .nFFT = {.time = nFFTTimeSize, .batch = nFFTBatchSize, .freq = nFFTFreqSize},
-        .mFFT = {.time = mFFTTimeSize, .batch = mFFTBatchSize, .freq = mFFTFreqSize},
+        .mFFT = {.time = mFFTTimeSize},
         .diag = {.amplitude = toBool<ifDiagAmplitude>,
                  .frequency = toBool<ifDiagFrequency>,
                  .Eparallel = toBool<ifDiagEparallel>,
@@ -162,6 +162,11 @@ int main(int argc, char* argv[]) {
 
     dim3 M2PGridSize(M2PGridDimx, M2PGridDimy, M2PGridDimz);
     dim3 M2PBlockSize(M2PBlockDimx, M2PBlockDimy, M2PBlockDimz);
+
+    dim3 LocalNMGridSize(LocalNMGridDimx);
+    dim3 GhostNMGridSize(GhostNMGridDimx);
+    dim3 RefinedNMGridSize(RefinedNMGridDimx);
+    dim3 NMBlockSize(NMBlockDimx);
 
     dim3 PICGridSize(PICGridDimx);
     dim3 PICBlockSize(PICBlockDimx);
@@ -238,13 +243,10 @@ int main(int argc, char* argv[]) {
     REF(totalPhi); REF(totalA); REF(totaldNe); REF(totaldTe);
     REF(totaldPi); REF(totaldPa); REF(totaldPb);
 
-    REF(Phi_yxz); REF(Phi_xzy); REF(A_yxz);   REF(A_xzy);
-    REF(dNe_yxz); REF(dNe_xzy); REF(dTe_yxz); REF(dTe_xzy);
-    REF(dPi_yxz); REF(dPi_xzy); REF(dPa_yxz); REF(dPa_xzy); REF(dPb_yxz); REF(dPb_xzy);
-    REF(dNi_yxz); REF(dNi_xzy); REF(dNa_yxz); REF(dNa_xzy); REF(dNb_yxz); REF(dNb_xzy);
+    REF(nmLocal); REF(nmGlobal); REF(nmRefined);
 
     REF(nPlanR2Cs); REF(nPlanC2Rs); REF(nFreqd); REF(nFreqf);
-    REF(mPlanR2Cs); REF(mPlanC2Rs); REF(mFreqd); REF(mFreqf);
+    REF(mPlanC2Cs);
 
     REF(Ion_storage);   REF(Ion_storage_bytes);
     REF(Alpha_storage); REF(Alpha_storage_bytes);
@@ -482,47 +484,62 @@ int main(int argc, char* argv[]) {
         }
     };
 
-    auto selectModeNM = [&]<const auto & selectNM, typename... Guards>(mhdReal** midl, mhdReal** midr, mhdReal** yxz,
-                                                                       mhdReal** xzy) {
+    auto selectModeNM = [&]<const auto & selectNM, typename... Guards>(mhdReal** midl) {
         if constexpr (allTrue<Guards...> && selectNM.size() > 0) {
             for (const auto& [toroidal, poloidalLeft, poloidalRight] : selectNM) {
                 forEachDev([&](int i) {
                     if constexpr (std::is_same_v<mhdReal, double>) {
                         cufftExecD2Z(nPlanR2Cs[i], (double*)midl[i] + gridGhost * gridNxz, nFreqd[i]);
-                        MHDFilterModeN<<<devNy, gridNx, 0, 0>>>(nFreqd[i], toroidal);
-                        cufftExecZ2D(nPlanC2Rs[i], nFreqd[i], (double*)midr[i] + gridGhost * gridNxz);
+                        MHDSelectNMExtractN<<<LocalNMGridSize, NMBlockSize, 0, 0>>>(nFreqd[i], midl[i], nmLocal[i],
+                                                                                    toroidal);
                     } else {
                         cufftExecR2C(nPlanR2Cs[i], (float*)midl[i] + gridGhost * gridNxz, nFreqf[i]);
-                        MHDFilterModeN<<<devNy, gridNx, 0, 0>>>(nFreqf[i], toroidal);
-                        cufftExecC2R(nPlanC2Rs[i], nFreqf[i], (float*)midr[i] + gridGhost * gridNxz);
+                        MHDSelectNMExtractN<<<LocalNMGridSize, NMBlockSize, 0, 0>>>(nFreqf[i], midl[i], nmLocal[i],
+                                                                                    toroidal);
                     }
-                    MHDFilterResizeN<<<MRK4GridSize, MRK4BlockSize, 0, 0>>>(midr[i]);
-                    MHDSubtractMode<<<MRK4GridSize, MRK4BlockSize, 0, 0>>>(midr[i], midl[i]);
+
+                    MHDSelectNMShifted2A<<<LocalNMGridSize, NMBlockSize, 0, 0>>>(qtheta[i], nmLocal[i], nmLocal[i],
+                                                                                 toroidal);
                 });
 
                 ncclGroupStart();
                 for (int i = 0; i < devNums; i++) {
                     cudaSetDevice(localRank * devNums + i);
-                    ncclAllGather(midr[i] + gridGhost * gridNxz, yxz[i], devNy * gridNxz, ncclType, comms[i], 0);
+                    ncclAllGather(nmLocal[i], nmGlobal[i] + gridGhost * gridNx, 2 * devNy * gridNx, ncclType, comms[i],
+                                  0);
                 }
                 ncclGroupEnd();
 
                 forEachDev([&](int i) {
-                    MHDTransposeLeft<<<gridNy, gridNx, 0, 0>>>(yxz[i], xzy[i]);
+                    int localIndex = myRank * hostNy + i * devNy;
+
+                    MHDSelectNMAlignedGhost<<<GhostNMGridSize, NMBlockSize, 0, 0>>>(qtheta[i], nmGlobal[i], toroidal);
+                    MHDSelectNMRefineY<mhdComplex, mhdReal>
+                        <<<RefinedNMGridSize, NMBlockSize, 0, 0>>>(nmGlobal[i], nmRefined[i]);
+                    MHDSelectNMAligned2S<<<RefinedNMGridSize, NMBlockSize, 0, 0>>>(qtheta[i], nmRefined[i],
+                                                                                   nmRefined[i], localIndex, toroidal);
+
                     if constexpr (std::is_same_v<mhdReal, double>) {
-                        cufftExecD2Z(mPlanR2Cs[i], (double*)xzy[i], mFreqd[i]);
-                        MHDFilterModeM<<<gridNx, gridNz, 0, 0>>>(mFreqd[i], poloidalLeft, poloidalRight);
-                        cufftExecZ2D(mPlanC2Rs[i], mFreqd[i], (double*)xzy[i]);
+                        cufftExecZ2Z(mPlanC2Cs[i], reinterpret_cast<cufftDoubleComplex*>(nmRefined[i]),
+                                     reinterpret_cast<cufftDoubleComplex*>(nmRefined[i]), CUFFT_FORWARD);
                     } else {
-                        cufftExecR2C(mPlanR2Cs[i], (float*)xzy[i], mFreqf[i]);
-                        MHDFilterModeM<<<gridNx, gridNz, 0, 0>>>(mFreqf[i], poloidalLeft, poloidalRight);
-                        cufftExecC2R(mPlanC2Rs[i], mFreqf[i], (float*)xzy[i]);
+                        cufftExecC2C(mPlanC2Cs[i], reinterpret_cast<cufftComplex*>(nmRefined[i]),
+                                     reinterpret_cast<cufftComplex*>(nmRefined[i]), CUFFT_FORWARD);
                     }
-                    MHDTransposeRight<<<gridNx, gridNz, 0, 0>>>(xzy[i], yxz[i]);
-                    cudaMemcpyAsync(midr[i] + gridGhost * gridNxz, yxz[i] + (myRank * hostNy + i * devNy) * gridNxz,
-                                    sizeof(mhdReal) * devNy * gridNxz, cudaMemcpyDeviceToDevice, 0);
-                    MHDFilterResizeM<<<MRK4GridSize, MRK4BlockSize, 0, 0>>>(midr[i]);
-                    MHDAddMode<<<MRK4GridSize, MRK4BlockSize, 0, 0>>>(midr[i], midl[i]);
+
+                    MHDSelectNMFilterM<<<RefinedNMGridSize, NMBlockSize, 0, 0>>>(nmRefined[i], poloidalLeft,
+                                                                                 poloidalRight);
+
+                    if constexpr (std::is_same_v<mhdReal, double>) {
+                        cufftExecZ2Z(mPlanC2Cs[i], reinterpret_cast<cufftDoubleComplex*>(nmRefined[i]),
+                                     reinterpret_cast<cufftDoubleComplex*>(nmRefined[i]), CUFFT_INVERSE);
+                    } else {
+                        cufftExecC2C(mPlanC2Cs[i], reinterpret_cast<cufftComplex*>(nmRefined[i]),
+                                     reinterpret_cast<cufftComplex*>(nmRefined[i]), CUFFT_INVERSE);
+                    }
+
+                    MHDSelectNMAddMode<<<LocalNMGridSize, NMBlockSize, 0, 0>>>(nmRefined[i], midl[i], localIndex,
+                                                                               toroidal);
                 });
             }
         }
@@ -1018,10 +1035,10 @@ int main(int argc, char* argv[]) {
                 removeModeN.template operator()<removeN_dNe>(dNe_midl, dNe_midr);
                 removeModeN.template operator()<removeN_dTe>(dTe_midl, dTe_midr);
 
-                selectModeNM.template operator()<selectNM_Phi>(Phi_midl, Phi_midr, Phi_yxz, Phi_xzy);
-                selectModeNM.template operator()<selectNM_A>(A_midl, A_midr, A_yxz, A_xzy);
-                selectModeNM.template operator()<selectNM_dNe>(dNe_midl, dNe_midr, dNe_yxz, dNe_xzy);
-                selectModeNM.template operator()<selectNM_dTe>(dTe_midl, dTe_midr, dTe_yxz, dTe_xzy);
+                selectModeNM.template operator()<selectNM_Phi>(Phi_midl);
+                selectModeNM.template operator()<selectNM_A>(A_midl);
+                selectModeNM.template operator()<selectNM_dNe>(dNe_midl);
+                selectModeNM.template operator()<selectNM_dTe>(dTe_midl);
 
                 runMHDRK4Stage.operator()<5>();
 
@@ -1105,13 +1122,12 @@ int main(int argc, char* argv[]) {
             removeModeN.template operator()<removeN_dNe, ifAlpha, ifQNeutrality>(dNa_midl, dNa_midr);
             removeModeN.template operator()<removeN_dNe, ifBeam, ifQNeutrality>(dNb_midl, dNb_midr);
 
-            selectModeNM.template operator()<selectNM_dP, ifIon>(dPi_midl, dPi_midr, dPi_yxz, dPi_xzy);
-            selectModeNM.template operator()<selectNM_dP, ifAlpha>(dPa_midl, dPa_midr, dPa_yxz, dPa_xzy);
-            selectModeNM.template operator()<selectNM_dP, ifBeam>(dPb_midl, dPb_midr, dPb_yxz, dPb_xzy);
-            selectModeNM.template operator()<selectNM_dNe, ifIon, ifQNeutrality>(dNi_midl, dNi_midr, dNi_yxz, dNi_xzy);
-            selectModeNM.template operator()<selectNM_dNe, ifAlpha, ifQNeutrality>(dNa_midl, dNa_midr, dNa_yxz,
-                                                                                   dNa_xzy);
-            selectModeNM.template operator()<selectNM_dNe, ifBeam, ifQNeutrality>(dNb_midl, dNb_midr, dNb_yxz, dNb_xzy);
+            selectModeNM.template operator()<selectNM_dP, ifIon>(dPi_midl);
+            selectModeNM.template operator()<selectNM_dP, ifAlpha>(dPa_midl);
+            selectModeNM.template operator()<selectNM_dP, ifBeam>(dPb_midl);
+            selectModeNM.template operator()<selectNM_dNe, ifIon, ifQNeutrality>(dNi_midl);
+            selectModeNM.template operator()<selectNM_dNe, ifAlpha, ifQNeutrality>(dNa_midl);
+            selectModeNM.template operator()<selectNM_dNe, ifBeam, ifQNeutrality>(dNb_midl);
 
             ncclGroupStart();
             haloExchange.template operator()<ifIon>(dPi_midl);

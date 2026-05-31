@@ -59,7 +59,7 @@ mhdInput = loadMHDInputData(standardFile, plotFile, normalizationFile, NTPFile);
 meta = readMHDMetadata(paramText);
 mhdFieldGeom = mhdFieldPlotGeometry(mhdInput.q, mhdInput.theta_pest, mhdInput.rho, ...
     mhdInput.qplot, mhdInput.rhoplot, mhdInput.Rplot, mhdInput.Zplot, ...
-    meta.yGrid, meta.zGrid, meta.tubes);
+    meta.yGrid, meta.zGrid, meta.tubes, meta.gridGhost);
 mhdData = readAllMHDDiagnostics(inputDir, meta);
 
 mhdWorkspace = struct();
@@ -478,6 +478,7 @@ function meta = readMHDMetadata(paramText)
     meta.leftN = readIntParam(paramText, 'leftN');
     meta.rightN = readIntParam(paramText, 'rightN');
     meta.tubes = readIntParam(paramText, 'tubes');
+    meta.gridGhost = 2;
     meta.totalSteps = readIntParam(paramText, 'totalSteps');
     meta.diagSteps = readIntParam(paramText, 'diagSteps');
     meta.outputSteps = readIntParam(paramText, 'outputSteps');
@@ -659,11 +660,6 @@ function workspace = runMHDPoloidalModePlot(inputSource, meta, mhdInput, mhdFiel
         logSkipped('MHD poloidal mode plot', '绘图开关为 false');
         return;
     end
-    if ~hasBSpline()
-        logSkipped('MHD poloidal mode plot', '缺少 bspline');
-        return;
-    end
-
     useTotalField = isstruct(inputSource) && isfield(opt, 'timeIndex') && ~isempty(opt.timeIndex);
     fieldNames = string(opt.names);
     for iField = 1:numel(fieldNames)
@@ -701,7 +697,7 @@ function workspace = runMHDPoloidalModePlot(inputSource, meta, mhdInput, mhdFiel
         if useNormalizedPoloidalMode(opt)
             yLabelText = '$|U_m|/\max |U_m|$';
         else
-            yLabelText = '$|U_m|$';
+            yLabelText = '$|\delta\phi_m|$';
         end
         titleText = sprintf('%s poloidal FFT', fieldNameTextForPlot);
         legendText = compose('$m=%d$', selectedM);
@@ -735,10 +731,19 @@ end
 function [plotField, fftField, xVec, xLabelText, selectedM, yData, rawAmplitude] = ...
     calculateMHDPoloidalModeFFT(fieldZYX, mhdInput, geom, opt)
 
-    fieldNonShiftZYX = undoMHDFieldAlignedShift(fieldZYX, geom, opt);
-    plotField = interpolateMHDFieldToPlotGrid(fieldNonShiftZYX, geom, opt);
-    fftField = fft(plotField, [], 2);
-    amplitude = abs(fftField);
+    alignedField = undoMHDFieldAlignedShift(fieldZYX, geom, opt);
+    alignedGhost = buildFieldAlignedGhost(alignedField, geom, opt);
+    [alignedRefined, ~, refinedIndex] = refineFieldAlignedY(alignedGhost, geom, opt);
+    pestRefined = shiftAlignedToRefinedPest(alignedRefined, refinedIndex, geom, opt);
+
+    plotField = squeeze(pestRefined(1, :, :));
+    fftField = fft(pestRefined, [], 3);
+    nTheta = size(pestRefined, 3);
+    amplitude = squeeze(max(abs(fftField), [], 1)) * (2 / nTheta);
+    amplitude(:, 1) = amplitude(:, 1) / 2;
+    if mod(nTheta, 2) == 0
+        amplitude(:, nTheta / 2 + 1) = amplitude(:, nTheta / 2 + 1) / 2;
+    end
     amplitude(~isfinite(amplitude)) = 0;
 
     candidateM = poloidalModeCandidates(opt, size(amplitude, 2));
@@ -760,7 +765,110 @@ function [plotField, fftField, xVec, xLabelText, selectedM, yData, rawAmplitude]
         yData = rawAmplitude;
     end
 
-    [xVec, xLabelText] = poloidalModeRadialAxis(mhdInput, geom, opt, size(plotField, 1));
+    [xVec, xLabelText] = poloidalModeRadialAxis(mhdInput, geom, opt, size(amplitude, 1));
+end
+
+function alignedGhost = buildFieldAlignedGhost(alignedField, geom, opt)
+
+    [nZ, nX, nY] = size(alignedField);
+    gridGhost = geom.gridGhost;
+    assert(nY > gridGhost, 'gridNy 必须大于 gridGhost。');
+    assert(isequal(size(geom.qtheta), [nX, nY]), 'qtheta 尺寸必须匹配场量 x/y 维度。');
+
+    alignedGhost = zeros(nZ, nX, nY + 2 * gridGhost);
+    alignedGhost(:, :, gridGhost + 1:gridGhost + nY) = alignedField;
+
+    deltaQtheta = (geom.qtheta(:, 2) - geom.qtheta(:, 1)) * nY;
+    for iX = 1:nX
+        for iGhost = 1:gridGhost
+            leftSource = nY - gridGhost + iGhost;
+            rightSource = iGhost;
+            alignedGhost(:, iX, iGhost) = shiftMHDFieldZ(alignedField(:, iX, leftSource), ...
+                -deltaQtheta(iX), geom, opt);
+            alignedGhost(:, iX, gridGhost + nY + iGhost) = shiftMHDFieldZ(alignedField(:, iX, rightSource), ...
+                deltaQtheta(iX), geom, opt);
+        end
+    end
+end
+
+function [alignedRefined, refinedYGrid, refinedIndex] = refineFieldAlignedY(alignedGhost, geom, opt)
+
+    [nZ, nX, ~] = size(alignedGhost);
+    nY = numel(geom.yGrid);
+    gridGhost = geom.gridGhost;
+    refinedTimes = poloidalFFTRefinedTimes(opt, nY);
+    refinedNy = nY * refinedTimes;
+    dtheta = 2.0 * pi / nY;
+    theta0 = geom.yGrid(1);
+
+    refinedIndex = ((0:refinedNy - 1) + 1) / refinedTimes - 1;
+    refinedYGrid = theta0 + refinedIndex * dtheta;
+    alignedRefined = zeros(nZ, nX, refinedNy);
+    for iY = 1:refinedNy
+        shiftJ = floor(refinedIndex(iY));
+        shiftDj = refinedIndex(iY) - shiftJ;
+        alignedRefined(:, :, iY) = lagrangeFourPoint( ...
+            alignedGhost(:, :, shiftJ + gridGhost), ...
+            alignedGhost(:, :, shiftJ + gridGhost + 1), ...
+            alignedGhost(:, :, shiftJ + gridGhost + 2), ...
+            alignedGhost(:, :, shiftJ + gridGhost + 3), shiftDj);
+    end
+end
+
+function refinedTimes = poloidalFFTRefinedTimes(opt, gridNy)
+
+    refinedTimes = 2;
+    if isfield(opt, 'mRange') && numel(opt.mRange) >= 2
+        maxM = max(0, max(round(double(opt.mRange(1:2)))));
+    else
+        maxM = floor(gridNy / 2);
+    end
+
+    while gridNy * refinedTimes <= 16 * maxM
+        refinedTimes = refinedTimes * 2;
+    end
+end
+
+function pestRefined = shiftAlignedToRefinedPest(alignedRefined, refinedIndex, geom, opt)
+
+    [nZ, nX, refinedNy] = size(alignedRefined);
+    assert(numel(geom.zGrid) == nZ, 'zGrid 长度必须匹配场量 z 维度。');
+
+    qtheta0 = geom.qtheta(:, 1);
+    dqtheta = geom.qtheta(:, 2) - geom.qtheta(:, 1);
+    pestRefined = zeros(nZ, nX, refinedNy);
+    for iX = 1:nX
+        qthetaRefined = qtheta0(iX) + refinedIndex * dqtheta(iX);
+        for iY = 1:refinedNy
+            pestRefined(:, iX, iY) = shiftMHDFieldZ(alignedRefined(:, iX, iY), ...
+                -qthetaRefined(iY), geom, opt);
+        end
+    end
+end
+
+function fieldShifted = shiftMHDFieldZ(fieldZ, shiftZ, geom, ~)
+
+    nZ = numel(geom.zGrid);
+    gridDz = 2.0 * pi / geom.tubes / nZ;
+    shiftLk = shiftZ / gridDz;
+    shiftK = floor(shiftLk);
+    shiftDk = shiftLk - shiftK;
+
+    fieldZ = fieldZ(:);
+    kIndex = (0:nZ - 1).';
+    fieldShifted = lagrangeFourPoint( ...
+        fieldZ(mod(kIndex + shiftK - 1, nZ) + 1), ...
+        fieldZ(mod(kIndex + shiftK + 0, nZ) + 1), ...
+        fieldZ(mod(kIndex + shiftK + 1, nZ) + 1), ...
+        fieldZ(mod(kIndex + shiftK + 2, nZ) + 1), shiftDk);
+end
+
+function field = lagrangeFourPoint(field0, field1, field2, field3, shiftD)
+
+    field = -shiftD .* (-1 + shiftD) .* (-2 + shiftD) / 6 .* field0 + ...
+        (1 + shiftD) .* (-1 + shiftD) .* (-2 + shiftD) / 2 .* field1 - ...
+        shiftD .* (1 + shiftD) .* (-2 + shiftD) / 2 .* field2 + ...
+        shiftD .* (1 + shiftD) .* (-1 + shiftD) / 6 .* field3;
 end
 
 function candidateM = poloidalModeCandidates(opt, nTheta)
@@ -844,7 +952,9 @@ end
 
 function xVec = radialVectorWithLength(mhdInput, geom, nRadial)
 
-    if isfield(geom, 'rhoplot') && ~isempty(geom.rhoplot)
+    if isfield(geom, 'rhoGrid') && ~isempty(geom.rhoGrid) && numel(geom.rhoGrid) == nRadial
+        radialValues = geom.rhoGrid;
+    elseif isfield(geom, 'rhoplot') && ~isempty(geom.rhoplot)
         radialValues = geom.rhoplot;
     elseif isfield(mhdInput, 'rhoplot') && ~isempty(mhdInput.rhoplot)
         radialValues = mhdInput.rhoplot;
@@ -1270,7 +1380,7 @@ function fieldFilteredZYX = filterMHDToroidalModes(fieldZYX, modeIndexAll, modeI
     fieldFilteredZYX = real(ifft(fieldSpectrum, [], 1));
 end
 
-function geom = mhdFieldPlotGeometry(q, theta_pest, rho, qplot, rhoplot, Rplot, Zplot, yGrid, zGrid, tubes)
+function geom = mhdFieldPlotGeometry(q, theta_pest, rho, qplot, rhoplot, Rplot, Zplot, yGrid, zGrid, tubes, gridGhost)
     [nPlotRho, nPlotTheta] = size(qplot);
     thetaPlotGrid = (0.5:nPlotTheta - 0.5) / nPlotTheta * 2 * pi - pi;
 
@@ -1284,6 +1394,7 @@ function geom = mhdFieldPlotGeometry(q, theta_pest, rho, qplot, rhoplot, Rplot, 
     geom.yGrid = yGrid;
     geom.zGrid = zGrid;
     geom.tubes = tubes;
+    geom.gridGhost = gridGhost;
 end
 
 function [shifted, aligned] = plotMHDFieldOnPoloidalPlane(fieldZYX, fieldName, geom, opt, physicalN, contextText)
@@ -1322,14 +1433,11 @@ function fieldNonShiftZYX = undoMHDFieldAlignedShift(fieldZYX, geom, opt)
     assert(isequal(size(geom.qtheta), [nX, nY]), 'qtheta 尺寸必须匹配场量 x/y 维度。');
 
     fieldNonShiftZYX = zeros(size(fieldZYX));
-    rangeZ = {[geom.zGrid(1), geom.zGrid(1) + 2 * pi / geom.tubes]};
-    derivative = uint64(0);
 
     for iX = 1:nX
         for iY = 1:nY
-            shiftedZ = geom.zGrid + geom.qtheta(iX, iY);
-            fieldNonShiftZYX(:, iX, iY) = bspline(uint64(opt.bsplineOrder), true, rangeZ, ...
-                fieldZYX(:, iX, iY), shiftedZ', derivative);
+            fieldNonShiftZYX(:, iX, iY) = shiftMHDFieldZ(fieldZYX(:, iX, iY), ...
+                geom.qtheta(iX, iY), geom, opt);
         end
     end
 end

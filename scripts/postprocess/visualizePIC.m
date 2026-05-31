@@ -39,6 +39,7 @@ inputDir = 'C:\Users\Desktop\test';
 
 paramFile = fullfile(inputDir, 'cuGMEC_param.h');
 normalizationFile = fullfile(inputDir, 'normalization2D.mat');
+NTPFile = fullfile(inputDir, 'NTP.mat');
 
 speciesList = {'Ion', 'Alpha', 'Beam'};
 
@@ -50,6 +51,10 @@ assert(isfolder(inputDir), '缺少输入目录：%s', inputDir);
 
 paramText = fileread(paramFile);
 normData = load(normalizationFile);
+ntpData = struct();
+if isfile(NTPFile)
+    ntpData = load(NTPFile);
+end
 meta = readPICMetadata(paramText, normData);
 speciesList = enabledPICSpecies(speciesList, meta);
 searchDirs = {inputDir};
@@ -57,17 +62,20 @@ searchDirs = {inputDir};
 picPhaseData = initializePhaseSpaceData(speciesList, normData, meta);
 picPitchData = initializePitchSpaceData(speciesList, paramText, meta);
 picDiffusivityData = initializeDiffusivityData(speciesList, meta);
+picDensityData = initializeDensityData(speciesList, meta, ntpData);
 
 orbitRaw = readAllOrbitRaw(speciesList, searchDirs, meta);
 picPhaseData = readAllPhaseDiagnostics(picPhaseData, speciesList, searchDirs, meta);
 picPitchData = readAllPitchDiagnostics(picPitchData, speciesList, searchDirs, meta);
 picDiffusivityData = readAllDiffusivityDiagnostics(picDiffusivityData, speciesList, searchDirs, meta);
+picDensityData = readAllDensityDiagnostics(picDensityData, speciesList, searchDirs, meta);
 
 picWorkspace = struct();
 picWorkspace.meta = meta;
 picWorkspace.phase = picPhaseData;
 picWorkspace.pitch = picPitchData;
 picWorkspace.diffusivity = picDiffusivityData;
+picWorkspace.density = picDensityData;
 
 %% 处理 orbit.bin
 
@@ -302,6 +310,33 @@ interactive   : 0 不交互；1 滑块释放后更新；2 拖动滑块时连续�
 %}
 picWorkspace.diffusivityPlot = runPICDiffusivityPlot(picDiffusivityData, meta, picDiffusivityOpt);
 
+%% 可视化扰动密度
+
+picDensityOpt = struct( ...
+    'enabled', true, ...
+    'species', 'Alpha', ...
+    'plotType', 1, ...
+    'timeIndex', max(1, round(meta.nDiagTime / 2)), ...
+    'radialIndex', max(1, round(meta.gridNx / 2)), ...
+    'timeAxis', 'ms', ...
+    'radialAxis', 'rho', ...
+    'radialDensityMode', 'delta', ...
+    'colormapIndex', 1, ...
+    'interactive', 2);
+%{
+enabled       : 是否绘图。
+species       : 'Ion', 'Alpha', 'Beam'。
+plotType      : 1 径向剖面；2 时间曲线；3 二维图。
+timeIndex     : plotType = 1 使用的诊断时间索引（1 到 nDiagTime）。
+radialIndex   : plotType = 2 使用的径向索引（1 到 gridNx）。
+timeAxis      : 'ta', 'ms', 's' 或 'steps'。
+radialAxis    : 'rho' 或 'x'。
+radialDensityMode : 'delta' 画扰动密度；'total' 在径向图同画初始密度和总密度。
+colormapIndex : 二维图非负色表，可选 1-2；有正负固定红蓝。
+interactive   : 0 不交互；1 滑块释放后更新；2 拖动滑块时连续更新。
+%}
+picWorkspace.densityPlot = runPICDensityPlot(picDensityData, meta, picDensityOpt);
+
 %% 局部函数
 
 function runInteractivePlot(interactiveMode, staticPlotFcn, interactivePlotFcn)
@@ -452,6 +487,36 @@ function workspace = runPICDiffusivityPlot(picDiffusivityData, meta, opt)
     end
 end
 
+function workspace = runPICDensityPlot(picDensityData, meta, opt)
+
+    workspace = struct('options', opt);
+    if ~opt.enabled
+        logSkipped('Density plot', '绘图开关为 false');
+        return;
+    end
+    if ~hasSpeciesFieldData(picDensityData, opt.species, 'Density')
+        logSkipped('Density plot', '未读取 Density 数据');
+        return;
+    end
+
+    switch opt.plotType
+        case 1
+            runInteractivePlot(opt.interactive, ...
+                @() plotDensityRadial(picDensityData, opt), ...
+                @(dynamicUpdate) plotDensityRadialInteractive(picDensityData, opt, dynamicUpdate));
+        case 2
+            runInteractivePlot(opt.interactive, ...
+                @() plotDensityTime(picDensityData, meta, opt), ...
+                @(dynamicUpdate) plotDensityTimeInteractive(picDensityData, meta, opt, dynamicUpdate));
+        case 3
+            runInteractivePlot(opt.interactive, ...
+                @() plotDensityMap(picDensityData, meta, opt), ...
+                @(dynamicUpdate) plotDensityMapInteractive(picDensityData, meta, opt, dynamicUpdate));
+        otherwise
+            error('plotType 必须为 1、2 或 3。');
+    end
+end
+
 function resonance = picResonanceOptions(enabled, branch, frequencyHz, frequencyHzRange, toroidalMode, ...
     toroidalModeRange, poloidalMode, poloidalModeRange, harmonic, harmonicRange)
 
@@ -479,6 +544,7 @@ function meta = readPICMetadata(paramText, normData)
     meta.speciesEnabled.Ion = readSwitchParam(paramText, 'ifIon');
     meta.speciesEnabled.Alpha = readSwitchParam(paramText, 'ifAlpha');
     meta.speciesEnabled.Beam = readSwitchParam(paramText, 'ifBeam');
+    meta.switch.ifDiagDensity = readSwitchParam(paramText, 'ifDiagDensity');
     meta.switch.ifDiagDiffusivity = readSwitchParam(paramText, 'ifDiagDiffusivity');
     meta.switch.ifOutputPhaseSpaceOrbit = readSwitchParam(paramText, 'ifOutputPhaseSpaceOrbit');
     meta.switch.ifOutputPhaseSpaceJacobian = readSwitchParam(paramText, 'ifOutputPhaseSpaceJacobian');
@@ -504,10 +570,17 @@ function meta = readPICMetadata(paramText, normData)
     meta.modeIndexAll = meta.leftN:meta.rightN;
     meta.physicalNAll = meta.modeIndexAll * meta.tubes;
 
-    [meta.gridE, meta.gridPphi, meta.gridLambda] = readPhaseGrid(normData);
-    assert(meta.paramGridE == meta.gridE && meta.paramGridPphi == meta.gridPphi && ...
-        meta.paramGridLambda == meta.gridLambda, ...
-        'cuGMEC_param.h 与 normalization2D.mat 中的 gridE/gridPphi/gridLambda 不一致。');
+    meta.hasPhaseGrid = all(isfield(normData, {'gridE', 'gridPphi', 'gridLambda'}));
+    if meta.hasPhaseGrid
+        [meta.gridE, meta.gridPphi, meta.gridLambda] = readPhaseGrid(normData);
+        assert(meta.paramGridE == meta.gridE && meta.paramGridPphi == meta.gridPphi && ...
+            meta.paramGridLambda == meta.gridLambda, ...
+            'cuGMEC_param.h 与 normalization2D.mat 中的 gridE/gridPphi/gridLambda 不一致。');
+    else
+        meta.gridE = meta.paramGridE;
+        meta.gridPphi = meta.paramGridPphi;
+        meta.gridLambda = meta.paramGridLambda;
+    end
 
     meta.totalSteps = readIntParam(paramText, 'totalSteps');
     meta.outputSteps = readIntParam(paramText, 'outputSteps');
@@ -551,6 +624,11 @@ function picPhaseData = initializePhaseSpaceData(speciesList, normData, meta)
     picPhaseData = struct();
     for speciesIndex = 1:numel(speciesList)
         speciesName = char(speciesList{speciesIndex});
+        if ~meta.hasPhaseGrid
+            picPhaseData.(speciesName) = struct('species', speciesName, ...
+                'J', [], 'F0', [], 'DF', [], 'Power', []);
+            continue;
+        end
         phaseRange = readSpeciesRange(normData, [speciesName 'EPphiLambda']);
 
         picPhaseData.(speciesName) = struct( ...
@@ -621,11 +699,93 @@ function picDiffusivityData = initializeDiffusivityData(speciesList, meta)
     end
 end
 
+function picDensityData = initializeDensityData(speciesList, meta, ntpData)
+
+    picDensityData = struct();
+    for speciesIndex = 1:numel(speciesList)
+        speciesName = char(speciesList{speciesIndex});
+        [initialDensity, initialDensityError] = safeInitialDensityFromNTP(ntpData, speciesName, meta.rhoGrid);
+
+        picDensityData.(speciesName) = struct( ...
+            'species', speciesName, ...
+            'gridNx', meta.gridNx, ...
+            'diagSteps', meta.diagSteps, ...
+            'xGrid', meta.xGrid, ...
+            'rhoGrid', meta.rhoGrid, ...
+            'tDiag', meta.tDiag, ...
+            'timeSeconds', meta.timeSeconds, ...
+            'InitialDensity', initialDensity, ...
+            'InitialDensityError', initialDensityError, ...
+            'Density', []);
+    end
+end
+
+function [initialDensity, initialDensityError] = safeInitialDensityFromNTP(ntpData, speciesName, rhoGrid)
+
+    initialDensity = [];
+    initialDensityError = '';
+    try
+        initialDensity = initialDensityFromNTP(ntpData, speciesName, rhoGrid);
+    catch err
+        initialDensityError = err.message;
+    end
+end
+
+function initialDensity = initialDensityFromNTP(ntpData, speciesName, rhoGrid)
+
+    initialDensity = [];
+    densityField = ntpDensityFieldName(speciesName);
+    if ~isstruct(ntpData) || ~isfield(ntpData, 'rhoSample') || ~isfield(ntpData, densityField)
+        return;
+    end
+
+    rhoSample = double(ntpData.rhoSample(:));
+    densitySample = double(ntpData.(densityField)(:)) * 1e19;
+    validSample = isfinite(rhoSample) & isfinite(densitySample);
+    rhoSample = rhoSample(validSample);
+    densitySample = densitySample(validSample);
+    assert(numel(rhoSample) >= 2, ...
+        'NTP.mat 中 rhoSample/%s 有效点数必须至少为 2。', densityField);
+
+    [rhoSample, order] = sort(rhoSample);
+    densitySample = densitySample(order);
+    [rhoSample, uniqueIndex] = unique(rhoSample, 'stable');
+    densitySample = densitySample(uniqueIndex);
+    assert(numel(rhoSample) >= 2, ...
+        'NTP.mat 中 rhoSample 去重后有效点数必须至少为 2。');
+
+    rhoGrid = reshape(double(rhoGrid), 1, []);
+    initialDensity = interp1(rhoSample, densitySample, rhoGrid, 'linear');
+    if any(~isfinite(initialDensity))
+        error(['NTP.mat 中 rhoSample 范围 [%.6g, %.6g] 不能覆盖模拟 rhoGrid 范围 ' ...
+            '[%.6g, %.6g]，无法插值得到 %s 初始密度。'], ...
+            min(rhoSample), max(rhoSample), min(rhoGrid), max(rhoGrid), speciesName);
+    end
+end
+
+function densityField = ntpDensityFieldName(speciesName)
+
+    switch lower(char(speciesName))
+        case 'ion'
+            densityField = 'niSample';
+        case 'alpha'
+            densityField = 'naSample';
+        case 'beam'
+            densityField = 'nbSample';
+        otherwise
+            error('不支持的 PIC 物种：%s。', speciesName);
+    end
+end
+
 function orbitRaw = readAllOrbitRaw(speciesList, searchDirs, meta)
 
     orbitRaw = struct();
     if ~meta.switch.ifOutputPhaseSpaceOrbit
         logSkipped('PhaseSpaceOrbit', '开关 ifOutputPhaseSpaceOrbit 为 false');
+        return;
+    end
+    if ~meta.hasPhaseGrid
+        logSkipped('PhaseSpaceOrbit', 'normalization2D.mat 缺少相空间网格');
         return;
     end
 
@@ -651,6 +811,11 @@ function picPhaseData = readAllPhaseDiagnostics(picPhaseData, speciesList, searc
         'F0', 'ifOutputPhaseSpaceF0', 'PhaseSpaceF0', 'double', 'phase3d'; ...
         'DF', 'ifOutputPhaseSpaceDeltaF', 'PhaseDeltaF', meta.mhdPrecision, 'phase4d'; ...
         'Power', 'ifOutputPhaseSpacePower', 'PhasePower', meta.mhdPrecision, 'phasePower'};
+
+    if ~meta.hasPhaseGrid
+        logSkipped('PhaseSpace diagnostics', 'normalization2D.mat 缺少相空间网格');
+        return;
+    end
 
     for iSpec = 1:size(phaseSpecs, 1)
         fieldName = phaseSpecs{iSpec, 1};
@@ -757,6 +922,28 @@ function picDiffusivityData = readAllDiffusivityDiagnostics(picDiffusivityData, 
         picDiffusivityData.(speciesName).Diffusivity = readDiffusivity3D(filePath, ...
             meta.mhdPrecision, meta.nDiagTime, numel(meta.modeIndexAll), meta.gridNx);
         logLoaded(fileName, picDiffusivityData.(speciesName).Diffusivity);
+    end
+end
+
+function picDensityData = readAllDensityDiagnostics(picDensityData, speciesList, searchDirs, meta)
+
+    if ~meta.switch.ifDiagDensity
+        logSkipped('Density', '开关 ifDiagDensity 为 false');
+        return;
+    end
+
+    for speciesIndex = 1:numel(speciesList)
+        speciesName = char(speciesList{speciesIndex});
+        fileName = [speciesName 'Density.bin'];
+        filePath = findExistingFile(searchDirs, fileName);
+        if isempty(filePath)
+            logSkipped(fileName, '文件不存在');
+            continue;
+        end
+
+        picDensityData.(speciesName).Density = readDensity2D(filePath, ...
+            meta.mhdPrecision, meta.nDiagTime, meta.gridNx);
+        logLoaded(fileName, picDensityData.(speciesName).Density);
     end
 end
 
@@ -1473,6 +1660,156 @@ function plotDiffusivityMapInteractive(picDiffusivityData, meta, opt, dynamicUpd
     end
 end
 
+function plotDensityRadial(picDensityData, opt)
+
+    [speciesData, speciesLabel] = resolveSpeciesData(picDensityData, opt.species, 'density');
+    densityData = densityQuantityData(speciesData);
+    timeIndex = parseTimeIndex(opt.timeIndex, size(densityData, 1));
+    yVec = densityData(timeIndex, :);
+
+    if ~any(isfinite(yVec(:)))
+        fprintf('[plot] %s Density 径向剖面没有有限值数据。\n', speciesLabel);
+        return;
+    end
+
+    plotData = densityRadialPlotData(speciesData, speciesLabel, densityData, timeIndex, opt);
+    drawLineFigure(sprintf('%s Density radial', speciesLabel), plotData);
+end
+
+function plotDensityRadialInteractive(picDensityData, opt, dynamicUpdate)
+
+    [speciesData, speciesLabel] = resolveSpeciesData(picDensityData, opt.species, 'density');
+    densityData = densityQuantityData(speciesData);
+    timeIndex0 = parseTimeIndex(opt.timeIndex, size(densityData, 1));
+    controls = struct([]);
+    if size(densityData, 1) > 1
+        controls = integerSliderControl('timeIndex', 'timeIndex', timeIndex0, 1, size(densityData, 1));
+    end
+
+    plotInteractiveMap(sprintf('%s Density radial', speciesLabel), controls, dynamicUpdate, ...
+        @computePlotData, @renderLine);
+
+    function plotData = computePlotData(values)
+        tempTimeIndex = timeIndex0;
+        if isfield(values, 'timeIndex')
+            tempTimeIndex = values.timeIndex;
+        end
+        plotData = densityRadialPlotData(speciesData, speciesLabel, densityData, tempTimeIndex, opt);
+    end
+end
+
+function plotData = densityRadialPlotData(speciesData, speciesLabel, densityData, timeIndex, opt)
+
+    [xVec, xlabelText] = diffusivityRadialAxis(speciesData, opt.radialAxis);
+    deltaDensity = densityData(timeIndex, :);
+    timeText = sprintf(',\\quad \\mathrm{timeIndex} = %d', timeIndex);
+
+    if isTotalDensityMode(opt)
+        initialDensity = requireInitialDensity(speciesData);
+        totalDensity = initialDensity + reshape(deltaDensity, 1, []);
+        titleText = densityTotalTitleText(speciesLabel, timeText);
+        statusText = sprintf('%s Density radial total, timeIndex = %d', speciesLabel, timeIndex);
+        plotData = linePlotData(xVec, initialDensity, xlabelText, ...
+            '$n\,[\mathrm{m}^{-3}]$', titleText, statusText);
+        plotData.lineLabel = '$n_0$';
+        plotData.lineOverlays = struct('xVec', xVec, 'yVec', totalDensity, ...
+            'label', '$n_0 + \delta n$');
+        return;
+    end
+
+    titleText = densityTitleText(speciesLabel, timeText);
+    statusText = sprintf('%s Density radial, timeIndex = %d', speciesLabel, timeIndex);
+    plotData = linePlotData(xVec, deltaDensity, xlabelText, '$\delta n$', titleText, statusText);
+end
+
+function plotDensityTime(picDensityData, meta, opt)
+
+    [speciesData, speciesLabel] = resolveSpeciesData(picDensityData, opt.species, 'density');
+    densityData = densityQuantityData(speciesData);
+    radialIndex = parseDiffusivityIndex(opt.radialIndex, size(densityData, 2), 'radial');
+    [xVec, xlabelText] = diffusivityTimeAxis(speciesData, meta, opt.timeAxis);
+    [radialVec, ~, radialName] = diffusivityRadialAxis(speciesData, opt.radialAxis);
+    radialValue = radialVec(radialIndex);
+    yVec = densityData(:, radialIndex);
+
+    if ~any(isfinite(yVec(:)))
+        fprintf('[plot] %s Density 时间曲线没有有限值数据。\n', speciesLabel);
+        return;
+    end
+
+    titleText = densityTitleText(speciesLabel, sprintf(',\\quad %s = %.6g', radialName, radialValue));
+    statusText = sprintf('%s Density time, radialIndex = %d', speciesLabel, radialIndex);
+    plotData = linePlotData(xVec, yVec, xlabelText, '$\delta n$', titleText, statusText);
+    drawLineFigure(sprintf('%s Density time', speciesLabel), plotData);
+end
+
+function plotDensityTimeInteractive(picDensityData, meta, opt, dynamicUpdate)
+
+    [speciesData, speciesLabel] = resolveSpeciesData(picDensityData, opt.species, 'density');
+    densityData = densityQuantityData(speciesData);
+    radialIndex0 = parseDiffusivityIndex(opt.radialIndex, size(densityData, 2), 'radial');
+    controls = struct([]);
+    if size(densityData, 2) > 1
+        controls = integerSliderControl('radialIndex', 'radialIndex', radialIndex0, 1, size(densityData, 2));
+    end
+
+    plotInteractiveMap(sprintf('%s Density time', speciesLabel), controls, dynamicUpdate, ...
+        @computePlotData, @renderLine);
+
+    function plotData = computePlotData(values)
+        tempRadialIndex = radialIndex0;
+        if isfield(values, 'radialIndex')
+            tempRadialIndex = values.radialIndex;
+        end
+        [xVec, xlabelText] = diffusivityTimeAxis(speciesData, meta, opt.timeAxis);
+        [radialVec, ~, radialName] = diffusivityRadialAxis(speciesData, opt.radialAxis);
+        titleText = densityTitleText(speciesLabel, ...
+            sprintf(',\\quad %s = %.6g', radialName, radialVec(tempRadialIndex)));
+        statusText = sprintf('%s Density time, radialIndex = %d', speciesLabel, tempRadialIndex);
+        plotData = linePlotData(xVec, densityData(:, tempRadialIndex), xlabelText, ...
+            '$\delta n$', titleText, statusText);
+    end
+end
+
+function plotDensityMap(picDensityData, meta, opt)
+
+    [speciesData, speciesLabel] = resolveSpeciesData(picDensityData, opt.species, 'density');
+    densityData = densityQuantityData(speciesData);
+    [xVec, xlabelText] = diffusivityTimeAxis(speciesData, meta, opt.timeAxis);
+    [yVec, ylabelText] = diffusivityRadialAxis(speciesData, opt.radialAxis);
+    Z = densityData.';
+
+    if ~any(isfinite(Z(:)))
+        fprintf('[plot] %s Density 二维图没有有限值数据。\n', speciesLabel);
+        return;
+    end
+
+    titleText = densityTitleText(speciesLabel, '');
+    statusText = sprintf('%s Density map', speciesLabel);
+    plotData = mapPlotData(Z, xVec, yVec, xlabelText, ylabelText, titleText, ...
+        '$\delta n$', opt.colormapIndex, 0, statusText);
+    drawMapFigure(sprintf('%s Density map', speciesLabel), plotData);
+end
+
+function plotDensityMapInteractive(picDensityData, meta, opt, dynamicUpdate)
+
+    [speciesData, speciesLabel] = resolveSpeciesData(picDensityData, opt.species, 'density');
+    densityData = densityQuantityData(speciesData);
+    controls = struct([]);
+
+    plotInteractiveMap(sprintf('%s Density map', speciesLabel), controls, dynamicUpdate, ...
+        @computePlotData, @renderMap);
+
+    function plotData = computePlotData(values) %#ok<INUSD>
+        [xVec, xlabelText] = diffusivityTimeAxis(speciesData, meta, opt.timeAxis);
+        [yVec, ylabelText] = diffusivityRadialAxis(speciesData, opt.radialAxis);
+        titleText = densityTitleText(speciesLabel, '');
+        statusText = sprintf('%s Density map', speciesLabel);
+        plotData = mapPlotData(densityData.', xVec, yVec, xlabelText, ylabelText, titleText, ...
+            '$\delta n$', opt.colormapIndex, 0, statusText);
+    end
+end
+
 function plotData = attachResonanceOverlay(plotData, phaseSpaceOrbit, speciesLabel, dim, idx, resOpt, meta)
 
     plotData.resonanceZ = [];
@@ -1560,6 +1897,31 @@ function data = requireQuantityData(speciesData, quantityField)
     if isempty(data)
         error('%s %s 尚未读取。请检查文件路径。', speciesData.species, quantityField);
     end
+end
+
+function data = densityQuantityData(speciesData)
+
+    data = requireQuantityData(speciesData, 'Density');
+    assert(ismatrix(data) && size(data, 2) == speciesData.gridNx, ...
+        'Density 数据尺寸必须为 [time, radial]。');
+end
+
+function initialDensity = requireInitialDensity(speciesData)
+
+    if ~isfield(speciesData, 'InitialDensity') || isempty(speciesData.InitialDensity)
+        if isfield(speciesData, 'InitialDensityError') && ~isempty(speciesData.InitialDensityError)
+            error('%s total 密度径向图无法使用 NTP 初始密度：%s', ...
+                speciesData.species, speciesData.InitialDensityError);
+        end
+        densityField = ntpDensityFieldName(speciesData.species);
+        error(['%s total 密度径向图需要 NTP.mat 中的 rhoSample 和 %s。' ...
+            '请确认 inputDir 下存在 NTP.mat，且该物种初始密度字段可用。'], ...
+            speciesData.species, densityField);
+    end
+
+    initialDensity = reshape(speciesData.InitialDensity, 1, []);
+    assert(numel(initialDensity) == speciesData.gridNx, ...
+        '%s InitialDensity 长度必须等于 gridNx。', speciesData.species);
 end
 
 function data = divideQuantity(numerator, denominator, denominatorName, floorValue, floorMode)
@@ -1879,6 +2241,33 @@ function titleText = diffusivityTitleText(speciesLabel, selectedN, extraLatex)
     titleText = sprintf('$\\mathrm{%s}\\quad D,\\quad %s%s$', speciesLabel, nLatex, extraLatex);
 end
 
+function titleText = densityTitleText(speciesLabel, extraLatex)
+
+    titleText = sprintf('$\\mathrm{%s}\\quad \\delta n%s$', speciesLabel, extraLatex);
+end
+
+function titleText = densityTotalTitleText(speciesLabel, extraLatex)
+
+    titleText = sprintf('$\\mathrm{%s}\\quad n%s$', speciesLabel, extraLatex);
+end
+
+function flag = isTotalDensityMode(opt)
+
+    modeText = 'delta';
+    if isfield(opt, 'radialDensityMode') && ~isempty(opt.radialDensityMode)
+        modeText = lower(strtrim(char(opt.radialDensityMode)));
+    end
+
+    switch modeText
+        case 'delta'
+            flag = false;
+        case 'total'
+            flag = true;
+        otherwise
+            error('radialDensityMode 必须为 "delta" 或 "total"。');
+    end
+end
+
 function plotData = linePlotData(xVec, yVec, xlabelText, ylabelText, titleText, statusText)
 
     xVec = reshape(xVec, 1, []);
@@ -1903,12 +2292,58 @@ end
 function renderLine(axHandle, plotData)
 
     resetMapAxes(axHandle);
+    hold(axHandle, 'on');
+    maxLegendCount = 1;
+    if isfield(plotData, 'lineOverlays') && ~isempty(plotData.lineOverlays)
+        maxLegendCount = maxLegendCount + numel(plotData.lineOverlays);
+    end
+    legendHandles = gobjects(1, maxLegendCount);
+    legendLabels = cell(1, maxLegendCount);
+    legendCount = 0;
+    hasFiniteLine = false;
+
     validData = isfinite(plotData.xVec) & isfinite(plotData.yVec);
     if any(validData)
-        plot(axHandle, plotData.xVec, plotData.yVec, 'LineWidth', 1.8, 'Color', [0.20, 0.40, 0.80]);
-    else
+        lineHandle = plot(axHandle, plotData.xVec, plotData.yVec, ...
+            'LineWidth', 1.8, 'Color', [0.20, 0.40, 0.80]);
+        hasFiniteLine = true;
+        if isfield(plotData, 'lineLabel') && ~isempty(plotData.lineLabel)
+            legendCount = legendCount + 1;
+            legendHandles(legendCount) = lineHandle;
+            legendLabels{legendCount} = plotData.lineLabel;
+        end
+    end
+
+    if isfield(plotData, 'lineOverlays') && ~isempty(plotData.lineOverlays)
+        overlays = plotData.lineOverlays;
+        colorTable = lines(max(numel(overlays) + 1, 7));
+        for iOverlay = 1:numel(overlays)
+            overlayX = reshape(overlays(iOverlay).xVec, 1, []);
+            overlayY = reshape(overlays(iOverlay).yVec, 1, []);
+            assert(numel(overlayX) == numel(overlayY), ...
+                '线图叠加曲线横纵坐标长度不一致。');
+            overlayValid = isfinite(overlayX) & isfinite(overlayY);
+            if any(overlayValid)
+                lineHandle = plot(axHandle, overlayX, overlayY, ...
+                    'LineWidth', 1.8, 'Color', colorTable(iOverlay + 1, :));
+                hasFiniteLine = true;
+                if isfield(overlays, 'label') && ~isempty(overlays(iOverlay).label)
+                    legendCount = legendCount + 1;
+                    legendHandles(legendCount) = lineHandle;
+                    legendLabels{legendCount} = overlays(iOverlay).label;
+                end
+            end
+        end
+    end
+
+    if ~hasFiniteLine
         text(axHandle, 0.5, 0.5, 'no finite data', 'Units', 'normalized', ...
             'HorizontalAlignment', 'center', 'FontName', 'Times New Roman', 'FontSize', 14);
+    end
+
+    if legendCount > 0
+        legend(axHandle, legendHandles(1:legendCount), legendLabels(1:legendCount), 'Interpreter', 'latex', ...
+            'Location', 'best', 'FontName', 'Times New Roman', 'FontSize', 11, 'Box', 'on');
     end
 
     xlabel(axHandle, plotData.xlabelText, 'Interpreter', 'latex', 'FontName', 'Times New Roman', 'FontSize', 14);
@@ -1919,6 +2354,7 @@ function renderLine(axHandle, plotData)
     box(axHandle, 'on');
     set(axHandle, 'FontName', 'Times New Roman', 'FontSize', 14, ...
         'Color', 'white', 'Layer', 'top', 'TickDir', 'out', 'LineWidth', 1);
+    hold(axHandle, 'off');
 end
 
 function drawMapFigure(figureName, plotData)
@@ -2869,6 +3305,16 @@ function data = readDiffusivity3D(filePath, precision, expectedTime, modeCount, 
         filePath, numel(raw), expectedCount, expectedTime, modeCount, gridNx);
     data = reshape(raw, [gridNx, modeCount, expectedTime]);
     data = permute(data, [3, 2, 1]);
+end
+
+function data = readDensity2D(filePath, precision, expectedTime, gridNx)
+
+    raw = readBinaryVector(filePath, precision);
+    expectedCount = expectedTime * gridNx;
+    assert(numel(raw) == expectedCount, ...
+        '%s 尺寸不匹配：读到 %d 个数，期望 %d 个（expectedTime=%d, gridNx=%d）。', ...
+        filePath, numel(raw), expectedCount, expectedTime, gridNx);
+    data = reshape(raw, [gridNx, expectedTime]).';
 end
 
 function raw = readBinaryVector(filePath, precision)
