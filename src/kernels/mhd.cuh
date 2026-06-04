@@ -1595,7 +1595,29 @@ __global__ void MHD2PIC(picReal* __restrict__ pic3d, mhdReal* __restrict__ globa
     /*----------------------------------Field and Derivative----------------------------------*/
 
     mhdReal field, field_px, field_py, field_pz;
+    mhdReal phi_px, phi_py, phi_pz;
     mhdReal field_du[4];
+    int gridPointId;
+    const int gridPointCount = gridNyPlusGhost * gridNx * gridNzPlusGhost;
+    const int fieldGroup0Base = 0 * gridPointCount;
+    const int fieldGroup1Base = 1 * gridPointCount;
+    const int fieldGroup2Base = 2 * gridPointCount;
+    const int fieldGroup3Base = 3 * gridPointCount;
+
+    auto write3dField = [&](int pointId, int float4Base, int double2FirstBase, int double2SecondBase, mhdReal value0,
+                            mhdReal value1, mhdReal value2, mhdReal value3) {
+        if constexpr (std::is_same_v<picReal, float>) {
+            float4* pic3dFloat4 = reinterpret_cast<float4*>(pic3d);
+            pic3dFloat4[float4Base + pointId] = make_float4(static_cast<float>(value0), static_cast<float>(value1),
+                                                            static_cast<float>(value2), static_cast<float>(value3));
+        } else {
+            double2* pic3dDouble2 = reinterpret_cast<double2*>(pic3d);
+            pic3dDouble2[double2FirstBase + pointId] =
+                make_double2(static_cast<double>(value0), static_cast<double>(value1));
+            pic3dDouble2[double2SecondBase + pointId] =
+                make_double2(static_cast<double>(value2), static_cast<double>(value3));
+        }
+    };
 
     /*----------------------------------------MHD2PIC-----------------------------------------*/
 
@@ -1610,30 +1632,23 @@ __global__ void MHD2PIC(picReal* __restrict__ pic3d, mhdReal* __restrict__ globa
     field_du[3] = globalA[offset3d + 2 * gridNxz];
     field_py = (field_du[0] - 8 * field_du[1] + 8 * field_du[2] - field_du[3]) / (12 * mhdGridDy);
 
-    offset3d = ((j + gridGhost) * gridNx * gridNzPlusGhost + i * gridNzPlusGhost + k + gridGhost) * 8;
+    gridPointId = (j + gridGhost) * gridNx * gridNzPlusGhost + i * gridNzPlusGhost + k + gridGhost;
 
-    pic3d[offset3d + 0] = static_cast<picReal>(field);
-    pic3d[offset3d + 1] = static_cast<picReal>(field_px);
-    pic3d[offset3d + 2] = static_cast<picReal>(field_py);
-    pic3d[offset3d + 3] = static_cast<picReal>(field_pz);
+    write3dField(gridPointId, fieldGroup0Base, fieldGroup0Base, fieldGroup1Base, field, field_px, field_py, field_pz);
 
     if (k < gridGhost) {
 
-        offset3d = ((j + gridGhost) * gridNx * gridNzPlusGhost + i * gridNzPlusGhost + k + gridGhost + gridNz) * 8;
+        gridPointId = (j + gridGhost) * gridNx * gridNzPlusGhost + i * gridNzPlusGhost + k + gridGhost + gridNz;
 
-        pic3d[offset3d + 0] = static_cast<picReal>(field);
-        pic3d[offset3d + 1] = static_cast<picReal>(field_px);
-        pic3d[offset3d + 2] = static_cast<picReal>(field_py);
-        pic3d[offset3d + 3] = static_cast<picReal>(field_pz);
+        write3dField(gridPointId, fieldGroup0Base, fieldGroup0Base, fieldGroup1Base, field, field_px, field_py,
+                     field_pz);
 
     } else if (k > gridNz - gridGhost - 1) {
 
-        offset3d = ((j + gridGhost) * gridNx * gridNzPlusGhost + i * gridNzPlusGhost + k + gridGhost - gridNz) * 8;
+        gridPointId = (j + gridGhost) * gridNx * gridNzPlusGhost + i * gridNzPlusGhost + k + gridGhost - gridNz;
 
-        pic3d[offset3d + 0] = static_cast<picReal>(field);
-        pic3d[offset3d + 1] = static_cast<picReal>(field_px);
-        pic3d[offset3d + 2] = static_cast<picReal>(field_py);
-        pic3d[offset3d + 3] = static_cast<picReal>(field_pz);
+        write3dField(gridPointId, fieldGroup0Base, fieldGroup0Base, fieldGroup1Base, field, field_px, field_py,
+                     field_pz);
     }
 
     offset3d = (j + gridGhost) * gridNxz + i * gridNz + k;
@@ -1649,48 +1664,29 @@ __global__ void MHD2PIC(picReal* __restrict__ pic3d, mhdReal* __restrict__ globa
     field_du[3] = globalPhi[offset3d + 2 * gridNxz];
     field_py = (field_du[0] - 8 * field_du[1] + 8 * field_du[2] - field_du[3]) / (12 * mhdGridDy);
 
-    offset3d = ((j + gridGhost) * gridNx * gridNzPlusGhost + i * gridNzPlusGhost + k + gridGhost) * 8;
-
-    pic3d[offset3d + 4] = static_cast<picReal>(field_px);
-    pic3d[offset3d + 5] = static_cast<picReal>(field_py);
-    pic3d[offset3d + 6] = static_cast<picReal>(field_pz);
-
-    if (k < gridGhost) {
-
-        offset3d = ((j + gridGhost) * gridNx * gridNzPlusGhost + i * gridNzPlusGhost + k + gridGhost + gridNz) * 8;
-
-        pic3d[offset3d + 4] = static_cast<picReal>(field_px);
-        pic3d[offset3d + 5] = static_cast<picReal>(field_py);
-        pic3d[offset3d + 6] = static_cast<picReal>(field_pz);
-
-    } else if (k > gridNz - gridGhost - 1) {
-
-        offset3d = ((j + gridGhost) * gridNx * gridNzPlusGhost + i * gridNzPlusGhost + k + gridGhost - gridNz) * 8;
-
-        pic3d[offset3d + 4] = static_cast<picReal>(field_px);
-        pic3d[offset3d + 5] = static_cast<picReal>(field_py);
-        pic3d[offset3d + 6] = static_cast<picReal>(field_pz);
-    }
+    phi_px = field_px;
+    phi_py = field_py;
+    phi_pz = field_pz;
 
     offset3d = (j + gridGhost) * gridNxz + i * gridNz + k;
 
     field = globalApt[offset3d];
 
-    offset3d = ((j + gridGhost) * gridNx * gridNzPlusGhost + i * gridNzPlusGhost + k + gridGhost) * 8;
+    gridPointId = (j + gridGhost) * gridNx * gridNzPlusGhost + i * gridNzPlusGhost + k + gridGhost;
 
-    pic3d[offset3d + 7] = static_cast<picReal>(field);
+    write3dField(gridPointId, fieldGroup1Base, fieldGroup2Base, fieldGroup3Base, phi_px, phi_py, phi_pz, field);
 
     if (k < gridGhost) {
 
-        offset3d = ((j + gridGhost) * gridNx * gridNzPlusGhost + i * gridNzPlusGhost + k + gridGhost + gridNz) * 8;
+        gridPointId = (j + gridGhost) * gridNx * gridNzPlusGhost + i * gridNzPlusGhost + k + gridGhost + gridNz;
 
-        pic3d[offset3d + 7] = static_cast<picReal>(field);
+        write3dField(gridPointId, fieldGroup1Base, fieldGroup2Base, fieldGroup3Base, phi_px, phi_py, phi_pz, field);
 
     } else if (k > gridNz - gridGhost - 1) {
 
-        offset3d = ((j + gridGhost) * gridNx * gridNzPlusGhost + i * gridNzPlusGhost + k + gridGhost - gridNz) * 8;
+        gridPointId = (j + gridGhost) * gridNx * gridNzPlusGhost + i * gridNzPlusGhost + k + gridGhost - gridNz;
 
-        pic3d[offset3d + 7] = static_cast<picReal>(field);
+        write3dField(gridPointId, fieldGroup1Base, fieldGroup2Base, fieldGroup3Base, phi_px, phi_py, phi_pz, field);
     }
 
     if (j < gridGhost) {
@@ -1724,30 +1720,24 @@ __global__ void MHD2PIC(picReal* __restrict__ pic3d, mhdReal* __restrict__ globa
             field_py = (field_du[0] - 8 * field_du[1] + 8 * field_du[2] - field_du[3]) / (12 * mhdGridDy);
         }
 
-        offset3d = (j * gridNx * gridNzPlusGhost + i * gridNzPlusGhost + k + gridGhost) * 8;
+        gridPointId = j * gridNx * gridNzPlusGhost + i * gridNzPlusGhost + k + gridGhost;
 
-        pic3d[offset3d + 0] = static_cast<picReal>(field);
-        pic3d[offset3d + 1] = static_cast<picReal>(field_px);
-        pic3d[offset3d + 2] = static_cast<picReal>(field_py);
-        pic3d[offset3d + 3] = static_cast<picReal>(field_pz);
+        write3dField(gridPointId, fieldGroup0Base, fieldGroup0Base, fieldGroup1Base, field, field_px, field_py,
+                     field_pz);
 
         if (k < gridGhost) {
 
-            offset3d = (j * gridNx * gridNzPlusGhost + i * gridNzPlusGhost + k + gridGhost + gridNz) * 8;
+            gridPointId = j * gridNx * gridNzPlusGhost + i * gridNzPlusGhost + k + gridGhost + gridNz;
 
-            pic3d[offset3d + 0] = static_cast<picReal>(field);
-            pic3d[offset3d + 1] = static_cast<picReal>(field_px);
-            pic3d[offset3d + 2] = static_cast<picReal>(field_py);
-            pic3d[offset3d + 3] = static_cast<picReal>(field_pz);
+            write3dField(gridPointId, fieldGroup0Base, fieldGroup0Base, fieldGroup1Base, field, field_px, field_py,
+                         field_pz);
 
         } else if (k > gridNz - gridGhost - 1) {
 
-            offset3d = (j * gridNx * gridNzPlusGhost + i * gridNzPlusGhost + k + gridGhost - gridNz) * 8;
+            gridPointId = j * gridNx * gridNzPlusGhost + i * gridNzPlusGhost + k + gridGhost - gridNz;
 
-            pic3d[offset3d + 0] = static_cast<picReal>(field);
-            pic3d[offset3d + 1] = static_cast<picReal>(field_px);
-            pic3d[offset3d + 2] = static_cast<picReal>(field_py);
-            pic3d[offset3d + 3] = static_cast<picReal>(field_pz);
+            write3dField(gridPointId, fieldGroup0Base, fieldGroup0Base, fieldGroup1Base, field, field_px, field_py,
+                         field_pz);
         }
 
         offset3d = j * gridNxz + i * gridNz + k;
@@ -1779,48 +1769,29 @@ __global__ void MHD2PIC(picReal* __restrict__ pic3d, mhdReal* __restrict__ globa
             field_py = (field_du[0] - 8 * field_du[1] + 8 * field_du[2] - field_du[3]) / (12 * mhdGridDy);
         }
 
-        offset3d = (j * gridNx * gridNzPlusGhost + i * gridNzPlusGhost + k + gridGhost) * 8;
-
-        pic3d[offset3d + 4] = static_cast<picReal>(field_px);
-        pic3d[offset3d + 5] = static_cast<picReal>(field_py);
-        pic3d[offset3d + 6] = static_cast<picReal>(field_pz);
-
-        if (k < gridGhost) {
-
-            offset3d = (j * gridNx * gridNzPlusGhost + i * gridNzPlusGhost + k + gridGhost + gridNz) * 8;
-
-            pic3d[offset3d + 4] = static_cast<picReal>(field_px);
-            pic3d[offset3d + 5] = static_cast<picReal>(field_py);
-            pic3d[offset3d + 6] = static_cast<picReal>(field_pz);
-
-        } else if (k > gridNz - gridGhost - 1) {
-
-            offset3d = (j * gridNx * gridNzPlusGhost + i * gridNzPlusGhost + k + gridGhost - gridNz) * 8;
-
-            pic3d[offset3d + 4] = static_cast<picReal>(field_px);
-            pic3d[offset3d + 5] = static_cast<picReal>(field_py);
-            pic3d[offset3d + 6] = static_cast<picReal>(field_pz);
-        }
+        phi_px = field_px;
+        phi_py = field_py;
+        phi_pz = field_pz;
 
         offset3d = j * gridNxz + i * gridNz + k;
 
         field = globalApt[offset3d];
 
-        offset3d = (j * gridNx * gridNzPlusGhost + i * gridNzPlusGhost + k + gridGhost) * 8;
+        gridPointId = j * gridNx * gridNzPlusGhost + i * gridNzPlusGhost + k + gridGhost;
 
-        pic3d[offset3d + 7] = static_cast<picReal>(field);
+        write3dField(gridPointId, fieldGroup1Base, fieldGroup2Base, fieldGroup3Base, phi_px, phi_py, phi_pz, field);
 
         if (k < gridGhost) {
 
-            offset3d = (j * gridNx * gridNzPlusGhost + i * gridNzPlusGhost + k + gridGhost + gridNz) * 8;
+            gridPointId = j * gridNx * gridNzPlusGhost + i * gridNzPlusGhost + k + gridGhost + gridNz;
 
-            pic3d[offset3d + 7] = static_cast<picReal>(field);
+            write3dField(gridPointId, fieldGroup1Base, fieldGroup2Base, fieldGroup3Base, phi_px, phi_py, phi_pz, field);
 
         } else if (k > gridNz - gridGhost - 1) {
 
-            offset3d = (j * gridNx * gridNzPlusGhost + i * gridNzPlusGhost + k + gridGhost - gridNz) * 8;
+            gridPointId = j * gridNx * gridNzPlusGhost + i * gridNzPlusGhost + k + gridGhost - gridNz;
 
-            pic3d[offset3d + 7] = static_cast<picReal>(field);
+            write3dField(gridPointId, fieldGroup1Base, fieldGroup2Base, fieldGroup3Base, phi_px, phi_py, phi_pz, field);
         }
 
     } else if (j > gridNy - gridGhost - 1) {
@@ -1854,32 +1825,24 @@ __global__ void MHD2PIC(picReal* __restrict__ pic3d, mhdReal* __restrict__ globa
             field_py = (field_du[0] - 8 * field_du[1] + 8 * field_du[2] - field_du[3]) / (12 * mhdGridDy);
         }
 
-        offset3d = ((j + 2 * gridGhost) * gridNx * gridNzPlusGhost + i * gridNzPlusGhost + k + gridGhost) * 8;
+        gridPointId = (j + 2 * gridGhost) * gridNx * gridNzPlusGhost + i * gridNzPlusGhost + k + gridGhost;
 
-        pic3d[offset3d + 0] = static_cast<picReal>(field);
-        pic3d[offset3d + 1] = static_cast<picReal>(field_px);
-        pic3d[offset3d + 2] = static_cast<picReal>(field_py);
-        pic3d[offset3d + 3] = static_cast<picReal>(field_pz);
+        write3dField(gridPointId, fieldGroup0Base, fieldGroup0Base, fieldGroup1Base, field, field_px, field_py,
+                     field_pz);
 
         if (k < gridGhost) {
 
-            offset3d =
-                ((j + 2 * gridGhost) * gridNx * gridNzPlusGhost + i * gridNzPlusGhost + k + gridGhost + gridNz) * 8;
+            gridPointId = (j + 2 * gridGhost) * gridNx * gridNzPlusGhost + i * gridNzPlusGhost + k + gridGhost + gridNz;
 
-            pic3d[offset3d + 0] = static_cast<picReal>(field);
-            pic3d[offset3d + 1] = static_cast<picReal>(field_px);
-            pic3d[offset3d + 2] = static_cast<picReal>(field_py);
-            pic3d[offset3d + 3] = static_cast<picReal>(field_pz);
+            write3dField(gridPointId, fieldGroup0Base, fieldGroup0Base, fieldGroup1Base, field, field_px, field_py,
+                         field_pz);
 
         } else if (k > gridNz - gridGhost - 1) {
 
-            offset3d =
-                ((j + 2 * gridGhost) * gridNx * gridNzPlusGhost + i * gridNzPlusGhost + k + gridGhost - gridNz) * 8;
+            gridPointId = (j + 2 * gridGhost) * gridNx * gridNzPlusGhost + i * gridNzPlusGhost + k + gridGhost - gridNz;
 
-            pic3d[offset3d + 0] = static_cast<picReal>(field);
-            pic3d[offset3d + 1] = static_cast<picReal>(field_px);
-            pic3d[offset3d + 2] = static_cast<picReal>(field_py);
-            pic3d[offset3d + 3] = static_cast<picReal>(field_pz);
+            write3dField(gridPointId, fieldGroup0Base, fieldGroup0Base, fieldGroup1Base, field, field_px, field_py,
+                         field_pz);
         }
 
         offset3d = (j + 2 * gridGhost) * gridNxz + i * gridNz + k;
@@ -1911,52 +1874,29 @@ __global__ void MHD2PIC(picReal* __restrict__ pic3d, mhdReal* __restrict__ globa
             field_py = (field_du[0] - 8 * field_du[1] + 8 * field_du[2] - field_du[3]) / (12 * mhdGridDy);
         }
 
-        offset3d = ((j + 2 * gridGhost) * gridNx * gridNzPlusGhost + i * gridNzPlusGhost + k + gridGhost) * 8;
-
-        pic3d[offset3d + 4] = static_cast<picReal>(field_px);
-        pic3d[offset3d + 5] = static_cast<picReal>(field_py);
-        pic3d[offset3d + 6] = static_cast<picReal>(field_pz);
-
-        if (k < gridGhost) {
-
-            offset3d =
-                ((j + 2 * gridGhost) * gridNx * gridNzPlusGhost + i * gridNzPlusGhost + k + gridGhost + gridNz) * 8;
-
-            pic3d[offset3d + 4] = static_cast<picReal>(field_px);
-            pic3d[offset3d + 5] = static_cast<picReal>(field_py);
-            pic3d[offset3d + 6] = static_cast<picReal>(field_pz);
-
-        } else if (k > gridNz - gridGhost - 1) {
-
-            offset3d =
-                ((j + 2 * gridGhost) * gridNx * gridNzPlusGhost + i * gridNzPlusGhost + k + gridGhost - gridNz) * 8;
-
-            pic3d[offset3d + 4] = static_cast<picReal>(field_px);
-            pic3d[offset3d + 5] = static_cast<picReal>(field_py);
-            pic3d[offset3d + 6] = static_cast<picReal>(field_pz);
-        }
+        phi_px = field_px;
+        phi_py = field_py;
+        phi_pz = field_pz;
 
         offset3d = (j + 2 * gridGhost) * gridNxz + i * gridNz + k;
 
         field = globalApt[offset3d];
 
-        offset3d = ((j + 2 * gridGhost) * gridNx * gridNzPlusGhost + i * gridNzPlusGhost + k + gridGhost) * 8;
+        gridPointId = (j + 2 * gridGhost) * gridNx * gridNzPlusGhost + i * gridNzPlusGhost + k + gridGhost;
 
-        pic3d[offset3d + 7] = static_cast<picReal>(field);
+        write3dField(gridPointId, fieldGroup1Base, fieldGroup2Base, fieldGroup3Base, phi_px, phi_py, phi_pz, field);
 
         if (k < gridGhost) {
 
-            offset3d =
-                ((j + 2 * gridGhost) * gridNx * gridNzPlusGhost + i * gridNzPlusGhost + k + gridGhost + gridNz) * 8;
+            gridPointId = (j + 2 * gridGhost) * gridNx * gridNzPlusGhost + i * gridNzPlusGhost + k + gridGhost + gridNz;
 
-            pic3d[offset3d + 7] = static_cast<picReal>(field);
+            write3dField(gridPointId, fieldGroup1Base, fieldGroup2Base, fieldGroup3Base, phi_px, phi_py, phi_pz, field);
 
         } else if (k > gridNz - gridGhost - 1) {
 
-            offset3d =
-                ((j + 2 * gridGhost) * gridNx * gridNzPlusGhost + i * gridNzPlusGhost + k + gridGhost - gridNz) * 8;
+            gridPointId = (j + 2 * gridGhost) * gridNx * gridNzPlusGhost + i * gridNzPlusGhost + k + gridGhost - gridNz;
 
-            pic3d[offset3d + 7] = static_cast<picReal>(field);
+            write3dField(gridPointId, fieldGroup1Base, fieldGroup2Base, fieldGroup3Base, phi_px, phi_py, phi_pz, field);
         }
     }
 }

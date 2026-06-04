@@ -171,6 +171,9 @@ int main(int argc, char* argv[]) {
     dim3 PICGridSize(PICGridDimx);
     dim3 PICBlockSize(PICBlockDimx);
 
+    dim3 MergeGridSize(MergeGridDimx);
+    dim3 MergeBlockSize(MergeBlockDimx);
+
     /*------------------------------Phase 5: cuGMEC Resource Binding------------------------------*/
 
     int currentStep = 0;
@@ -226,9 +229,12 @@ int main(int argc, char* argv[]) {
     REF(dPa_midl); REF(dPa_midr); REF(dPi_midl); REF(dPi_midr); REF(dPb_midl); REF(dPb_midr);
     REF(dNa_midl); REF(dNa_midr); REF(dNi_midl); REF(dNi_midr); REF(dNb_midl); REF(dNb_midr);
 
-    REF(Alpha_offsets); REF(Alpha_keys_in); REF(Alpha_keys_out); REF(Alpha_values_in); REF(Alpha_values_out);
-    REF(Ion_offsets);   REF(Ion_keys_in);   REF(Ion_keys_out);   REF(Ion_values_in);   REF(Ion_values_out);
-    REF(Beam_offsets);  REF(Beam_keys_in);  REF(Beam_keys_out);  REF(Beam_values_in);  REF(Beam_values_out);
+    REF(Alpha_keys_in); REF(Alpha_keys_out); REF(Alpha_sort_ids_in); REF(Alpha_sort_ids_out);
+    REF(Ion_keys_in);   REF(Ion_keys_out);   REF(Ion_sort_ids_in);   REF(Ion_sort_ids_out);
+    REF(Beam_keys_in);  REF(Beam_keys_out);  REF(Beam_sort_ids_in);  REF(Beam_sort_ids_out);
+    REF(Alpha_values_in); REF(Alpha_values_out);
+    REF(Ion_values_in);   REF(Ion_values_out);
+    REF(Beam_values_in);  REF(Beam_values_out);
 
     REF(amplitude); REF(frequency); REF(modeReal); REF(modeImag); REF(Epara); REF(EparaES);
     REF(MaxwellDrive); REF(ReynoldsDrive); REF(dwdtTotal);
@@ -881,6 +887,16 @@ int main(int argc, char* argv[]) {
         }
     };
 
+    auto mergePICBuffers = [&]<typename... Guards>(mhdReal** globalP) {
+        if constexpr (allTrue<Guards...>) {
+            if constexpr (depositBufferNums > 1) {
+                forEachDev([&](int i) {
+                    PICMergeBuffers<depositBufferNums, mhdReal><<<MergeGridSize, MergeBlockSize, 0, 0>>>(globalP[i]);
+                });
+            }
+        }
+    };
+
     auto allReducePressure = [&]<typename... Guards>(mhdReal** globalP) {
         if constexpr (allTrue<Guards...>) {
             for (int i = 0; i < devNums; i++) {
@@ -932,15 +948,21 @@ int main(int argc, char* argv[]) {
     };
 
     auto sortParticles = [&]<typename... Guards>(void** storage, std::vector<size_t>& storage_bytes, int** keys_in,
-                                                 int** keys_out, picReal** values_in, picReal** values_out,
-                                                 int** offsets) {
+                                                 int** keys_out, int** sort_ids_in, int** sort_ids_out,
+                                                 picReal** values_in, picReal** values_out) {
         if constexpr (allTrue<Guards...>) {
             forEachDev([&](int i) {
-                cub::DeviceSegmentedRadixSort::SortPairs(storage[i], storage_bytes[i], keys_in[i], keys_out[i],
-                                                         values_in[i], values_out[i], picDev * 7, 7, offsets[i],
-                                                         offsets[i] + 1);
-                cudaMemcpyAsync(keys_in[i], keys_out[i], sizeof(int) * picDev * 7, cudaMemcpyDeviceToDevice);
-                cudaMemcpyAsync(values_in[i], values_out[i], sizeof(picReal) * picDev * 7, cudaMemcpyDeviceToDevice);
+                cub::DeviceRadixSort::SortPairs(storage[i], storage_bytes[i], keys_in[i], keys_out[i], sort_ids_in[i],
+                                                sort_ids_out[i], picDev);
+                PICReorderValues<<<SortGridDimx, SortBlockDimx, 0, 0>>>(sort_ids_out[i], values_in[i], values_out[i]);
+
+                int* temp_keys = keys_in[i];
+                keys_in[i] = keys_out[i];
+                keys_out[i] = temp_keys;
+
+                picReal* temp_values = values_in[i];
+                values_in[i] = values_out[i];
+                values_out[i] = temp_values;
             });
         }
     };
@@ -1070,6 +1092,13 @@ int main(int argc, char* argv[]) {
                                                                      globalNa);
             runPICRK4.template operator()<Beam, BeamType, ifBeam>(Beam_keys_in, Beam_values_in, globalPb, globalNb);
 
+            mergePICBuffers.template operator()<ifIon>(globalPi);
+            mergePICBuffers.template operator()<ifAlpha>(globalPa);
+            mergePICBuffers.template operator()<ifBeam>(globalPb);
+            mergePICBuffers.template operator()<ifIon, ifQNeutrality>(globalNi);
+            mergePICBuffers.template operator()<ifAlpha, ifQNeutrality>(globalNa);
+            mergePICBuffers.template operator()<ifBeam, ifQNeutrality>(globalNb);
+
             ncclGroupStart();
             allReducePressure.template operator()<ifIon>(globalPi);
             allReducePressure.template operator()<ifAlpha>(globalPa);
@@ -1153,11 +1182,12 @@ int main(int argc, char* argv[]) {
         }
 
         sortParticles.template operator()<ifIon>(Ion_storage, Ion_storage_bytes, Ion_keys_in, Ion_keys_out,
-                                                 Ion_values_in, Ion_values_out, Ion_offsets);
+                                                 Ion_sort_ids_in, Ion_sort_ids_out, Ion_values_in, Ion_values_out);
         sortParticles.template operator()<ifAlpha>(Alpha_storage, Alpha_storage_bytes, Alpha_keys_in, Alpha_keys_out,
-                                                   Alpha_values_in, Alpha_values_out, Alpha_offsets);
+                                                   Alpha_sort_ids_in, Alpha_sort_ids_out, Alpha_values_in,
+                                                   Alpha_values_out);
         sortParticles.template operator()<ifBeam>(Beam_storage, Beam_storage_bytes, Beam_keys_in, Beam_keys_out,
-                                                  Beam_values_in, Beam_values_out, Beam_offsets);
+                                                  Beam_sort_ids_in, Beam_sort_ids_out, Beam_values_in, Beam_values_out);
     }
 
     /*-----------------------------Phase 9: Finalize Timing & Memory------------------------------*/

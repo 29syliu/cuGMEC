@@ -25,8 +25,8 @@
 using mhdReal = double;
 using picReal = float;
 
-const std::string inputDir = "/home/imogen/cuGMEC/ITER";
-const std::string outputDir = "/home/imogen/cuGMEC/ITER";
+const std::string inputDir = "/home/imogen/NMTEST";
+const std::string outputDir = "/home/imogen/NMTEST/N30";
 const std::string MHDCollocated = "MHDCollocated_384_32.bin";
 const std::string MHDStaggered = "MHDStaggered_256_32.bin";
 const std::string IonPhaseSpaceMapping = "IonPhaseSpaceMapping.bin";
@@ -49,11 +49,11 @@ const int devNums = 1;
 const int gridNx = 384;
 const int gridNy = 32;
 const int gridNz = 16;
-const int ppcNums = 256;
+const int ppcNums = 64;
 
 /*-------------------------------MHD Setting------------------------------*/
 
-const int tubes = 29;
+const int tubes = 30;
 const int leftN = 1;
 const int rightN = 1;
 const int refinedTimes = 32;
@@ -74,26 +74,26 @@ constexpr std::array<int, 0> removeN_A = {};
 constexpr std::array<int, 0> removeN_dNe = {};
 constexpr std::array<int, 0> removeN_dTe = {};
 constexpr std::array<int, 0> removeN_dP = {};
-constexpr std::array<std::tuple<int, int, int>, 1> selectNM_Phi = {{{1, 0, 32}}};
-constexpr std::array<std::tuple<int, int, int>, 1> selectNM_A = {{{1, 0, 32}}};
-constexpr std::array<std::tuple<int, int, int>, 1> selectNM_dNe = {{{1, 0, 32}}};
-constexpr std::array<std::tuple<int, int, int>, 1> selectNM_dTe = {{{1, 0, 32}}};
-constexpr std::array<std::tuple<int, int, int>, 1> selectNM_dP = {{{1, 0, 32}}};
+constexpr std::array<std::tuple<int, int, int>, 0> selectNM_Phi = {{}};
+constexpr std::array<std::tuple<int, int, int>, 0> selectNM_A = {{}};
+constexpr std::array<std::tuple<int, int, int>, 0> selectNM_dNe = {{}};
+constexpr std::array<std::tuple<int, int, int>, 0> selectNM_dTe = {{}};
+constexpr std::array<std::tuple<int, int, int>, 0> selectNM_dP = {{}};
 
 using ifStaggered = falseType;
 using ifNonlinearMHD = trueType;
 using ifEparallel = trueType;
 using ifFLRMHD = falseType;
-using ifQNeutrality = trueType;
+using ifQNeutrality = falseType;
 using ifMaxwellStress = trueType;
 using ifReynoldsStress = trueType;
 const mhdReal MaxwellStressCoef = 1.0;
 const mhdReal ReynoldsStressCoef = 1.0;
 
-using ifNablaPerp2Phi = falseType;
-using ifNablaPara4Phi = falseType;
+using ifNablaPerp2Phi = trueType;
+using ifNablaPara4Phi = trueType;
 const mhdReal perp2Phi = 1.0e-7;
-const mhdReal para4Phi = 1.0e-7;
+const mhdReal para4Phi = 1.0e-5;
 
 using ifNablaPerp2A = falseType;
 using ifNablaPara4A = falseType;
@@ -113,7 +113,7 @@ const mhdReal para4dTe = 1.0e-7;
 using ifNablaPerp2dP = falseType;
 using ifNablaPara4dP = falseType;
 const mhdReal perp2dP = 1.0e-6;
-const mhdReal para4dP = 0.0;
+const mhdReal para4dP = 1.0e-5;
 
 /*-------------------------------PIC Setting------------------------------*/
 
@@ -121,9 +121,9 @@ using ifFLRPIC = trueType;
 using ifNonlinearPIC = trueType;
 const int gyroNums = 4;
 
-using ifIon = falseType;
+using ifIon = trueType;
 const disType IonType = Maxwell;
-const spaceType IonSpace = spaceReal;
+const spaceType IonSpace = spaceUniform;
 const velocityType IonVelocity = velocityUniform;
 const picReal IonMass = 2.5;
 const picReal IonChar = 1.0;
@@ -135,9 +135,9 @@ const picReal IonDeltaV = 0.0;
 const picReal IonLambda0 = 0.0;
 const picReal IonDeltaLambda2 = 0.0;
 
-using ifAlpha = falseType;
+using ifAlpha = trueType;
 const disType AlphaType = Slowing0;
-const spaceType AlphaSpace = spaceReal;
+const spaceType AlphaSpace = spaceUniform;
 const velocityType AlphaVelocity = velocityUniform;
 const picReal AlphaMass = 4.0;
 const picReal AlphaChar = 2.0;
@@ -149,9 +149,9 @@ const picReal AlphaDeltaV = 0.0;
 const picReal AlphaLambda0 = 0.0;
 const picReal AlphaDeltaLambda2 = 0.0;
 
-using ifBeam = falseType;
+using ifBeam = trueType;
 const disType BeamType = Slowing2;
-const spaceType BeamSpace = spaceReal;
+const spaceType BeamSpace = spaceUniform;
 const velocityType BeamVelocity = velocityUniform;
 const picReal BeamMass = 2.0;
 const picReal BeamChar = 1.0;
@@ -166,14 +166,14 @@ const picReal BeamDeltaLambda2 = 1.0 / (4.5 * 4.5);
 /*-------------------------------Run Setting------------------------------*/
 
 using ifDiagAmplitude = trueType;
-using ifDiagFrequency = trueType;
-using ifDiagEparallel = trueType;
-using ifDiagDensity = trueType;
-using ifDiagDiffusivity = trueType;
+using ifDiagFrequency = falseType;
+using ifDiagEparallel = falseType;
+using ifDiagDensity = falseType;
+using ifDiagDiffusivity = falseType;
 using ifDiagZFDrive = falseType;
-using ifCheckNAN = trueType;
+using ifCheckNAN = falseType;
 
-using ifOutputPhi = trueType;
+using ifOutputPhi = falseType;
 using ifOutputA = falseType;
 using ifOutputdNe = falseType;
 using ifOutputdTe = falseType;
@@ -202,8 +202,8 @@ using ifOutputPitchSpacePower = falseType;
 using ifContinue = falseType;
 const int continueSteps = 0;
 const double dt = 0.02;
-const int totalSteps = 1;
+const int totalSteps = 20;
 const int ratioDt = 1;
-const int sortSteps = 1;
+const int sortSteps = 10;
 const int diagSteps = 1;
 const int outputSteps = 2500;

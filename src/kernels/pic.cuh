@@ -21,6 +21,43 @@
 
 /*----------------------------------------PIC Kernels-----------------------------------------*/
 
+__global__ void PICInitSortIds(int* __restrict__ sort_ids) {
+
+    int picId = blockIdx.x * blockDim.x + threadIdx.x;
+
+    sort_ids[picId] = picId;
+}
+
+__global__ void PICReorderValues(int* __restrict__ sort_ids, picReal* __restrict__ values_in,
+                                 picReal* __restrict__ values_out) {
+
+    int picId = blockIdx.x * blockDim.x + threadIdx.x;
+
+    int src = sort_ids[picId];
+
+#pragma unroll
+    for (int varId = 0; varId < 7; varId++)
+        values_out[picId + varId * picDev] = values_in[src + varId * picDev];
+}
+
+template <int bufferNums, typename type>
+__global__ void PICMergeBuffers(type* __restrict__ field) {
+
+    int offset3d = blockIdx.x * blockDim.x + threadIdx.x;
+    int fieldSize = gridNyPlusGhost * gridNxz;
+
+    type sum = field[offset3d];
+
+#pragma unroll
+    for (int bufferId = 1; bufferId < bufferNums; bufferId++) {
+        int offsetBuffer = bufferId * fieldSize + offset3d;
+        sum += field[offsetBuffer];
+        field[offsetBuffer] = 0;
+    }
+
+    field[offset3d] = sum;
+}
+
 template <typename local, typename type>
 __global__ void PICAlignedGhost(type* __restrict__ d_qtheta, type* __restrict__ dP_mid) {
 
@@ -535,6 +572,7 @@ __global__ void DriftAlignedRK4(picReal* __restrict__ pic1d, picReal* __restrict
 
         k = (k - gridGhost + gridNz) % gridNz;
         qId = j * gridNxz + i * gridNz + k;
+        qId += (picId % depositBufferNums) * gridNyPlusGhost * gridNxz;
 
         i = gridNz;
         j = gridNxz;
@@ -562,8 +600,7 @@ __global__ void DriftAlignedRK4(picReal* __restrict__ pic1d, picReal* __restrict
             atomicAdd(&dN_mid[qId + i + j + k], static_cast<mhdReal>(coes[7] * disN));
         }
 
-        for (int index = 0; index < 7; index++)
-            pic_keys_in[picId + index * picDev] = cellId;
+        pic_keys_in[picId] = cellId;
         pic_values_in[picId + 0 * picDev] = vec2[0];
         pic_values_in[picId + 1 * picDev] = vec2[1];
         pic_values_in[picId + 2 * picDev] = vec2[2];
@@ -1246,6 +1283,7 @@ __global__ void GyroAlignedRK4(picReal* __restrict__ pic1d, picReal* __restrict_
 
             k = (k - gridGhost + gridNz) % gridNz;
             qId = j * gridNxz + i * gridNz + k;
+            qId += (picId % depositBufferNums) * gridNyPlusGhost * gridNxz;
 
             i = gridNz;
             j = gridNxz;
@@ -1275,8 +1313,7 @@ __global__ void GyroAlignedRK4(picReal* __restrict__ pic1d, picReal* __restrict_
             }
         }
 
-        for (int index = 0; index < 7; index++)
-            pic_keys_in[picId + index * picDev] = cellId;
+        pic_keys_in[picId] = cellId;
         pic_values_in[picId + 0 * picDev] = vec2[0];
         pic_values_in[picId + 1 * picDev] = vec2[1];
         pic_values_in[picId + 2 * picDev] = vec2[2];

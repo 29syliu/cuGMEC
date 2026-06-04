@@ -51,6 +51,11 @@ template <int ratioDt, picType particle, typename orbitReal>
 __global__ void PICDiagOrbit(orbitReal* __restrict__ pic1d, orbitReal* __restrict__ pic2d,
                              orbitReal* __restrict__ phaseSpaceMapping);
 
+__global__ void PICInitSortIds(int* __restrict__ sort_ids);
+
+__global__ void PICReorderValues(int* __restrict__ sort_ids, picReal* __restrict__ values_in,
+                                 picReal* __restrict__ values_out);
+
 #define RESET "\033[0m"
 #define RED "\033[31m"
 #define BLUE "\033[34m"
@@ -534,33 +539,33 @@ class HybridModel {
 	picReal** h_pic1d; picReal** h_pic2d; picReal** h_pic3d;
 	picReal** d_pic1d; picReal** d_pic2d; picReal** d_pic3d;
 
-	int** h_Ion_offsets;
 	int** h_Ion_keys;
 	picReal** h_Ion_values;
 
-	int** h_Alpha_offsets;
 	int** h_Alpha_keys;
 	picReal** h_Alpha_values;
 
-	int** h_Beam_offsets;
 	int** h_Beam_keys;
 	picReal** h_Beam_values;
 
-	int** d_Ion_offsets;
 	int** d_Ion_keys_in;
 	int** d_Ion_keys_out;
+	int** d_Ion_sort_ids_in;
+	int** d_Ion_sort_ids_out;
 	picReal** d_Ion_values_in;
 	picReal** d_Ion_values_out;
 
-	int** d_Alpha_offsets;
 	int** d_Alpha_keys_in;
 	int** d_Alpha_keys_out;
+	int** d_Alpha_sort_ids_in;
+	int** d_Alpha_sort_ids_out;
 	picReal** d_Alpha_values_in;
 	picReal** d_Alpha_values_out;
 
-	int** d_Beam_offsets;
 	int** d_Beam_keys_in;
 	int** d_Beam_keys_out;
+	int** d_Beam_sort_ids_in;
+	int** d_Beam_sort_ids_out;
 	picReal** d_Beam_values_in;
 	picReal** d_Beam_values_out;
 
@@ -1105,22 +1110,19 @@ class HybridModel {
 
         if (ifIon) {
 
-            HostAllocator.allocateHostArrays(devNums, 8, h_Ion_offsets);
-            HostAllocator.allocateHostArrays(devNums, (size_t)picDev * 7, h_Ion_keys);
+            HostAllocator.allocateHostArrays(devNums, (size_t)picDev, h_Ion_keys);
             HostAllocator.allocateHostArrays(devNums, (size_t)picDev * 7, h_Ion_values);
         }
 
         if (ifAlpha) {
 
-            HostAllocator.allocateHostArrays(devNums, 8, h_Alpha_offsets);
-            HostAllocator.allocateHostArrays(devNums, (size_t)picDev * 7, h_Alpha_keys);
+            HostAllocator.allocateHostArrays(devNums, (size_t)picDev, h_Alpha_keys);
             HostAllocator.allocateHostArrays(devNums, (size_t)picDev * 7, h_Alpha_values);
         }
 
         if (ifBeam) {
 
-            HostAllocator.allocateHostArrays(devNums, 8, h_Beam_offsets);
-            HostAllocator.allocateHostArrays(devNums, (size_t)picDev * 7, h_Beam_keys);
+            HostAllocator.allocateHostArrays(devNums, (size_t)picDev, h_Beam_keys);
             HostAllocator.allocateHostArrays(devNums, (size_t)picDev * 7, h_Beam_values);
         }
 
@@ -1283,21 +1285,18 @@ class HybridModel {
 
         if (ifIon) {
 
-            HostAllocator.releaseHostArrays(h_Ion_offsets);
             HostAllocator.releaseHostArrays(h_Ion_keys);
             HostAllocator.releaseHostArrays(h_Ion_values);
         }
 
         if (ifAlpha) {
 
-            HostAllocator.releaseHostArrays(h_Alpha_offsets);
             HostAllocator.releaseHostArrays(h_Alpha_keys);
             HostAllocator.releaseHostArrays(h_Alpha_values);
         }
 
         if (ifBeam) {
 
-            HostAllocator.releaseHostArrays(h_Beam_offsets);
             HostAllocator.releaseHostArrays(h_Beam_keys);
             HostAllocator.releaseHostArrays(h_Beam_values);
         }
@@ -1385,25 +1384,27 @@ class HybridModel {
 
         if (ifIon) {
 
-            DeviceAllocator.allocateDeviceArrays(localId, devNums, 8, d_Ion_offsets);
-            DeviceAllocator.allocateDeviceArrays(localId, devNums, (size_t)picDev * 7, d_Ion_keys_in, d_Ion_keys_out);
+            DeviceAllocator.allocateDeviceArrays(localId, devNums, (size_t)picDev, d_Ion_keys_in, d_Ion_keys_out);
+            DeviceAllocator.allocateDeviceArrays(localId, devNums, (size_t)picDev, d_Ion_sort_ids_in,
+                                                 d_Ion_sort_ids_out);
             DeviceAllocator.allocateDeviceArrays(localId, devNums, (size_t)picDev * 7, d_Ion_values_in,
                                                  d_Ion_values_out);
         }
 
         if (ifAlpha) {
 
-            DeviceAllocator.allocateDeviceArrays(localId, devNums, 8, d_Alpha_offsets);
-            DeviceAllocator.allocateDeviceArrays(localId, devNums, (size_t)picDev * 7, d_Alpha_keys_in,
-                                                 d_Alpha_keys_out);
+            DeviceAllocator.allocateDeviceArrays(localId, devNums, (size_t)picDev, d_Alpha_keys_in, d_Alpha_keys_out);
+            DeviceAllocator.allocateDeviceArrays(localId, devNums, (size_t)picDev, d_Alpha_sort_ids_in,
+                                                 d_Alpha_sort_ids_out);
             DeviceAllocator.allocateDeviceArrays(localId, devNums, (size_t)picDev * 7, d_Alpha_values_in,
                                                  d_Alpha_values_out);
         }
 
         if (ifBeam) {
 
-            DeviceAllocator.allocateDeviceArrays(localId, devNums, 8, d_Beam_offsets);
-            DeviceAllocator.allocateDeviceArrays(localId, devNums, (size_t)picDev * 7, d_Beam_keys_in, d_Beam_keys_out);
+            DeviceAllocator.allocateDeviceArrays(localId, devNums, (size_t)picDev, d_Beam_keys_in, d_Beam_keys_out);
+            DeviceAllocator.allocateDeviceArrays(localId, devNums, (size_t)picDev, d_Beam_sort_ids_in,
+                                                 d_Beam_sort_ids_out);
             DeviceAllocator.allocateDeviceArrays(localId, devNums, (size_t)picDev * 7, d_Beam_values_in,
                                                  d_Beam_values_out);
         }
@@ -1413,8 +1414,9 @@ class HybridModel {
         DeviceAllocator.allocateDeviceArrays(localId, devNums, gridNyPlusGhost * gridNx * gridNzPlusGhost * 8, d_pic3d);
 
         DeviceAllocator.allocateDeviceArrays(localId, devNums, gridNyPlusGhost * gridNxz, d_globalA, d_globalPhi,
-                                             d_globalApt, d_globalPi, d_globalPa, d_globalPb, d_globalNi, d_globalNa,
-                                             d_globalNb);
+                                             d_globalApt);
+        DeviceAllocator.allocateDeviceArrays(localId, devNums, (size_t)depositBufferNums * gridNyPlusGhost * gridNxz,
+                                             d_globalPi, d_globalPa, d_globalPb, d_globalNi, d_globalNa, d_globalNb);
 
         /*-------------------------------------Diagnostic on GPU--------------------------------------*/
 
@@ -1719,22 +1721,22 @@ class HybridModel {
 
         if (ifIon) {
 
-            DeviceAllocator.releaseDeviceArrays(localId, devNums, d_Ion_offsets);
             DeviceAllocator.releaseDeviceArrays(localId, devNums, d_Ion_keys_in, d_Ion_keys_out);
+            DeviceAllocator.releaseDeviceArrays(localId, devNums, d_Ion_sort_ids_in, d_Ion_sort_ids_out);
             DeviceAllocator.releaseDeviceArrays(localId, devNums, d_Ion_values_in, d_Ion_values_out);
         }
 
         if (ifAlpha) {
 
-            DeviceAllocator.releaseDeviceArrays(localId, devNums, d_Alpha_offsets);
             DeviceAllocator.releaseDeviceArrays(localId, devNums, d_Alpha_keys_in, d_Alpha_keys_out);
+            DeviceAllocator.releaseDeviceArrays(localId, devNums, d_Alpha_sort_ids_in, d_Alpha_sort_ids_out);
             DeviceAllocator.releaseDeviceArrays(localId, devNums, d_Alpha_values_in, d_Alpha_values_out);
         }
 
         if (ifBeam) {
 
-            DeviceAllocator.releaseDeviceArrays(localId, devNums, d_Beam_offsets);
             DeviceAllocator.releaseDeviceArrays(localId, devNums, d_Beam_keys_in, d_Beam_keys_out);
+            DeviceAllocator.releaseDeviceArrays(localId, devNums, d_Beam_sort_ids_in, d_Beam_sort_ids_out);
             DeviceAllocator.releaseDeviceArrays(localId, devNums, d_Beam_values_in, d_Beam_values_out);
         }
 
@@ -2048,11 +2050,8 @@ class HybridModel {
 
             if (ifIon) {
 
-                H2DAllocator.hostToDevice(8, 0, i * 8, d_Ion_offsets[i], h_Ion_offsets[0]);
-                H2DAllocator.hostToDevice((size_t)picDev * 7, 0, (size_t)i * picDev * 7, d_Ion_keys_in[i],
-                                          h_Ion_keys[0]);
-                H2DAllocator.hostToDevice((size_t)picDev * 7, 0, (size_t)i * picDev * 7, d_Ion_keys_out[i],
-                                          h_Ion_keys[0]);
+                H2DAllocator.hostToDevice((size_t)picDev, 0, (size_t)i * picDev, d_Ion_keys_in[i], h_Ion_keys[0]);
+                H2DAllocator.hostToDevice((size_t)picDev, 0, (size_t)i * picDev, d_Ion_keys_out[i], h_Ion_keys[0]);
                 H2DAllocator.hostToDevice((size_t)picDev * 7, 0, (size_t)i * picDev * 7, d_Ion_values_in[i],
                                           h_Ion_values[0]);
                 H2DAllocator.hostToDevice((size_t)picDev * 7, 0, (size_t)i * picDev * 7, d_Ion_values_out[i],
@@ -2061,11 +2060,8 @@ class HybridModel {
 
             if (ifAlpha) {
 
-                H2DAllocator.hostToDevice(8, 0, i * 8, d_Alpha_offsets[i], h_Alpha_offsets[0]);
-                H2DAllocator.hostToDevice((size_t)picDev * 7, 0, (size_t)i * picDev * 7, d_Alpha_keys_in[i],
-                                          h_Alpha_keys[0]);
-                H2DAllocator.hostToDevice((size_t)picDev * 7, 0, (size_t)i * picDev * 7, d_Alpha_keys_out[i],
-                                          h_Alpha_keys[0]);
+                H2DAllocator.hostToDevice((size_t)picDev, 0, (size_t)i * picDev, d_Alpha_keys_in[i], h_Alpha_keys[0]);
+                H2DAllocator.hostToDevice((size_t)picDev, 0, (size_t)i * picDev, d_Alpha_keys_out[i], h_Alpha_keys[0]);
                 H2DAllocator.hostToDevice((size_t)picDev * 7, 0, (size_t)i * picDev * 7, d_Alpha_values_in[i],
                                           h_Alpha_values[0]);
                 H2DAllocator.hostToDevice((size_t)picDev * 7, 0, (size_t)i * picDev * 7, d_Alpha_values_out[i],
@@ -2074,11 +2070,8 @@ class HybridModel {
 
             if (ifBeam) {
 
-                H2DAllocator.hostToDevice(8, 0, i * 8, d_Beam_offsets[i], h_Beam_offsets[0]);
-                H2DAllocator.hostToDevice((size_t)picDev * 7, 0, (size_t)i * picDev * 7, d_Beam_keys_in[i],
-                                          h_Beam_keys[0]);
-                H2DAllocator.hostToDevice((size_t)picDev * 7, 0, (size_t)i * picDev * 7, d_Beam_keys_out[i],
-                                          h_Beam_keys[0]);
+                H2DAllocator.hostToDevice((size_t)picDev, 0, (size_t)i * picDev, d_Beam_keys_in[i], h_Beam_keys[0]);
+                H2DAllocator.hostToDevice((size_t)picDev, 0, (size_t)i * picDev, d_Beam_keys_out[i], h_Beam_keys[0]);
                 H2DAllocator.hostToDevice((size_t)picDev * 7, 0, (size_t)i * picDev * 7, d_Beam_values_in[i],
                                           h_Beam_values[0]);
                 H2DAllocator.hostToDevice((size_t)picDev * 7, 0, (size_t)i * picDev * 7, d_Beam_values_out[i],
@@ -2112,27 +2105,38 @@ class HybridModel {
         logStart("Allocate memory on device for sorting particles.");
 
         auto setupRadixSort = [&](bool enable, void** storage, std::vector<size_t>& storageBytes, int** keys_in,
-                                  int** keys_out, picReal** values_in, picReal** values_out, int** offsets) {
+                                  int** keys_out, int** sort_ids_in, int** sort_ids_out, picReal** values_in,
+                                  picReal** values_out) {
             if (!enable)
                 return;
             for (int i = 0; i < devNums; i++) {
                 CUDACHECK(cudaSetDevice(localId * devNums + i));
-                cub::DeviceSegmentedRadixSort::SortPairs(storage[i], storageBytes[i], keys_out[i], keys_in[i],
-                                                         values_out[i], values_in[i], picDev * 7, 7, offsets[i],
-                                                         offsets[i] + 1);
+                cub::DeviceRadixSort::SortPairs(storage[i], storageBytes[i], keys_in[i], keys_out[i], sort_ids_in[i],
+                                                sort_ids_out[i], picDev);
                 CUDACHECK(cudaMalloc(&storage[i], storageBytes[i]));
-                if (!toBool<ifContinue> || continueSteps == 0)
-                    cub::DeviceSegmentedRadixSort::SortPairs(storage[i], storageBytes[i], keys_out[i], keys_in[i],
-                                                             values_out[i], values_in[i], picDev * 7, 7, offsets[i],
-                                                             offsets[i] + 1);
+                PICInitSortIds<<<SortGridDimx, SortBlockDimx, 0, 0>>>(sort_ids_in[i]);
+                if (!toBool<ifContinue> || continueSteps == 0) {
+                    cub::DeviceRadixSort::SortPairs(storage[i], storageBytes[i], keys_in[i], keys_out[i],
+                                                    sort_ids_in[i], sort_ids_out[i], picDev);
+                    PICReorderValues<<<SortGridDimx, SortBlockDimx, 0, 0>>>(sort_ids_out[i], values_in[i],
+                                                                            values_out[i]);
+
+                    int* temp_keys = keys_in[i];
+                    keys_in[i] = keys_out[i];
+                    keys_out[i] = temp_keys;
+
+                    picReal* temp_values = values_in[i];
+                    values_in[i] = values_out[i];
+                    values_out[i] = temp_values;
+                }
             }
         };
-        setupRadixSort(ifIon, d_Ion_storage, d_Ion_storage_bytes, d_Ion_keys_in, d_Ion_keys_out, d_Ion_values_in,
-                       d_Ion_values_out, d_Ion_offsets);
+        setupRadixSort(ifIon, d_Ion_storage, d_Ion_storage_bytes, d_Ion_keys_in, d_Ion_keys_out, d_Ion_sort_ids_in,
+                       d_Ion_sort_ids_out, d_Ion_values_in, d_Ion_values_out);
         setupRadixSort(ifAlpha, d_Alpha_storage, d_Alpha_storage_bytes, d_Alpha_keys_in, d_Alpha_keys_out,
-                       d_Alpha_values_in, d_Alpha_values_out, d_Alpha_offsets);
-        setupRadixSort(ifBeam, d_Beam_storage, d_Beam_storage_bytes, d_Beam_keys_in, d_Beam_keys_out, d_Beam_values_in,
-                       d_Beam_values_out, d_Beam_offsets);
+                       d_Alpha_sort_ids_in, d_Alpha_sort_ids_out, d_Alpha_values_in, d_Alpha_values_out);
+        setupRadixSort(ifBeam, d_Beam_storage, d_Beam_storage_bytes, d_Beam_keys_in, d_Beam_keys_out,
+                       d_Beam_sort_ids_in, d_Beam_sort_ids_out, d_Beam_values_in, d_Beam_values_out);
 
         if (hostId == 0) {
             size_t avail, total, used;
@@ -2313,8 +2317,7 @@ class HybridModel {
         if (ifIon) {
             for (int i = 0; i < devNums; i++) {
                 CUDACHECK(cudaSetDevice(localId * devNums + i));
-                CUDACHECK(
-                    cudaMemcpy(h_Ion_keys[i], d_Ion_keys_in[i], sizeof(int) * picDev * 7, cudaMemcpyDeviceToHost));
+                CUDACHECK(cudaMemcpy(h_Ion_keys[i], d_Ion_keys_in[i], sizeof(int) * picDev, cudaMemcpyDeviceToHost));
                 CUDACHECK(cudaMemcpy(h_Ion_values[i], d_Ion_values_in[i], sizeof(picReal) * picDev * 7,
                                      cudaMemcpyDeviceToHost));
             }
@@ -2323,7 +2326,7 @@ class HybridModel {
             for (int i = 0; i < devNums; i++) {
                 CUDACHECK(cudaSetDevice(localId * devNums + i));
                 CUDACHECK(
-                    cudaMemcpy(h_Alpha_keys[i], d_Alpha_keys_in[i], sizeof(int) * picDev * 7, cudaMemcpyDeviceToHost));
+                    cudaMemcpy(h_Alpha_keys[i], d_Alpha_keys_in[i], sizeof(int) * picDev, cudaMemcpyDeviceToHost));
                 CUDACHECK(cudaMemcpy(h_Alpha_values[i], d_Alpha_values_in[i], sizeof(picReal) * picDev * 7,
                                      cudaMemcpyDeviceToHost));
             }
@@ -2331,8 +2334,7 @@ class HybridModel {
         if (ifBeam) {
             for (int i = 0; i < devNums; i++) {
                 CUDACHECK(cudaSetDevice(localId * devNums + i));
-                CUDACHECK(
-                    cudaMemcpy(h_Beam_keys[i], d_Beam_keys_in[i], sizeof(int) * picDev * 7, cudaMemcpyDeviceToHost));
+                CUDACHECK(cudaMemcpy(h_Beam_keys[i], d_Beam_keys_in[i], sizeof(int) * picDev, cudaMemcpyDeviceToHost));
                 CUDACHECK(cudaMemcpy(h_Beam_values[i], d_Beam_values_in[i], sizeof(picReal) * picDev * 7,
                                      cudaMemcpyDeviceToHost));
             }
@@ -2340,13 +2342,12 @@ class HybridModel {
 
         /*-----------------------------------PIC Continuation File------------------------------------*/
 
-        const size_t speciesSize = sizeof(picReal) + sizeof(int) * devNums * 8 + sizeof(int) * devNums * picDev * 7 +
-                                   sizeof(picReal) * devNums * picDev * 7;
+        const size_t speciesSize =
+            sizeof(picReal) + sizeof(int) * devNums * picDev + sizeof(picReal) * devNums * picDev * 7;
         const int enabledCount = (ifIon ? 1 : 0) + (ifAlpha ? 1 : 0) + (ifBeam ? 1 : 0);
         const size_t rankSize = enabledCount * speciesSize;
 
-        auto writeFinalPicData = [&](picReal* picConst, int** picOffsets, int** picKeys, picReal** picValues,
-                                     size_t intraRankOffset) {
+        auto writeFinalPicData = [&](picReal* picConst, int** picKeys, picReal** picValues, size_t intraRankOffset) {
             const std::string filename =
                 finalDir + "/PICContinue_" + std::to_string(continueSteps + totalSteps) + ".bin";
             const MPI_Datatype picMPIType = std::is_same_v<picReal, double> ? MPI_DOUBLE : MPI_FLOAT;
@@ -2357,28 +2358,25 @@ class HybridModel {
                           &fileHandle);
 
             MPI_File_write_at_all(fileHandle, offset, picConst, 1, picMPIType, MPI_STATUS_IGNORE);
-            MPI_File_write_at_all(fileHandle, offset + sizeof(picReal), picOffsets[0], devNums * 8, MPI_INT,
+            MPI_File_write_at_all(fileHandle, offset + sizeof(picReal), picKeys[0], devNums * picDev, MPI_INT,
                                   MPI_STATUS_IGNORE);
-            MPI_File_write_at_all(fileHandle, offset + sizeof(picReal) + sizeof(int) * devNums * 8, picKeys[0],
-                                  devNums * picDev * 7, MPI_INT, MPI_STATUS_IGNORE);
-            MPI_File_write_at_all(
-                fileHandle, offset + sizeof(picReal) + sizeof(int) * devNums * 8 + sizeof(int) * devNums * picDev * 7,
-                picValues[0], devNums * picDev * 7, picMPIType, MPI_STATUS_IGNORE);
+            MPI_File_write_at_all(fileHandle, offset + sizeof(picReal) + sizeof(int) * devNums * picDev, picValues[0],
+                                  devNums * picDev * 7, picMPIType, MPI_STATUS_IGNORE);
 
             MPI_File_close(&fileHandle);
         };
 
         size_t off = 0;
         if (ifIon) {
-            writeFinalPicData(&IonConst, h_Ion_offsets, h_Ion_keys, h_Ion_values, off);
+            writeFinalPicData(&IonConst, h_Ion_keys, h_Ion_values, off);
             off += speciesSize;
         }
         if (ifAlpha) {
-            writeFinalPicData(&AlphaConst, h_Alpha_offsets, h_Alpha_keys, h_Alpha_values, off);
+            writeFinalPicData(&AlphaConst, h_Alpha_keys, h_Alpha_values, off);
             off += speciesSize;
         }
         if (ifBeam)
-            writeFinalPicData(&BeamConst, h_Beam_offsets, h_Beam_keys, h_Beam_values, off);
+            writeFinalPicData(&BeamConst, h_Beam_keys, h_Beam_values, off);
 
         /*--------------------------------------Bin File Output---------------------------------------*/
 
@@ -3679,7 +3677,8 @@ class HybridModel {
                 return d_dPi_midl;
         }();
 
-        constexpr auto realType = std::is_same_v<mhdReal, double> ? CUDA_R_64F : CUDA_R_32F;
+        constexpr cudaDataType_t cusparseRealType = std::is_same_v<mhdReal, double> ? CUDA_R_64F : CUDA_R_32F;
+        constexpr cudssDataType_t cudssRealType = std::is_same_v<mhdReal, double> ? CUDSS_R_64F : CUDSS_R_32F;
 
         auto logPhase = [&](const char* verb, const char* kind) {
             if (hostId == 0) {
@@ -3986,8 +3985,9 @@ class HybridModel {
                                                csrR[i] + j * (gridNxz + 1), csrC[i] + j * nnz, permutation[i][j],
                                                pBuffer[i][j]));
                 CUSPARSECHECK(cusparseCreateSpVec(&sortedSpVec[i][j], nnz, nnz, permutation[i][j], csrV[i] + j * nnz,
-                                                  CUSPARSE_INDEX_32I, CUSPARSE_INDEX_BASE_ZERO, realType));
-                CUSPARSECHECK(cusparseCreateDnVec(&unsortedDnVec[i][j], nnz, d_matrixTempV[i] + j * nnz, realType));
+                                                  CUSPARSE_INDEX_32I, CUSPARSE_INDEX_BASE_ZERO, cusparseRealType));
+                CUSPARSECHECK(
+                    cusparseCreateDnVec(&unsortedDnVec[i][j], nnz, d_matrixTempV[i] + j * nnz, cusparseRealType));
                 CUSPARSECHECK(cusparseGather(cusparseHandles[i], unsortedDnVec[i][j], sortedSpVec[i][j]));
             }
         }
@@ -4049,12 +4049,12 @@ class HybridModel {
                 int64_t nrhs = 1;
 
                 CUDSSCHECK(cudssMatrixCreateCsr(&As[i][j], nrows, ncols, nnz, csrR[i] + j * (gridNxz + 1), NULL,
-                                                csrC[i] + j * nnz, csrV[i] + j * nnz, CUDA_R_32I, realType, mtype,
-                                                mview, base));
+                                                csrC[i] + j * nnz, csrV[i] + j * nnz, CUDSS_R_32I, CUDSS_R_32I,
+                                                cudssRealType, mtype, mview, base));
                 CUDSSCHECK(cudssMatrixCreateDn(&Xs[i][j], nrows, nrhs, ld, xField[i] + (j + gridGhost) * gridNxz,
-                                               realType, CUDSS_LAYOUT_COL_MAJOR));
+                                               cudssRealType, CUDSS_LAYOUT_COL_MAJOR));
                 CUDSSCHECK(cudssMatrixCreateDn(&Bs[i][j], nrows, nrhs, ld, bField[i] + (j + gridGhost) * gridNxz,
-                                               realType, CUDSS_LAYOUT_COL_MAJOR));
+                                               cudssRealType, CUDSS_LAYOUT_COL_MAJOR));
 
                 CUDSSCHECK(cudssExecute(cudssHandles[i][j], CUDSS_PHASE_ANALYSIS, Configs[i][j], Datas[i][j], As[i][j],
                                         Xs[i][j], Bs[i][j]));
@@ -4159,20 +4159,16 @@ class HybridModel {
             DeltaLambda2 = BeamDeltaLambda2;
         }
 
-        int** picOffsets;
         int** picKeys;
         picReal** picValues;
 
         if constexpr (picType == 0) {
-            picOffsets = h_Ion_offsets;
             picKeys = h_Ion_keys;
             picValues = h_Ion_values;
         } else if constexpr (picType == 1) {
-            picOffsets = h_Alpha_offsets;
             picKeys = h_Alpha_keys;
             picValues = h_Alpha_values;
         } else if constexpr (picType == 2) {
-            picOffsets = h_Beam_offsets;
             picKeys = h_Beam_keys;
             picValues = h_Beam_values;
         }
@@ -4426,11 +4422,7 @@ class HybridModel {
 
                 for (int repeatId = 0; repeatId < gridNz; repeatId++) {
 
-                    for (int varId = 0; varId < 7; varId++) {
-                        picOffsets[devId][varId + 1] = picOffsets[devId][varId] + picDev;
-                        picKeys[devId][picId + picDev / gridNz * repeatId + varId * picDev] =
-                            j * cellNxz + i * cellNz + k + repeatId;
-                    }
+                    picKeys[devId][picId + picDev / gridNz * repeatId] = j * cellNxz + i * cellNz + k + repeatId;
 
                     picValues[devId][picId + picDev / gridNz * repeatId + 0 * picDev] = 0.999999 * x;
                     picValues[devId][picId + picDev / gridNz * repeatId + 1 * picDev] = y;
@@ -4453,29 +4445,28 @@ class HybridModel {
 
         logStart("Load particles from PICContinue file.");
 
-        const size_t speciesSize = sizeof(picReal) + sizeof(int) * devNums * 8 + sizeof(int) * devNums * picDev * 7 +
-                                   sizeof(picReal) * devNums * picDev * 7;
+        const size_t speciesSize =
+            sizeof(picReal) + sizeof(int) * devNums * picDev + sizeof(picReal) * devNums * picDev * 7;
         const int enabledCount = (ifIon ? 1 : 0) + (ifAlpha ? 1 : 0) + (ifBeam ? 1 : 0);
         const size_t rankSize = enabledCount * speciesSize;
 
         std::ifstream input(file, std::ios::in | std::ios::binary);
         size_t cursor = hostId * rankSize;
 
-        auto readSection = [&](picReal& Const, int** offsetsH, int** keysH, picReal** valuesH) {
+        auto readSection = [&](picReal& Const, int** keysH, picReal** valuesH) {
             input.seekg(cursor, std::ios::beg);
             input.read(reinterpret_cast<char*>(&Const), sizeof(picReal));
-            input.read(reinterpret_cast<char*>(offsetsH[0]), sizeof(int) * devNums * 8);
-            input.read(reinterpret_cast<char*>(keysH[0]), sizeof(int) * devNums * picDev * 7);
+            input.read(reinterpret_cast<char*>(keysH[0]), sizeof(int) * devNums * picDev);
             input.read(reinterpret_cast<char*>(valuesH[0]), sizeof(picReal) * devNums * picDev * 7);
             cursor += speciesSize;
         };
 
         if (ifIon)
-            readSection(IonConst, h_Ion_offsets, h_Ion_keys, h_Ion_values);
+            readSection(IonConst, h_Ion_keys, h_Ion_values);
         if (ifAlpha)
-            readSection(AlphaConst, h_Alpha_offsets, h_Alpha_keys, h_Alpha_values);
+            readSection(AlphaConst, h_Alpha_keys, h_Alpha_values);
         if (ifBeam)
-            readSection(BeamConst, h_Beam_offsets, h_Beam_keys, h_Beam_values);
+            readSection(BeamConst, h_Beam_keys, h_Beam_values);
 
         input.close();
 
@@ -4588,32 +4579,28 @@ class HybridModel {
         }
 
         picReal* picConst;
-        int** picOffsets;
         int** picKeys;
         picReal** picValues;
         picReal Beta;
         size_t intraRankOffset;
 
-        const size_t speciesSize = sizeof(picReal) + sizeof(int) * devNums * 8 + sizeof(int) * devNums * picDev * 7 +
-                                   sizeof(picReal) * devNums * picDev * 7;
+        const size_t speciesSize =
+            sizeof(picReal) + sizeof(int) * devNums * picDev + sizeof(picReal) * devNums * picDev * 7;
 
         if constexpr (picType == 0) {
             picConst = &IonConst;
-            picOffsets = h_Ion_offsets;
             picKeys = h_Ion_keys;
             picValues = h_Ion_values;
             Beta = IonBeta;
             intraRankOffset = 0;
         } else if constexpr (picType == 1) {
             picConst = &AlphaConst;
-            picOffsets = h_Alpha_offsets;
             picKeys = h_Alpha_keys;
             picValues = h_Alpha_values;
             Beta = AlphaBeta;
             intraRankOffset = ifIon ? speciesSize : 0;
         } else if constexpr (picType == 2) {
             picConst = &BeamConst;
-            picOffsets = h_Beam_offsets;
             picKeys = h_Beam_keys;
             picValues = h_Beam_values;
             Beta = BeamBeta;
@@ -4827,13 +4814,10 @@ class HybridModel {
         MPI_File_open(MPI_COMM_WORLD, picFile.c_str(), MPI_MODE_CREATE | MPI_MODE_WRONLY, MPI_INFO_NULL, &fileHandle);
 
         MPI_File_write_at_all(fileHandle, offset, picConst, 1, picMPIType, MPI_STATUS_IGNORE);
-        MPI_File_write_at_all(fileHandle, offset + sizeof(picReal), picOffsets[0], devNums * 8, MPI_INT,
+        MPI_File_write_at_all(fileHandle, offset + sizeof(picReal), picKeys[0], devNums * picDev, MPI_INT,
                               MPI_STATUS_IGNORE);
-        MPI_File_write_at_all(fileHandle, offset + sizeof(picReal) + sizeof(int) * devNums * 8, picKeys[0],
-                              devNums * picDev * 7, MPI_INT, MPI_STATUS_IGNORE);
-        MPI_File_write_at_all(fileHandle,
-                              offset + sizeof(picReal) + sizeof(int) * devNums * 8 + sizeof(int) * devNums * picDev * 7,
-                              picValues[0], devNums * picDev * 7, picMPIType, MPI_STATUS_IGNORE);
+        MPI_File_write_at_all(fileHandle, offset + sizeof(picReal) + sizeof(int) * devNums * picDev, picValues[0],
+                              devNums * picDev * 7, picMPIType, MPI_STATUS_IGNORE);
 
         MPI_File_close(&fileHandle);
 

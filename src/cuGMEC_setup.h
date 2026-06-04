@@ -63,6 +63,7 @@ const int cellStride = 64;
 
 const int picHost = gridNx * gridNy * gridNz / hostNums * ppcNums;
 const int picDev = gridNx * gridNy * gridNz / hostNums / devNums * ppcNums;
+const int depositBufferNums = 16;
 
 const picReal rho0 = RHO0;
 const picReal drho = RHO1 - RHO0;
@@ -133,8 +134,14 @@ const int GhostNMGridDimx = gridGhost * gridNx / NMBlockDimx;
 const int RefinedNMGridDimx = refinedNy * gridNx / NMBlockDimx;
 
 const int pptNums = 32;
-const int PICBlockDimx = 128;
+const int PICBlockDimx = 256;
 const int PICGridDimx = picDev / pptNums / PICBlockDimx;
+
+const int SortBlockDimx = 256;
+const int SortGridDimx = picDev / SortBlockDimx;
+
+const int MergeBlockDimx = 256;
+const int MergeGridDimx = gridNyPlusGhost * gridNxz / MergeBlockDimx;
 
 const int nFFTBatchSize = devNy * gridNx;
 const int nFFTTimeSize = gridNz;

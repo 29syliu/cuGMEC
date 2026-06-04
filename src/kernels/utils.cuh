@@ -1049,52 +1049,245 @@ __device__ void FieldGather1d2d(int& address, type* coes, type* redundant, type&
 template <typename type>
 __device__ void FieldGather3d(int& i, int& j, int& k, int& offset, type* coes, type* redundant, type* fields) {
 
-    offset = (j * gridNx * gridNzPlusGhost + i * gridNzPlusGhost + k) * 8;
+    const int gridPointCount = gridNyPlusGhost * gridNx * gridNzPlusGhost;
+    const int xStride = gridNzPlusGhost;
+    const int yStride = gridNx * gridNzPlusGhost;
+    const int fieldGroup0Base = 0 * gridPointCount;
+    const int fieldGroup1Base = 1 * gridPointCount;
+    const int fieldGroup2Base = 2 * gridPointCount;
+    const int fieldGroup3Base = 3 * gridPointCount;
+    const int cornerX0Y0Z0Id = j * yStride + i * xStride + k;
+    const int cornerX1Y0Z0Id = cornerX0Y0Z0Id + xStride;
+    const int cornerX0Y1Z0Id = cornerX0Y0Z0Id + yStride;
+    const int cornerX1Y1Z0Id = cornerX0Y1Z0Id + xStride;
 
-    for (int index = 0; index < 8; index++) {
-        fields[index] += coes[0] * redundant[offset + index];
-    }
+    offset = (cornerX1Y1Z0Id + 1) * 8;
 
-    offset = (j * gridNx * gridNzPlusGhost + (i + 1) * gridNzPlusGhost + k) * 8;
+    if constexpr (std::is_same_v<type, float>) {
+        const float4* pic3dFloat4 = reinterpret_cast<const float4*>(redundant);
+        float4 fieldGroup0 = make_float4(fields[0], fields[1], fields[2], fields[3]);
+        float4 fieldGroup1 = make_float4(fields[4], fields[5], fields[6], fields[7]);
+        float4 cornerFieldGroup0;
+        float4 cornerFieldGroup1;
 
-    for (int index = 0; index < 8; index++) {
-        fields[index] += coes[1] * redundant[offset + index];
-    }
+        cornerFieldGroup0 = pic3dFloat4[cornerX0Y0Z0Id];
+        cornerFieldGroup1 = pic3dFloat4[fieldGroup1Base + cornerX0Y0Z0Id];
+        fieldGroup0.x += coes[0] * cornerFieldGroup0.x;
+        fieldGroup0.y += coes[0] * cornerFieldGroup0.y;
+        fieldGroup0.z += coes[0] * cornerFieldGroup0.z;
+        fieldGroup0.w += coes[0] * cornerFieldGroup0.w;
+        fieldGroup1.x += coes[0] * cornerFieldGroup1.x;
+        fieldGroup1.y += coes[0] * cornerFieldGroup1.y;
+        fieldGroup1.z += coes[0] * cornerFieldGroup1.z;
+        fieldGroup1.w += coes[0] * cornerFieldGroup1.w;
 
-    offset = ((j + 1) * gridNx * gridNzPlusGhost + i * gridNzPlusGhost + k) * 8;
+        cornerFieldGroup0 = pic3dFloat4[cornerX1Y0Z0Id];
+        cornerFieldGroup1 = pic3dFloat4[fieldGroup1Base + cornerX1Y0Z0Id];
+        fieldGroup0.x += coes[1] * cornerFieldGroup0.x;
+        fieldGroup0.y += coes[1] * cornerFieldGroup0.y;
+        fieldGroup0.z += coes[1] * cornerFieldGroup0.z;
+        fieldGroup0.w += coes[1] * cornerFieldGroup0.w;
+        fieldGroup1.x += coes[1] * cornerFieldGroup1.x;
+        fieldGroup1.y += coes[1] * cornerFieldGroup1.y;
+        fieldGroup1.z += coes[1] * cornerFieldGroup1.z;
+        fieldGroup1.w += coes[1] * cornerFieldGroup1.w;
 
-    for (int index = 0; index < 8; index++) {
-        fields[index] += coes[2] * redundant[offset + index];
-    }
+        cornerFieldGroup0 = pic3dFloat4[cornerX0Y1Z0Id];
+        cornerFieldGroup1 = pic3dFloat4[fieldGroup1Base + cornerX0Y1Z0Id];
+        fieldGroup0.x += coes[2] * cornerFieldGroup0.x;
+        fieldGroup0.y += coes[2] * cornerFieldGroup0.y;
+        fieldGroup0.z += coes[2] * cornerFieldGroup0.z;
+        fieldGroup0.w += coes[2] * cornerFieldGroup0.w;
+        fieldGroup1.x += coes[2] * cornerFieldGroup1.x;
+        fieldGroup1.y += coes[2] * cornerFieldGroup1.y;
+        fieldGroup1.z += coes[2] * cornerFieldGroup1.z;
+        fieldGroup1.w += coes[2] * cornerFieldGroup1.w;
 
-    offset = ((j + 1) * gridNx * gridNzPlusGhost + (i + 1) * gridNzPlusGhost + k) * 8;
+        cornerFieldGroup0 = pic3dFloat4[cornerX1Y1Z0Id];
+        cornerFieldGroup1 = pic3dFloat4[fieldGroup1Base + cornerX1Y1Z0Id];
+        fieldGroup0.x += coes[3] * cornerFieldGroup0.x;
+        fieldGroup0.y += coes[3] * cornerFieldGroup0.y;
+        fieldGroup0.z += coes[3] * cornerFieldGroup0.z;
+        fieldGroup0.w += coes[3] * cornerFieldGroup0.w;
+        fieldGroup1.x += coes[3] * cornerFieldGroup1.x;
+        fieldGroup1.y += coes[3] * cornerFieldGroup1.y;
+        fieldGroup1.z += coes[3] * cornerFieldGroup1.z;
+        fieldGroup1.w += coes[3] * cornerFieldGroup1.w;
 
-    for (int index = 0; index < 8; index++) {
-        fields[index] += coes[3] * redundant[offset + index];
-    }
+        cornerFieldGroup0 = pic3dFloat4[cornerX0Y0Z0Id + 1];
+        cornerFieldGroup1 = pic3dFloat4[fieldGroup1Base + cornerX0Y0Z0Id + 1];
+        fieldGroup0.x += coes[4] * cornerFieldGroup0.x;
+        fieldGroup0.y += coes[4] * cornerFieldGroup0.y;
+        fieldGroup0.z += coes[4] * cornerFieldGroup0.z;
+        fieldGroup0.w += coes[4] * cornerFieldGroup0.w;
+        fieldGroup1.x += coes[4] * cornerFieldGroup1.x;
+        fieldGroup1.y += coes[4] * cornerFieldGroup1.y;
+        fieldGroup1.z += coes[4] * cornerFieldGroup1.z;
+        fieldGroup1.w += coes[4] * cornerFieldGroup1.w;
 
-    offset = (j * gridNx * gridNzPlusGhost + i * gridNzPlusGhost + k + 1) * 8;
+        cornerFieldGroup0 = pic3dFloat4[cornerX1Y0Z0Id + 1];
+        cornerFieldGroup1 = pic3dFloat4[fieldGroup1Base + cornerX1Y0Z0Id + 1];
+        fieldGroup0.x += coes[5] * cornerFieldGroup0.x;
+        fieldGroup0.y += coes[5] * cornerFieldGroup0.y;
+        fieldGroup0.z += coes[5] * cornerFieldGroup0.z;
+        fieldGroup0.w += coes[5] * cornerFieldGroup0.w;
+        fieldGroup1.x += coes[5] * cornerFieldGroup1.x;
+        fieldGroup1.y += coes[5] * cornerFieldGroup1.y;
+        fieldGroup1.z += coes[5] * cornerFieldGroup1.z;
+        fieldGroup1.w += coes[5] * cornerFieldGroup1.w;
 
-    for (int index = 0; index < 8; index++) {
-        fields[index] += coes[4] * redundant[offset + index];
-    }
+        cornerFieldGroup0 = pic3dFloat4[cornerX0Y1Z0Id + 1];
+        cornerFieldGroup1 = pic3dFloat4[fieldGroup1Base + cornerX0Y1Z0Id + 1];
+        fieldGroup0.x += coes[6] * cornerFieldGroup0.x;
+        fieldGroup0.y += coes[6] * cornerFieldGroup0.y;
+        fieldGroup0.z += coes[6] * cornerFieldGroup0.z;
+        fieldGroup0.w += coes[6] * cornerFieldGroup0.w;
+        fieldGroup1.x += coes[6] * cornerFieldGroup1.x;
+        fieldGroup1.y += coes[6] * cornerFieldGroup1.y;
+        fieldGroup1.z += coes[6] * cornerFieldGroup1.z;
+        fieldGroup1.w += coes[6] * cornerFieldGroup1.w;
 
-    offset = (j * gridNx * gridNzPlusGhost + (i + 1) * gridNzPlusGhost + k + 1) * 8;
+        cornerFieldGroup0 = pic3dFloat4[cornerX1Y1Z0Id + 1];
+        cornerFieldGroup1 = pic3dFloat4[fieldGroup1Base + cornerX1Y1Z0Id + 1];
+        fieldGroup0.x += coes[7] * cornerFieldGroup0.x;
+        fieldGroup0.y += coes[7] * cornerFieldGroup0.y;
+        fieldGroup0.z += coes[7] * cornerFieldGroup0.z;
+        fieldGroup0.w += coes[7] * cornerFieldGroup0.w;
+        fieldGroup1.x += coes[7] * cornerFieldGroup1.x;
+        fieldGroup1.y += coes[7] * cornerFieldGroup1.y;
+        fieldGroup1.z += coes[7] * cornerFieldGroup1.z;
+        fieldGroup1.w += coes[7] * cornerFieldGroup1.w;
 
-    for (int index = 0; index < 8; index++) {
-        fields[index] += coes[5] * redundant[offset + index];
-    }
+        fields[0] = fieldGroup0.x;
+        fields[1] = fieldGroup0.y;
+        fields[2] = fieldGroup0.z;
+        fields[3] = fieldGroup0.w;
+        fields[4] = fieldGroup1.x;
+        fields[5] = fieldGroup1.y;
+        fields[6] = fieldGroup1.z;
+        fields[7] = fieldGroup1.w;
+    } else {
+        const double2* pic3dDouble2 = reinterpret_cast<const double2*>(redundant);
+        double2 fieldGroup0 = make_double2(fields[0], fields[1]);
+        double2 fieldGroup1 = make_double2(fields[2], fields[3]);
+        double2 fieldGroup2 = make_double2(fields[4], fields[5]);
+        double2 fieldGroup3 = make_double2(fields[6], fields[7]);
+        double2 cornerFieldGroup0;
+        double2 cornerFieldGroup1;
+        double2 cornerFieldGroup2;
+        double2 cornerFieldGroup3;
 
-    offset = ((j + 1) * gridNx * gridNzPlusGhost + i * gridNzPlusGhost + k + 1) * 8;
+        cornerFieldGroup0 = pic3dDouble2[fieldGroup0Base + cornerX0Y0Z0Id];
+        cornerFieldGroup1 = pic3dDouble2[fieldGroup1Base + cornerX0Y0Z0Id];
+        cornerFieldGroup2 = pic3dDouble2[fieldGroup2Base + cornerX0Y0Z0Id];
+        cornerFieldGroup3 = pic3dDouble2[fieldGroup3Base + cornerX0Y0Z0Id];
+        fieldGroup0.x += coes[0] * cornerFieldGroup0.x;
+        fieldGroup0.y += coes[0] * cornerFieldGroup0.y;
+        fieldGroup1.x += coes[0] * cornerFieldGroup1.x;
+        fieldGroup1.y += coes[0] * cornerFieldGroup1.y;
+        fieldGroup2.x += coes[0] * cornerFieldGroup2.x;
+        fieldGroup2.y += coes[0] * cornerFieldGroup2.y;
+        fieldGroup3.x += coes[0] * cornerFieldGroup3.x;
+        fieldGroup3.y += coes[0] * cornerFieldGroup3.y;
 
-    for (int index = 0; index < 8; index++) {
-        fields[index] += coes[6] * redundant[offset + index];
-    }
+        cornerFieldGroup0 = pic3dDouble2[fieldGroup0Base + cornerX1Y0Z0Id];
+        cornerFieldGroup1 = pic3dDouble2[fieldGroup1Base + cornerX1Y0Z0Id];
+        cornerFieldGroup2 = pic3dDouble2[fieldGroup2Base + cornerX1Y0Z0Id];
+        cornerFieldGroup3 = pic3dDouble2[fieldGroup3Base + cornerX1Y0Z0Id];
+        fieldGroup0.x += coes[1] * cornerFieldGroup0.x;
+        fieldGroup0.y += coes[1] * cornerFieldGroup0.y;
+        fieldGroup1.x += coes[1] * cornerFieldGroup1.x;
+        fieldGroup1.y += coes[1] * cornerFieldGroup1.y;
+        fieldGroup2.x += coes[1] * cornerFieldGroup2.x;
+        fieldGroup2.y += coes[1] * cornerFieldGroup2.y;
+        fieldGroup3.x += coes[1] * cornerFieldGroup3.x;
+        fieldGroup3.y += coes[1] * cornerFieldGroup3.y;
 
-    offset = ((j + 1) * gridNx * gridNzPlusGhost + (i + 1) * gridNzPlusGhost + k + 1) * 8;
+        cornerFieldGroup0 = pic3dDouble2[fieldGroup0Base + cornerX0Y1Z0Id];
+        cornerFieldGroup1 = pic3dDouble2[fieldGroup1Base + cornerX0Y1Z0Id];
+        cornerFieldGroup2 = pic3dDouble2[fieldGroup2Base + cornerX0Y1Z0Id];
+        cornerFieldGroup3 = pic3dDouble2[fieldGroup3Base + cornerX0Y1Z0Id];
+        fieldGroup0.x += coes[2] * cornerFieldGroup0.x;
+        fieldGroup0.y += coes[2] * cornerFieldGroup0.y;
+        fieldGroup1.x += coes[2] * cornerFieldGroup1.x;
+        fieldGroup1.y += coes[2] * cornerFieldGroup1.y;
+        fieldGroup2.x += coes[2] * cornerFieldGroup2.x;
+        fieldGroup2.y += coes[2] * cornerFieldGroup2.y;
+        fieldGroup3.x += coes[2] * cornerFieldGroup3.x;
+        fieldGroup3.y += coes[2] * cornerFieldGroup3.y;
 
-    for (int index = 0; index < 8; index++) {
-        fields[index] += coes[7] * redundant[offset + index];
+        cornerFieldGroup0 = pic3dDouble2[fieldGroup0Base + cornerX1Y1Z0Id];
+        cornerFieldGroup1 = pic3dDouble2[fieldGroup1Base + cornerX1Y1Z0Id];
+        cornerFieldGroup2 = pic3dDouble2[fieldGroup2Base + cornerX1Y1Z0Id];
+        cornerFieldGroup3 = pic3dDouble2[fieldGroup3Base + cornerX1Y1Z0Id];
+        fieldGroup0.x += coes[3] * cornerFieldGroup0.x;
+        fieldGroup0.y += coes[3] * cornerFieldGroup0.y;
+        fieldGroup1.x += coes[3] * cornerFieldGroup1.x;
+        fieldGroup1.y += coes[3] * cornerFieldGroup1.y;
+        fieldGroup2.x += coes[3] * cornerFieldGroup2.x;
+        fieldGroup2.y += coes[3] * cornerFieldGroup2.y;
+        fieldGroup3.x += coes[3] * cornerFieldGroup3.x;
+        fieldGroup3.y += coes[3] * cornerFieldGroup3.y;
+
+        cornerFieldGroup0 = pic3dDouble2[fieldGroup0Base + cornerX0Y0Z0Id + 1];
+        cornerFieldGroup1 = pic3dDouble2[fieldGroup1Base + cornerX0Y0Z0Id + 1];
+        cornerFieldGroup2 = pic3dDouble2[fieldGroup2Base + cornerX0Y0Z0Id + 1];
+        cornerFieldGroup3 = pic3dDouble2[fieldGroup3Base + cornerX0Y0Z0Id + 1];
+        fieldGroup0.x += coes[4] * cornerFieldGroup0.x;
+        fieldGroup0.y += coes[4] * cornerFieldGroup0.y;
+        fieldGroup1.x += coes[4] * cornerFieldGroup1.x;
+        fieldGroup1.y += coes[4] * cornerFieldGroup1.y;
+        fieldGroup2.x += coes[4] * cornerFieldGroup2.x;
+        fieldGroup2.y += coes[4] * cornerFieldGroup2.y;
+        fieldGroup3.x += coes[4] * cornerFieldGroup3.x;
+        fieldGroup3.y += coes[4] * cornerFieldGroup3.y;
+
+        cornerFieldGroup0 = pic3dDouble2[fieldGroup0Base + cornerX1Y0Z0Id + 1];
+        cornerFieldGroup1 = pic3dDouble2[fieldGroup1Base + cornerX1Y0Z0Id + 1];
+        cornerFieldGroup2 = pic3dDouble2[fieldGroup2Base + cornerX1Y0Z0Id + 1];
+        cornerFieldGroup3 = pic3dDouble2[fieldGroup3Base + cornerX1Y0Z0Id + 1];
+        fieldGroup0.x += coes[5] * cornerFieldGroup0.x;
+        fieldGroup0.y += coes[5] * cornerFieldGroup0.y;
+        fieldGroup1.x += coes[5] * cornerFieldGroup1.x;
+        fieldGroup1.y += coes[5] * cornerFieldGroup1.y;
+        fieldGroup2.x += coes[5] * cornerFieldGroup2.x;
+        fieldGroup2.y += coes[5] * cornerFieldGroup2.y;
+        fieldGroup3.x += coes[5] * cornerFieldGroup3.x;
+        fieldGroup3.y += coes[5] * cornerFieldGroup3.y;
+
+        cornerFieldGroup0 = pic3dDouble2[fieldGroup0Base + cornerX0Y1Z0Id + 1];
+        cornerFieldGroup1 = pic3dDouble2[fieldGroup1Base + cornerX0Y1Z0Id + 1];
+        cornerFieldGroup2 = pic3dDouble2[fieldGroup2Base + cornerX0Y1Z0Id + 1];
+        cornerFieldGroup3 = pic3dDouble2[fieldGroup3Base + cornerX0Y1Z0Id + 1];
+        fieldGroup0.x += coes[6] * cornerFieldGroup0.x;
+        fieldGroup0.y += coes[6] * cornerFieldGroup0.y;
+        fieldGroup1.x += coes[6] * cornerFieldGroup1.x;
+        fieldGroup1.y += coes[6] * cornerFieldGroup1.y;
+        fieldGroup2.x += coes[6] * cornerFieldGroup2.x;
+        fieldGroup2.y += coes[6] * cornerFieldGroup2.y;
+        fieldGroup3.x += coes[6] * cornerFieldGroup3.x;
+        fieldGroup3.y += coes[6] * cornerFieldGroup3.y;
+
+        cornerFieldGroup0 = pic3dDouble2[fieldGroup0Base + cornerX1Y1Z0Id + 1];
+        cornerFieldGroup1 = pic3dDouble2[fieldGroup1Base + cornerX1Y1Z0Id + 1];
+        cornerFieldGroup2 = pic3dDouble2[fieldGroup2Base + cornerX1Y1Z0Id + 1];
+        cornerFieldGroup3 = pic3dDouble2[fieldGroup3Base + cornerX1Y1Z0Id + 1];
+        fieldGroup0.x += coes[7] * cornerFieldGroup0.x;
+        fieldGroup0.y += coes[7] * cornerFieldGroup0.y;
+        fieldGroup1.x += coes[7] * cornerFieldGroup1.x;
+        fieldGroup1.y += coes[7] * cornerFieldGroup1.y;
+        fieldGroup2.x += coes[7] * cornerFieldGroup2.x;
+        fieldGroup2.y += coes[7] * cornerFieldGroup2.y;
+        fieldGroup3.x += coes[7] * cornerFieldGroup3.x;
+        fieldGroup3.y += coes[7] * cornerFieldGroup3.y;
+
+        fields[0] = fieldGroup0.x;
+        fields[1] = fieldGroup0.y;
+        fields[2] = fieldGroup1.x;
+        fields[3] = fieldGroup1.y;
+        fields[4] = fieldGroup2.x;
+        fields[5] = fieldGroup2.y;
+        fields[6] = fieldGroup3.x;
+        fields[7] = fieldGroup3.y;
     }
 }
-
