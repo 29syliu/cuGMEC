@@ -5,9 +5,7 @@
 </p>
 
 <p align="center">
-  <a href="https://doi.org/10.1016/j.cpc.2026.110249">
-    <img src="https://img.shields.io/badge/CPC-10.1016%2Fj.cpc.2026.110249-blue" alt="CPC DOI">
-  </a>
+  <a href="https://doi.org/10.1016/j.cpc.2026.110249"><img src="https://img.shields.io/badge/CPC-10.1016%2Fj.cpc.2026.110249-blue" alt="CPC DOI"></a>
   <img src="https://img.shields.io/badge/CUDA-76B900?style=flat&logo=nvidia&logoColor=white" alt="CUDA">
   <img src="https://img.shields.io/badge/C++-00599C?style=flat&logo=cplusplus&logoColor=white" alt="C++">
   <img src="https://img.shields.io/badge/License-GPLv3-blue" alt="GPLv3">
