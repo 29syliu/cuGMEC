@@ -412,6 +412,13 @@ Under construction.
 
 ---
 
+## 🚀 Future Work
+
+Part of our effort is going into extending cuGMEC to support non-axisymmetric devices, such as stellarators.<br>
+Other future directions remain open.
+
+---
+
 ## 📄 License
 
 cuGMEC is released under the **GNU General Public License v3.0**.
