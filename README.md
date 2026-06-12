@@ -29,7 +29,7 @@
 
 * **S. Y. Liu, P. Y. Jiang, and G. Y. Fu**<br>
   *cuGMEC: A High-Performance Code for Gyrokinetic-MHD Hybrid Simulation on GPUs with CUDA C++*<br>
-  **Computer Physics Communications (2026)**<br>
+  **Computer Physics Communications 327, 110249 (2026)**<br>
   DOI: [10.1016/j.cpc.2026.110249](https://doi.org/10.1016/j.cpc.2026.110249)
 
 ---
@@ -55,9 +55,7 @@ The MHD component includes:
 
 ### PIC Component
 
-Thermal ions and energetic particles are modeled gyrokinetically and advanced using the delta-f particle-in-cell method.
-
-The MHD component and the PIC component are coupled through the perturbed pressure terms in the gyrokinetic vorticity equation.
+Thermal ions and energetic particles are modeled gyrokinetically and advanced using the delta-f particle-in-cell method. PIC-computed pressures enter the gyrokinetic vorticity equation through the pressure-curvature term.
 
 ---
 
