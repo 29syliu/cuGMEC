@@ -18,10 +18,9 @@ Notation:
 |---|---|---|---|---|
 | `mhdReal` | `float` / `double` | MHD calculation precision. | MHD precision should be greater than or equal to PIC precision. | `using mhdReal = double;` |
 | `picReal` | `float` / `double` | PIC calculation precision. | PIC precision should be less than or equal to MHD precision. | `using picReal = float;` |
-| `inputDir` | String path | Input file directory. | For a run from scratch, only the `MHDCollocated` file and the optional `MHDStaggered` file are needed.<br>For a continued run, the `MHDContinue` and `PICContinue` files are also needed. They come from the previous run's `outputDir/final`. | `const std::string inputDir = "/path/to/input";` |
+| `inputDir` | String path | Input file directory. | For a run from scratch, only the `MHDEquilibrium` file is needed.<br>For a continued run, the `MHDContinue` and `PICContinue` files are also needed. They come from the previous run's `outputDir/final`. | `const std::string inputDir = "/path/to/input";` |
 | `outputDir` | String path | Output file directory. |  | `const std::string outputDir = "/path/to/output";` |
-| `MHDCollocated` | `.bin` file name | Collocated MHD equilibrium file. |  | `const std::string MHDCollocated = "MHDCollocated.bin";` |
-| `MHDStaggered` | `.bin` file name | Staggered MHD equilibrium file. | Required only when `ifStaggered=trueType`. | `const std::string MHDStaggered = "MHDStaggered.bin";` |
+| `MHDEquilibrium` | `.bin` file name | MHD equilibrium file. |  | `const std::string MHDEquilibrium = "MHDEquilibrium_384_32.bin";` |
 | `<Species>PhaseSpaceMapping` | `.bin` file name | Phase-space orbit mapping file. | Required only when `ifOutputPhaseSpaceOrbit=trueType`. | `const std::string IonPhaseSpaceMapping = "IonPhaseSpaceMapping.bin";` |
 
 ## Normalization Parameters
@@ -75,7 +74,6 @@ Notation:
 
 | Parameter | Allowed Values | Description | Notes | Example |
 |---|---|---|---|---|
-| `ifStaggered` | `trueType` / `falseType` | Whether to include the staggered grid. | Requires the `MHDStaggered` file. | `using ifStaggered = falseType;` |
 | `ifNonlinearMHD` | `trueType` / `falseType` | Whether to include MHD nonlinear terms. |  | `using ifNonlinearMHD = trueType;` |
 | `ifEparallel` | `trueType` / `falseType` | Whether to include the parallel electric-field term. |  | `using ifEparallel = trueType;` |
 | `ifFLRMHD` | `trueType` / `falseType` | Whether to include the FLR effect from background thermal ions in the Poisson equation. |  | `using ifFLRMHD = falseType;` |

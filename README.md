@@ -402,7 +402,9 @@ Click the triangle below for results.
 
 </details>
 
-The total runtime of a simulation can be estimated as (MHD per-step time + PIC per-step time) × the total number of time steps. For other numerical parameters or multi-GPU runs, the runtime can be estimated by simple scaling. For details, please refer to our CPC paper.
+The total runtime of a simulation can be estimated as (MHD per-step time + PIC per-step time) × the total number of time steps. For other numerical parameters or multi-GPU runs, the runtime can be estimated by simple scaling.
+
+For example, an ITER steady-state full-torus case up to toroidal mode number 40 uses a 384x32x640 grid (about 7.9 million points), P/G = 192 (about 4.5 billion particles across three ion species), GYRO = 4, dt = 0.025 Alfvén time, double-precision MHD, float-precision PIC, and double-precision deposition. For 20,000 steps on 8 NVIDIA A800-SXM4-80GB GPUs, using only linear scaling from the tables above gives 4.78 hours, compared with a measured 4.87 hours, a 2% difference. This agreement indicates that the three GPU tables capture performance from the simplest benchmarks to more demanding cases.
 
 ---
 

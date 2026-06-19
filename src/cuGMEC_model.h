@@ -403,38 +403,12 @@ class HybridModel {
 
 	/*-------------------------------------------Linear-------------------------------------------*/
 
-	mhdReal** d_A_w; mhdReal** d_A_px_w; mhdReal** d_A_py_w; mhdReal** d_A_pz_w;
-	mhdReal** d_dJpB_w; mhdReal** d_dJpB_px_w; mhdReal** d_dJpB_py_w; mhdReal** d_dJpB_pz_w;
-	mhdReal** d_dP_w; mhdReal** d_dP_px_w; mhdReal** d_dP_py_w; mhdReal** d_dP_pz_w;
-	mhdReal** d_w_py_w; mhdReal** d_w_pz_w; mhdReal** d_w2Phi;
-
-	mhdReal** d_F_perp2;
-	mhdReal** d_F_px_perp2; mhdReal** d_F_pz_perp2;
-	mhdReal** d_F_px2_perp2; mhdReal** d_F_pxz_perp2; mhdReal** d_F_pz2_perp2;
-
-	mhdReal** d_A_dJpB;
-	mhdReal** d_A_px_dJpB; mhdReal** d_A_pz_dJpB;
-	mhdReal** d_A_px2_dJpB;  mhdReal** d_A_pxz_dJpB; mhdReal** d_A_pz2_dJpB;
-
-	mhdReal** d_Phi_A; mhdReal** d_Phi_px_A; mhdReal** d_Phi_py_A; mhdReal** d_Phi_pz_A;
-	mhdReal** d_dNe_A; mhdReal** d_dNe_px_A; mhdReal** d_dNe_py_A; mhdReal** d_dNe_pz_A;
-	mhdReal** d_A_A; mhdReal** d_A_px_A; mhdReal** d_A_py_A; mhdReal** d_A_pz_A;
-
-	mhdReal** d_Phi_dNe; mhdReal** d_Phi_px_dNe; mhdReal** d_Phi_py_dNe; mhdReal** d_Phi_pz_dNe;
-	mhdReal** d_dPe_dNe; mhdReal** d_dPe_px_dNe; mhdReal** d_dPe_py_dNe; mhdReal** d_dPe_pz_dNe;
-	mhdReal** d_dJpB_dNe; mhdReal** d_dJpB_px_dNe; mhdReal** d_dJpB_py_dNe; mhdReal** d_dJpB_pz_dNe;
-	mhdReal** d_A_dNe; mhdReal** d_A_px_dNe; mhdReal** d_A_py_dNe; mhdReal** d_A_pz_dNe;
-
-	mhdReal** d_Phi_dTe; mhdReal** d_Phi_px_dTe; mhdReal** d_Phi_py_dTe; mhdReal** d_Phi_pz_dTe;
-	mhdReal** d_dTe_dTe; mhdReal** d_dTe_px_dTe; mhdReal** d_dTe_py_dTe; mhdReal** d_dTe_pz_dTe;
-	mhdReal** d_dNe_dTe; mhdReal** d_dNe_px_dTe; mhdReal** d_dNe_py_dTe; mhdReal** d_dNe_pz_dTe;
-
 	mhdReal** d_Ne0; mhdReal** d_Te0;
-	mhdReal** d_Ne0_px; mhdReal** d_Te0_px; mhdReal** d_Pe0_px;
+	mhdReal** d_Ne0_px; mhdReal** d_Te0_px;
 
-	mhdReal** d_F2perp2;
+    mhdReal** d_w2Phi;
+    mhdReal** d_Phi2w;
 	mhdReal** d_A2dJpB;
-	mhdReal** d_Phi2w;
 	mhdReal** d_wdPAdJpB2w;
 	mhdReal** d_APhidNe2A;
 	mhdReal** d_dPePhiAdJpB2dNe;
@@ -513,10 +487,6 @@ class HybridModel {
 	std::vector<std::vector<cudssMatrix_t>> dPBs;
 
 	/*------------------------------------------------------Particle in Cell------------------------------------------------------*/
-
-	mhdReal** d_pic_Phi_py_A; mhdReal** d_pic_dNe_py_A;
-	mhdReal** d_pic_A_A;  mhdReal** d_pic_A_py_A; mhdReal** d_pic_A_pz_A;
-	mhdReal** d_pic_APhidNe2A; mhdReal** d_pic_PhiA_A; mhdReal** d_pic_NeA_A;
 
 	picReal IonConst;
 	picReal AlphaConst;
@@ -811,7 +781,7 @@ class HybridModel {
 
         /*------------------------------MHD Equilibrium and Perturbation------------------------------*/
 
-        loadMHDEquilibrium(inputDir + "/" + MHDCollocated);
+        loadMHDEquilibrium(inputDir + "/" + MHDEquilibrium);
         if constexpr (std::is_same_v<ifContinue, trueType>)
             loadMHDPerturbation(inputDir + "/MHDContinue_" + std::to_string(continueSteps) + ".bin");
         else
@@ -822,20 +792,14 @@ class HybridModel {
 
         if (hostId == 0) {
             namespace fs = std::filesystem;
-            fs::copy_file(inputDir + "/" + MHDCollocated, finalDir + "/" + MHDCollocated,
+            fs::copy_file(inputDir + "/" + MHDEquilibrium, finalDir + "/" + MHDEquilibrium,
                           fs::copy_options::overwrite_existing);
-            if constexpr (std::is_same_v<ifStaggered, trueType>)
-                fs::copy_file(inputDir + "/" + MHDStaggered, finalDir + "/" + MHDStaggered,
-                              fs::copy_options::overwrite_existing);
             if (fs::exists("src/cuGMEC_param.h"))
                 fs::copy_file("src/cuGMEC_param.h", finalDir + "/cuGMEC_param.h", fs::copy_options::overwrite_existing);
 
             if constexpr (std::is_same_v<ifContinue, falseType> || continueSteps == 0) {
-                fs::copy_file(inputDir + "/" + MHDCollocated, initialDir + "/" + MHDCollocated,
+                fs::copy_file(inputDir + "/" + MHDEquilibrium, initialDir + "/" + MHDEquilibrium,
                               fs::copy_options::overwrite_existing);
-                if constexpr (std::is_same_v<ifStaggered, trueType>)
-                    fs::copy_file(inputDir + "/" + MHDStaggered, initialDir + "/" + MHDStaggered,
-                                  fs::copy_options::overwrite_existing);
             }
             if constexpr (std::is_same_v<ifContinue, trueType> && continueSteps == 0)
                 fs::copy_file(inputDir + "/MHDContinue_0.bin", initialDir + "/MHDContinue_0.bin",
@@ -846,7 +810,7 @@ class HybridModel {
 
         compressCollocatedCoefficient();
         computeSparseMatrix<Laplacian, trueType, trueType>();
-        if constexpr (std::is_same_v<ifNablaPerp2A, trueType> && std::is_same_v<ifStaggered, falseType>)
+        if constexpr (std::is_same_v<ifNablaPerp2A, trueType>)
             computeSparseMatrix<Resistive, trueType, trueType>();
         if constexpr (std::is_same_v<ifNablaPerp2Phi, trueType>)
             computeSparseMatrix<Perp2Phi, trueType, trueType>();
@@ -1018,15 +982,6 @@ class HybridModel {
         /*-----------------------------------Host to Device Upload------------------------------------*/
 
         memcpyHostToDevice();
-
-        /*------------------------------Sparse Matrix on Staggered Grid-------------------------------*/
-
-        if constexpr (std::is_same_v<ifStaggered, trueType>) {
-            loadMHDEquilibrium(inputDir + "/" + MHDStaggered);
-            compressStaggeredCoefficient();
-            if constexpr (std::is_same_v<ifNablaPerp2A, trueType>)
-                computeSparseMatrix<Resistive, trueType, trueType>();
-        }
     }
 
     void allocateHostMemory() {
@@ -1332,33 +1287,10 @@ class HybridModel {
 
         /*---------------------------Linear---------------------------*/
 
-        DeviceAllocator.allocateDeviceArrays(localId, devNums, devNy * gridNx, d_A_w, d_A_px_w, d_A_py_w, d_A_pz_w,
-                                             d_dJpB_w, d_dJpB_px_w, d_dJpB_py_w, d_dJpB_pz_w, d_dP_w, d_dP_px_w,
-                                             d_dP_py_w, d_dP_pz_w, d_w_py_w, d_w_pz_w, d_w2Phi);
-
-        DeviceAllocator.allocateDeviceArrays(localId, devNums, devNy * gridNx, d_F_perp2, d_F_px_perp2, d_F_pz_perp2,
-                                             d_F_px2_perp2, d_F_pxz_perp2, d_F_pz2_perp2);
-
-        DeviceAllocator.allocateDeviceArrays(localId, devNums, devNy * gridNx, d_A_dJpB, d_A_px_dJpB, d_A_pz_dJpB,
-                                             d_A_px2_dJpB, d_A_pxz_dJpB, d_A_pz2_dJpB);
-
-        DeviceAllocator.allocateDeviceArrays(localId, devNums, devNy * gridNx, d_Phi_A, d_Phi_px_A, d_Phi_py_A,
-                                             d_Phi_pz_A, d_dNe_A, d_dNe_px_A, d_dNe_py_A, d_dNe_pz_A, d_A_A, d_A_px_A,
-                                             d_A_py_A, d_A_pz_A);
-
-        DeviceAllocator.allocateDeviceArrays(localId, devNums, devNy * gridNx, d_Phi_dNe, d_Phi_px_dNe, d_Phi_py_dNe,
-                                             d_Phi_pz_dNe, d_dPe_dNe, d_dPe_px_dNe, d_dPe_py_dNe, d_dPe_pz_dNe,
-                                             d_dJpB_dNe, d_dJpB_px_dNe, d_dJpB_py_dNe, d_dJpB_pz_dNe, d_A_dNe,
-                                             d_A_px_dNe, d_A_py_dNe, d_A_pz_dNe);
-
-        DeviceAllocator.allocateDeviceArrays(localId, devNums, devNy * gridNx, d_Phi_dTe, d_Phi_px_dTe, d_Phi_py_dTe,
-                                             d_Phi_pz_dTe, d_dTe_dTe, d_dTe_px_dTe, d_dTe_py_dTe, d_dTe_pz_dTe,
-                                             d_dNe_dTe, d_dNe_px_dTe, d_dNe_py_dTe, d_dNe_pz_dTe, d_Ne0, d_Te0,
-                                             d_Ne0_px, d_Te0_px, d_Pe0_px);
-
-        DeviceAllocator.allocateDeviceArrays(localId, devNums, devNy * gridNx * 5, d_F2perp2);
-        DeviceAllocator.allocateDeviceArrays(localId, devNums, devNy * gridNx * 6, d_A2dJpB);
+        DeviceAllocator.allocateDeviceArrays(localId, devNums, devNy * gridNx, d_Ne0, d_Te0, d_Ne0_px, d_Te0_px);
+        DeviceAllocator.allocateDeviceArrays(localId, devNums, devNy * gridNx, d_w2Phi);
         DeviceAllocator.allocateDeviceArrays(localId, devNums, devNy * gridNx * 5, d_Phi2w);
+        DeviceAllocator.allocateDeviceArrays(localId, devNums, devNy * gridNx * 6, d_A2dJpB);
         DeviceAllocator.allocateDeviceArrays(localId, devNums, devNy * gridNx * 10, d_wdPAdJpB2w);
         DeviceAllocator.allocateDeviceArrays(localId, devNums, devNy * gridNx * 5, d_APhidNe2A);
         DeviceAllocator.allocateDeviceArrays(localId, devNums, devNy * gridNx * 11, d_dPePhiAdJpB2dNe);
@@ -1374,13 +1306,6 @@ class HybridModel {
         DeviceAllocator.allocateDeviceArrays(localId, devNums, devNy * gridNx * 18, d_PhiTeA_dTe);
 
         /*--------------------------------------Particle in Cell--------------------------------------*/
-
-        DeviceAllocator.allocateDeviceArrays(localId, devNums, devNy * gridNx, d_pic_Phi_py_A, d_pic_dNe_py_A,
-                                             d_pic_A_A, d_pic_A_py_A, d_pic_A_pz_A);
-
-        DeviceAllocator.allocateDeviceArrays(localId, devNums, devNy * gridNx * 5, d_pic_APhidNe2A);
-
-        DeviceAllocator.allocateDeviceArrays(localId, devNums, devNy * gridNx * 9, d_pic_PhiA_A, d_pic_NeA_A);
 
         if (ifIon) {
 
@@ -1597,32 +1522,10 @@ class HybridModel {
 
         /*---------------------------Linear---------------------------*/
 
-        DeviceAllocator.releaseDeviceArrays(localId, devNums, d_A_w, d_A_px_w, d_A_py_w, d_A_pz_w, d_dJpB_w,
-                                            d_dJpB_px_w, d_dJpB_py_w, d_dJpB_pz_w, d_dP_w, d_dP_px_w, d_dP_py_w,
-                                            d_dP_pz_w, d_w_py_w, d_w_pz_w, d_w2Phi);
-
-        DeviceAllocator.releaseDeviceArrays(localId, devNums, d_F_perp2, d_F_px_perp2, d_F_pz_perp2, d_F_px2_perp2,
-                                            d_F_pxz_perp2, d_F_pz2_perp2);
-
-        DeviceAllocator.releaseDeviceArrays(localId, devNums, d_A_dJpB, d_A_px_dJpB, d_A_pz_dJpB, d_A_px2_dJpB,
-                                            d_A_pxz_dJpB, d_A_pz2_dJpB);
-
-        DeviceAllocator.releaseDeviceArrays(localId, devNums, d_Phi_A, d_Phi_px_A, d_Phi_py_A, d_Phi_pz_A, d_dNe_A,
-                                            d_dNe_px_A, d_dNe_py_A, d_dNe_pz_A, d_A_A, d_A_px_A, d_A_py_A, d_A_pz_A);
-
-        DeviceAllocator.releaseDeviceArrays(localId, devNums, d_Phi_dNe, d_Phi_px_dNe, d_Phi_py_dNe, d_Phi_pz_dNe,
-                                            d_dPe_dNe, d_dPe_px_dNe, d_dPe_py_dNe, d_dPe_pz_dNe, d_dJpB_dNe,
-                                            d_dJpB_px_dNe, d_dJpB_py_dNe, d_dJpB_pz_dNe, d_A_dNe, d_A_px_dNe,
-                                            d_A_py_dNe, d_A_pz_dNe);
-
-        DeviceAllocator.releaseDeviceArrays(localId, devNums, d_Phi_dTe, d_Phi_px_dTe, d_Phi_py_dTe, d_Phi_pz_dTe,
-                                            d_dTe_dTe, d_dTe_px_dTe, d_dTe_py_dTe, d_dTe_pz_dTe, d_dNe_dTe,
-                                            d_dNe_px_dTe, d_dNe_py_dTe, d_dNe_pz_dTe, d_Ne0, d_Te0, d_Ne0_px, d_Te0_px,
-                                            d_Pe0_px);
-
-        DeviceAllocator.releaseDeviceArrays(localId, devNums, d_F2perp2);
-        DeviceAllocator.releaseDeviceArrays(localId, devNums, d_A2dJpB);
+        DeviceAllocator.releaseDeviceArrays(localId, devNums, d_Ne0, d_Te0, d_Ne0_px, d_Te0_px);
+        DeviceAllocator.releaseDeviceArrays(localId, devNums, d_w2Phi);
         DeviceAllocator.releaseDeviceArrays(localId, devNums, d_Phi2w);
+        DeviceAllocator.releaseDeviceArrays(localId, devNums, d_A2dJpB);
         DeviceAllocator.releaseDeviceArrays(localId, devNums, d_wdPAdJpB2w);
         DeviceAllocator.releaseDeviceArrays(localId, devNums, d_APhidNe2A);
         DeviceAllocator.releaseDeviceArrays(localId, devNums, d_dPePhiAdJpB2dNe);
@@ -1711,13 +1614,6 @@ class HybridModel {
         }
 
         /*--------------------------------------Particle in Cell--------------------------------------*/
-
-        DeviceAllocator.releaseDeviceArrays(localId, devNums, d_pic_Phi_py_A, d_pic_dNe_py_A, d_pic_A_A, d_pic_A_py_A,
-                                            d_pic_A_pz_A);
-
-        DeviceAllocator.releaseDeviceArrays(localId, devNums, d_pic_APhidNe2A);
-
-        DeviceAllocator.releaseDeviceArrays(localId, devNums, d_pic_PhiA_A, d_pic_NeA_A);
 
         if (ifIon) {
 
@@ -1906,85 +1802,19 @@ class HybridModel {
 
             /*-------------------------------------------Linear-------------------------------------------*/
 
-            /*-------------------------Vorticity--------------------------*/
-
-            H2DAllocator.hostToDevice(devNy * gridNx, 0, (hostId * hostNy + i * devNy) * gridNx,
-                                      // Perturbed Parallel Vector Potential in Vorticity
-                                      d_A_w[i], h_A_w[0], d_A_px_w[i], h_A_px_w[0], d_A_py_w[i], h_A_py_w[0],
-                                      d_A_pz_w[i], h_A_pz_w[0],
-                                      // Perturbed Parallel Current in Vorticity
-                                      d_dJpB_w[i], h_dJpB_w[0], d_dJpB_px_w[i], h_dJpB_px_w[0], d_dJpB_py_w[i],
-                                      h_dJpB_py_w[0], d_dJpB_pz_w[i], h_dJpB_pz_w[0],
-                                      // Perturbed Pressure in Vorticity
-                                      d_dP_w[i], h_dP_w[0], d_dP_px_w[i], h_dP_px_w[0], d_dP_py_w[i], h_dP_py_w[0],
-                                      d_dP_pz_w[i], h_dP_pz_w[0],
-                                      // Ion Diamagnetic Drift and Finite Larmor Radius in Vorticity
-                                      d_w_py_w[i], h_w_py_w[0], d_w_pz_w[i], h_w_pz_w[0], d_w2Phi[i], h_w_Phi[0]);
-
-            /*-----------------Perturbed Parallel Current-----------------*/
-
-            H2DAllocator.hostToDevice(devNy * gridNx, 0, (hostId * hostNy + i * devNy) * gridNx,
-                                      // Perturbed Parallel Vector Potential in Perturbed Parallel Current
-                                      d_A_dJpB[i], h_A_dJpB[0], d_A_px_dJpB[i], h_A_px_dJpB[0], d_A_pz_dJpB[i],
-                                      h_A_pz_dJpB[0], d_A_px2_dJpB[i], h_A_px2_dJpB[0], d_A_pxz_dJpB[i],
-                                      h_A_pxz_dJpB[0], d_A_pz2_dJpB[i], h_A_pz2_dJpB[0]);
-
-            /*------------Perturbed Parallel Vector Potential-------------*/
-
-            H2DAllocator.hostToDevice(devNy * gridNx, 0, (hostId * hostNy + i * devNy) * gridNx,
-                                      // Perturbed Electric Potential in Perturbed Parallel Vector Potential
-                                      d_Phi_A[i], h_Phi_A[0], d_Phi_px_A[i], h_Phi_px_A[0], d_Phi_py_A[i],
-                                      h_Phi_py_A[0], d_Phi_pz_A[i], h_Phi_pz_A[0],
-                                      // Perturbed Density in Perturbed Parallel Vector Potential
-                                      d_dNe_A[i], h_dNe_A[0], d_dNe_px_A[i], h_dNe_px_A[0], d_dNe_py_A[i],
-                                      h_dNe_py_A[0], d_dNe_pz_A[i], h_dNe_pz_A[0],
-                                      // Perturbed Parallel Vector Potential in Perturbed Parallel Vector Potential
-                                      d_A_A[i], h_A_A[0], d_A_px_A[i], h_A_px_A[0], d_A_py_A[i], h_A_py_A[0],
-                                      d_A_pz_A[i], h_A_pz_A[0]);
-
-            /*---------------------Perturbed Density----------------------*/
-
-            H2DAllocator.hostToDevice(devNy * gridNx, 0, (hostId * hostNy + i * devNy) * gridNx,
-                                      // Perturbed Electric Potential in Perturbed Density
-                                      d_Phi_dNe[i], h_Phi_dNe[0], d_Phi_px_dNe[i], h_Phi_px_dNe[0], d_Phi_py_dNe[i],
-                                      h_Phi_py_dNe[0], d_Phi_pz_dNe[i], h_Phi_pz_dNe[0],
-                                      // Perturbed Pressure in Perturbed Density
-                                      d_dPe_dNe[i], h_dPe_dNe[0], d_dPe_px_dNe[i], h_dPe_px_dNe[0], d_dPe_py_dNe[i],
-                                      h_dPe_py_dNe[0], d_dPe_pz_dNe[i], h_dPe_pz_dNe[0],
-                                      // Perturbed Parallel Current in Perturbed Density
-                                      d_dJpB_dNe[i], h_dJpB_dNe[0], d_dJpB_px_dNe[i], h_dJpB_px_dNe[0],
-                                      d_dJpB_py_dNe[i], h_dJpB_py_dNe[0], d_dJpB_pz_dNe[i], h_dJpB_pz_dNe[0],
-                                      // Perturbed Parallel Vector Potential in Perturbed Density
-                                      d_A_dNe[i], h_A_dNe[0], d_A_px_dNe[i], h_A_px_dNe[0], d_A_py_dNe[i],
-                                      h_A_py_dNe[0], d_A_pz_dNe[i], h_A_pz_dNe[0]);
-
-            /*-------------------Perturbed Temperature--------------------*/
-
-            H2DAllocator.hostToDevice(devNy * gridNx, 0, (hostId * hostNy + i * devNy) * gridNx,
-                                      // Perturbed Electric Potential in Perturbed Temperature
-                                      d_Phi_dTe[i], h_Phi_dTe[0], d_Phi_px_dTe[i], h_Phi_px_dTe[0], d_Phi_py_dTe[i],
-                                      h_Phi_py_dTe[0], d_Phi_pz_dTe[i], h_Phi_pz_dTe[0],
-                                      // Perturbed Temperature in Perturbed Temperature
-                                      d_dTe_dTe[i], h_dTe_dTe[0], d_dTe_px_dTe[i], h_dTe_px_dTe[0], d_dTe_py_dTe[i],
-                                      h_dTe_py_dTe[0], d_dTe_pz_dTe[i], h_dTe_pz_dTe[0],
-                                      // Perturbed Density in Perturbed Temperature
-                                      d_dNe_dTe[i], h_dNe_dTe[0], d_dNe_px_dTe[i], h_dNe_px_dTe[0], d_dNe_py_dTe[i],
-                                      h_dNe_py_dTe[0], d_dNe_pz_dTe[i], h_dNe_pz_dTe[0]);
-
             /*------------Equilibrium Density and Temperature-------------*/
 
             H2DAllocator.hostToDevice(devNy * gridNx, 0, (hostId * hostNy + i * devNy) * gridNx, d_Ne0[i], h_Ne0[0],
-                                      d_Te0[i], h_Te0[0], d_Ne0_px[i], h_Ne0_px[0], d_Te0_px[i], h_Te0_px[0],
-                                      d_Pe0_px[i], h_Pe0_px[0]);
+                                      d_Te0[i], h_Te0[0], d_Ne0_px[i], h_Ne0_px[0], d_Te0_px[i], h_Te0_px[0]);
 
             /*--------------------------wAdNedTe--------------------------*/
 
-            H2DAllocator.hostToDevice(devNy * gridNx * 5, 0, (hostId * hostNy + i * devNy) * gridNx * 5, d_F2perp2[i],
-                                      h_F2perp2[0][0]);
-            H2DAllocator.hostToDevice(devNy * gridNx * 6, 0, (hostId * hostNy + i * devNy) * gridNx * 6, d_A2dJpB[i],
-                                      h_A2dJpB[0][0]);
+            H2DAllocator.hostToDevice(devNy * gridNx, 0, (hostId * hostNy + i * devNy) * gridNx, d_w2Phi[i],
+                                      h_w_Phi[0]);
             H2DAllocator.hostToDevice(devNy * gridNx * 5, 0, (hostId * hostNy + i * devNy) * gridNx * 5, d_Phi2w[i],
                                       h_Phi2w[0][0]);
+            H2DAllocator.hostToDevice(devNy * gridNx * 6, 0, (hostId * hostNy + i * devNy) * gridNx * 6, d_A2dJpB[i],
+                                      h_A2dJpB[0][0]);
             H2DAllocator.hostToDevice(devNy * gridNx * 10, 0, (hostId * hostNy + i * devNy) * gridNx * 10,
                                       d_wdPAdJpB2w[i], h_wdPAdJpB2w[0][0]);
             H2DAllocator.hostToDevice(devNy * gridNx * 5, 0, (hostId * hostNy + i * devNy) * gridNx * 5, d_APhidNe2A[i],
@@ -2037,16 +1867,6 @@ class HybridModel {
                 h_dPe[0][0], d_dTe_end[i], h_dPe[0][0]);
 
             /*--------------------------------------------PIC---------------------------------------------*/
-
-            H2DAllocator.hostToDevice(devNy * gridNx, 0, (hostId * hostNy + i * devNy) * gridNx, d_pic_Phi_py_A[i],
-                                      h_Phi_py_A[0], d_pic_dNe_py_A[i], h_dNe_py_A[0], d_pic_A_A[i], h_A_A[0],
-                                      d_pic_A_py_A[i], h_A_py_A[0], d_pic_A_pz_A[i], h_A_pz_A[0]);
-
-            H2DAllocator.hostToDevice(devNy * gridNx * 5, 0, (hostId * hostNy + i * devNy) * gridNx * 5,
-                                      d_pic_APhidNe2A[i], h_APhidNe2A[0][0]);
-
-            H2DAllocator.hostToDevice(devNy * gridNx * 9, 0, (hostId * hostNy + i * devNy) * gridNx * 9,
-                                      d_pic_PhiA_A[i], h_PhiA_A[0][0], d_pic_NeA_A[i], h_NeA_A[0][0]);
 
             if (ifIon) {
 
@@ -2959,19 +2779,22 @@ class HybridModel {
 
                 // Perturbed Parallel Current
 
-                h_A_dJpB[j][i] = std::pow(B[i][j], -2.0) * std::pow(J[i][j], -1.0) *
-                                 ((B_px2[i][j] * gconxx[i][j] + B_px[i][j] * gconxx_px[i][j] +
-                                   2.0 * B_pxy[i][j] * gconxy[i][j] + B_px[i][j] * gconxy_py[i][j] +
-                                   B_py2[i][j] * gconyy[i][j] + B_py[i][j] * (gconxy_px[i][j] + gconyy_py[i][j])) *
-                                      J[i][j] +
-                                  B_px[i][j] * gconxx[i][j] * J_px[i][j] + B_py[i][j] * gconxy[i][j] * J_px[i][j] +
-                                  B_px[i][j] * gconxy[i][j] * J_py[i][j] + B_py[i][j] * gconyy[i][j] * J_py[i][j]);
-                h_A_px_dJpB[j][i] = (-1.0) * std::pow(B[i][j], -1.0) * std::pow(J[i][j], -1.0) *
-                                    ((gconxx_px[i][j] + gconxy_py[i][j]) * J[i][j] + gconxx[i][j] * J_px[i][j] +
-                                     gconxy[i][j] * J_py[i][j]);
-                h_A_pz_dJpB[j][i] = (-1.0) * std::pow(B[i][j], -1.0) * std::pow(J[i][j], -1.0) *
-                                    ((gconxz_px[i][j] + gconyz_py[i][j]) * J[i][j] + gconxz[i][j] * J_px[i][j] +
-                                     gconyz[i][j] * J_py[i][j]);
+                h_A_dJpB[j][i] = std::pow(B[i][j], -3.0) * std::pow(J[i][j], -1.0) *
+                                 (B[i][j] * B_px2[i][j] * gconxx[i][j] * J[i][j] +
+                                  2.0 * B_px[i][j] * B_py[i][j] * gconxy[i][j] * J[i][j] +
+                                  B[i][j] * B_px[i][j] *
+                                      (gconxx_px[i][j] * J[i][j] + gconxy_py[i][j] * J[i][j] +
+                                       gconxx[i][j] * J_px[i][j] + gconxy[i][j] * J_py[i][j]));
+                h_A_px_dJpB[j][i] =
+                    (-1.0) * std::pow(B[i][j], -2.0) *
+                    (2.0 * B_py[i][j] * gconxy[i][j] + B[i][j] * std::pow(J[i][j], -1.0) *
+                                                           ((gconxx_px[i][j] + gconxy_py[i][j]) * J[i][j] +
+                                                            gconxx[i][j] * J_px[i][j] + gconxy[i][j] * J_py[i][j]));
+                h_A_pz_dJpB[j][i] =
+                    (-1.0) * std::pow(B[i][j], -2.0) *
+                    (2.0 * B_py[i][j] * gconyz[i][j] + B[i][j] * std::pow(J[i][j], -1.0) *
+                                                           ((gconxz_px[i][j] + gconyz_py[i][j]) * J[i][j] +
+                                                            gconxz[i][j] * J_px[i][j] + gconyz[i][j] * J_py[i][j]));
                 h_A_px2_dJpB[j][i] = (-1.0) * std::pow(B[i][j], -1.0) * gconxx[i][j];
                 h_A_pxz_dJpB[j][i] = (-2.0) * std::pow(B[i][j], -1.0) * gconxz[i][j];
                 h_A_pz2_dJpB[j][i] = (-1.0) * std::pow(B[i][j], -1.0) * gconzz[i][j];
@@ -3412,196 +3235,6 @@ class HybridModel {
                                          (std::pow(gcovxy[i][j], 2.0) + (-1.0) * gcovxx[i][j] * gcovyy[i][j]) *
                                          std::pow(J[i][j], -2.0);
             }
-        }
-
-        if (hostId == 0) {
-            logDone();
-        }
-    }
-    void compressStaggeredCoefficient() {
-
-        logStart("Compress staggered coefficient in shifted metric coordinate.");
-
-        /*---------------------------Linear---------------------------*/
-
-        for (int i = 0; i < gridNx; i++) {
-            for (int j = 0; j < gridNy; j++) {
-
-                // Perturbed Parallel Current
-
-                h_A_dJpB[j][i] = std::pow(B[i][j], -2.0) * std::pow(J[i][j], -1.0) *
-                                 ((B_px2[i][j] * gconxx[i][j] + B_px[i][j] * gconxx_px[i][j] +
-                                   2.0 * B_pxy[i][j] * gconxy[i][j] + B_px[i][j] * gconxy_py[i][j] +
-                                   B_py2[i][j] * gconyy[i][j] + B_py[i][j] * (gconxy_px[i][j] + gconyy_py[i][j])) *
-                                      J[i][j] +
-                                  B_px[i][j] * gconxx[i][j] * J_px[i][j] + B_py[i][j] * gconxy[i][j] * J_px[i][j] +
-                                  B_px[i][j] * gconxy[i][j] * J_py[i][j] + B_py[i][j] * gconyy[i][j] * J_py[i][j]);
-                h_A_px_dJpB[j][i] = (-1.0) * std::pow(B[i][j], -1.0) * std::pow(J[i][j], -1.0) *
-                                    ((gconxx_px[i][j] + gconxy_py[i][j]) * J[i][j] + gconxx[i][j] * J_px[i][j] +
-                                     gconxy[i][j] * J_py[i][j]);
-                h_A_pz_dJpB[j][i] = (-1.0) * std::pow(B[i][j], -1.0) * std::pow(J[i][j], -1.0) *
-                                    ((gconxz_px[i][j] + gconyz_py[i][j]) * J[i][j] + gconxz[i][j] * J_px[i][j] +
-                                     gconyz[i][j] * J_py[i][j]);
-                h_A_px2_dJpB[j][i] = (-1.0) * std::pow(B[i][j], -1.0) * gconxx[i][j];
-                h_A_pxz_dJpB[j][i] = (-2.0) * std::pow(B[i][j], -1.0) * gconxz[i][j];
-                h_A_pz2_dJpB[j][i] = (-1.0) * std::pow(B[i][j], -1.0) * gconzz[i][j];
-                h_A2dJpB[j][i][0] = h_A_dJpB[j][i];
-                h_A2dJpB[j][i][1] = h_A_px_dJpB[j][i];
-                h_A2dJpB[j][i][2] = h_A_pz_dJpB[j][i];
-                h_A2dJpB[j][i][3] = h_A_px2_dJpB[j][i];
-                h_A2dJpB[j][i][4] = h_A_pxz_dJpB[j][i];
-                h_A2dJpB[j][i][5] = h_A_pz2_dJpB[j][i];
-
-                // Parallel Resistive
-
-                h_A_resistive[j][i] = h_A_dJpB[j][i] * B[i][j] * dt * nablaPerp2A.coef + 1.0;
-                h_A_px_resistive[j][i] = h_A_px_dJpB[j][i] * B[i][j] * dt * nablaPerp2A.coef;
-                h_A_pz_resistive[j][i] = h_A_pz_dJpB[j][i] * B[i][j] * dt * nablaPerp2A.coef;
-                h_A_px2_resistive[j][i] = h_A_px2_dJpB[j][i] * B[i][j] * dt * nablaPerp2A.coef;
-                h_A_pxz_resistive[j][i] = h_A_pxz_dJpB[j][i] * B[i][j] * dt * nablaPerp2A.coef;
-                h_A_pz2_resistive[j][i] = h_A_pz2_dJpB[j][i] * B[i][j] * dt * nablaPerp2A.coef;
-
-                // Perturbed Parallel Vector Potential
-
-                h_Phi_A[j][i] = 0.0;
-                h_Phi_px_A[j][i] = 0.0;
-                h_Phi_py_A[j][i] = (-1.0) * std::pow(B[i][j], -1.0) * Bny[i][j];
-                h_Phi_pz_A[j][i] = 0.0;
-
-                h_dNe_A[j][i] = 0.0;
-                h_dNe_px_A[j][i] = 0.0;
-                h_dNe_py_A[j][i] = (1.0 / 2.0) * std::pow(B[i][j], -1.0) * Bny[i][j] * std::pow(Ne[i][j], -1.0) *
-                                   Te[i][j] * std::pow(NormQE, -1.0);
-                h_dNe_pz_A[j][i] = 0.0;
-
-                h_A_A[j][i] = (1.0 / 2.0) * std::pow(B[i][j], -3.0) *
-                              (B[i][j] * Bny_py[i][j] * gcovyz[i][j] +
-                               Bny[i][j] * ((-1.0) * B_py[i][j] * gcovyz[i][j] + B[i][j] * gcovyz_py[i][j])) *
-                              std::pow(J[i][j], -1.0) * std::pow(Ne[i][j], -1.0) * Ne_px[i][j] * Te[i][j] *
-                              std::pow(NormQE, -1.0);
-                h_A_px_A[j][i] = 0.0;
-                h_A_py_A[j][i] = (1.0 / 2.0) * std::pow(B[i][j], -2.0) * Bny[i][j] * gcovyz[i][j] *
-                                 std::pow(J[i][j], -1.0) * std::pow(Ne[i][j], -1.0) * Ne_px[i][j] * Te[i][j] *
-                                 std::pow(NormQE, -1.0);
-                h_A_pz_A[j][i] = (-1.0 / 2.0) * std::pow(B[i][j], -2.0) * Bny[i][j] * gcovyy[i][j] *
-                                 std::pow(J[i][j], -1.0) * std::pow(Ne[i][j], -1.0) * Ne_px[i][j] * Te[i][j] *
-                                 std::pow(NormQE, -1.0);
-
-                h_APhidNe2A[j][i][0] = h_A_A[j][i];
-                h_APhidNe2A[j][i][1] = h_A_py_A[j][i];
-                h_APhidNe2A[j][i][2] = h_A_pz_A[j][i];
-                h_APhidNe2A[j][i][3] = h_Phi_py_A[j][i];
-                h_APhidNe2A[j][i][4] = h_dNe_py_A[j][i];
-            }
-        }
-
-        /*-------------------------Nonlinear--------------------------*/
-
-        for (int i = 0; i < gridNx; i++) {
-            for (int j = 0; j < gridNy; j++) {
-
-                // Perturbed Parallel Vector Potential
-
-                h_PhiA_A[j][i][0] = std::pow(B[i][j], -3.0) *
-                                    (Bny[i][j] * B_py[i][j] * gcovyz[i][j] +
-                                     (-1.0) * B[i][j] * (Bny_py[i][j] * gcovyz[i][j] + Bny[i][j] * gcovyz_py[i][j])) *
-                                    std::pow(J[i][j], -1.0);
-                h_PhiA_A[j][i][1] =
-                    (-1.0) * std::pow(B[i][j], -2.0) * Bny[i][j] * gcovyz[i][j] * std::pow(J[i][j], -1.0);
-                h_PhiA_A[j][i][2] = std::pow(B[i][j], -2.0) * Bny[i][j] * gcovyy[i][j] * std::pow(J[i][j], -1.0);
-                h_PhiA_A[j][i][3] = std::pow(B[i][j], -3.0) *
-                                    (B[i][j] * Bny_px[i][j] * gcovyz[i][j] +
-                                     Bny[i][j] * ((-1.0) * B_px[i][j] * gcovyz[i][j] + B[i][j] * gcovyz_px[i][j])) *
-                                    std::pow(J[i][j], -1.0);
-                h_PhiA_A[j][i][4] = std::pow(B[i][j], -2.0) * Bny[i][j] * gcovyz[i][j] * std::pow(J[i][j], -1.0);
-                h_PhiA_A[j][i][5] =
-                    (-1.0) * std::pow(B[i][j], -2.0) * Bny[i][j] * gcovxy[i][j] * std::pow(J[i][j], -1.0);
-                h_PhiA_A[j][i][6] = std::pow(B[i][j], -3.0) *
-                                    (Bny[i][j] * ((-1.0) * B_py[i][j] * gcovxy[i][j] + B_px[i][j] * gcovyy[i][j]) +
-                                     B[i][j] * (Bny_py[i][j] * gcovxy[i][j] + (-1.0) * Bny_px[i][j] * gcovyy[i][j] +
-                                                Bny[i][j] * (gcovxy_py[i][j] + (-1.0) * gcovyy_px[i][j]))) *
-                                    std::pow(J[i][j], -1.0);
-                h_PhiA_A[j][i][7] =
-                    (-1.0) * std::pow(B[i][j], -2.0) * Bny[i][j] * gcovyy[i][j] * std::pow(J[i][j], -1.0);
-                h_PhiA_A[j][i][8] = std::pow(B[i][j], -2.0) * Bny[i][j] * gcovxy[i][j] * std::pow(J[i][j], -1.0);
-
-                h_NeA_A[j][i][0] = (1.0 / 2.0) * std::pow(B[i][j], -3.0) *
-                                   (B[i][j] * Bny_py[i][j] * gcovyz[i][j] +
-                                    Bny[i][j] * ((-1.0) * B_py[i][j] * gcovyz[i][j] + B[i][j] * gcovyz_py[i][j])) *
-                                   std::pow(J[i][j], -1.0) * std::pow(NormQE, -1.0) * std::pow(Ne[i][j], -1.0) *
-                                   Te[i][j];
-                h_NeA_A[j][i][1] = (1.0 / 2.0) * std::pow(B[i][j], -2.0) * Bny[i][j] * gcovyz[i][j] *
-                                   std::pow(J[i][j], -1.0) * std::pow(NormQE, -1.0) * std::pow(Ne[i][j], -1.0) *
-                                   Te[i][j];
-                h_NeA_A[j][i][2] = (-1.0 / 2.0) * std::pow(B[i][j], -2.0) * Bny[i][j] * gcovyy[i][j] *
-                                   std::pow(J[i][j], -1.0) * std::pow(NormQE, -1.0) * std::pow(Ne[i][j], -1.0) *
-                                   Te[i][j];
-                h_NeA_A[j][i][3] = (1.0 / 2.0) * std::pow(B[i][j], -3.0) *
-                                   (Bny[i][j] * B_px[i][j] * gcovyz[i][j] +
-                                    (-1.0) * B[i][j] * (Bny_px[i][j] * gcovyz[i][j] + Bny[i][j] * gcovyz_px[i][j])) *
-                                   std::pow(J[i][j], -1.0) * std::pow(NormQE, -1.0) * std::pow(Ne[i][j], -1.0) *
-                                   Te[i][j];
-                h_NeA_A[j][i][4] = (-1.0 / 2.0) * std::pow(B[i][j], -2.0) * Bny[i][j] * gcovyz[i][j] *
-                                   std::pow(J[i][j], -1.0) * std::pow(NormQE, -1.0) * std::pow(Ne[i][j], -1.0) *
-                                   Te[i][j];
-                h_NeA_A[j][i][5] = (1.0 / 2.0) * std::pow(B[i][j], -2.0) * Bny[i][j] * gcovxy[i][j] *
-                                   std::pow(J[i][j], -1.0) * std::pow(NormQE, -1.0) * std::pow(Ne[i][j], -1.0) *
-                                   Te[i][j];
-                h_NeA_A[j][i][6] = (1.0 / 2.0) * std::pow(B[i][j], -3.0) *
-                                   (Bny[i][j] * (B_py[i][j] * gcovxy[i][j] + (-1.0) * B_px[i][j] * gcovyy[i][j]) +
-                                    B[i][j] * ((-1.0) * Bny_py[i][j] * gcovxy[i][j] + Bny_px[i][j] * gcovyy[i][j] +
-                                               Bny[i][j] * ((-1.0) * gcovxy_py[i][j] + gcovyy_px[i][j]))) *
-                                   std::pow(J[i][j], -1.0) * std::pow(NormQE, -1.0) * std::pow(Ne[i][j], -1.0) *
-                                   Te[i][j];
-                h_NeA_A[j][i][7] = (1.0 / 2.0) * std::pow(B[i][j], -2.0) * Bny[i][j] * gcovyy[i][j] *
-                                   std::pow(J[i][j], -1.0) * std::pow(NormQE, -1.0) * std::pow(Ne[i][j], -1.0) *
-                                   Te[i][j];
-                h_NeA_A[j][i][8] = (-1.0 / 2.0) * std::pow(B[i][j], -2.0) * Bny[i][j] * gcovxy[i][j] *
-                                   std::pow(J[i][j], -1.0) * std::pow(NormQE, -1.0) * std::pow(Ne[i][j], -1.0) *
-                                   Te[i][j];
-            }
-        }
-
-        if (hostId == 0) {
-            logDone();
-        }
-
-        logStart("Copy staggered coefficient to device.");
-
-        Allocator H2DAllocator;
-
-        for (int i = 0; i < devNums; i++) {
-
-            CUDACHECK(cudaSetDevice(localId * devNums + i));
-
-            /*---------------------------Linear---------------------------*/
-
-            H2DAllocator.hostToDevice(devNy * gridNx, 0, (hostId * hostNy + i * devNy) * gridNx,
-                                      // Perturbed Parallel Vector Potential in Perturbed Parallel Current
-                                      d_A_dJpB[i], h_A_dJpB[0], d_A_px_dJpB[i], h_A_px_dJpB[0], d_A_pz_dJpB[i],
-                                      h_A_pz_dJpB[0], d_A_px2_dJpB[i], h_A_px2_dJpB[0], d_A_pxz_dJpB[i],
-                                      h_A_pxz_dJpB[0], d_A_pz2_dJpB[i], h_A_pz2_dJpB[0]);
-
-            H2DAllocator.hostToDevice(devNy * gridNx, 0, (hostId * hostNy + i * devNy) * gridNx,
-                                      // Perturbed Electric Potential in Perturbed Parallel Vector Potential
-                                      d_Phi_A[i], h_Phi_A[0], d_Phi_px_A[i], h_Phi_px_A[0], d_Phi_py_A[i],
-                                      h_Phi_py_A[0], d_Phi_pz_A[i], h_Phi_pz_A[0],
-                                      // Perturbed Density in Perturbed Parallel Vector Potential
-                                      d_dNe_A[i], h_dNe_A[0], d_dNe_px_A[i], h_dNe_px_A[0], d_dNe_py_A[i],
-                                      h_dNe_py_A[0], d_dNe_pz_A[i], h_dNe_pz_A[0],
-                                      // Perturbed Parallel Vector Potential in Perturbed Parallel Vector Potential
-                                      d_A_A[i], h_A_A[0], d_A_px_A[i], h_A_px_A[0], d_A_py_A[i], h_A_py_A[0],
-                                      d_A_pz_A[i], h_A_pz_A[0]);
-
-            H2DAllocator.hostToDevice(devNy * gridNx * 6, 0, (hostId * hostNy + i * devNy) * gridNx * 6, d_A2dJpB[i],
-                                      h_A2dJpB[0][0]);
-            H2DAllocator.hostToDevice(devNy * gridNx * 5, 0, (hostId * hostNy + i * devNy) * gridNx * 5, d_APhidNe2A[i],
-                                      h_APhidNe2A[0][0]);
-
-            /*-------------------------Nonlinear--------------------------*/
-
-            H2DAllocator.hostToDevice(devNy * gridNx * 9, 0, (hostId * hostNy + i * devNy) * gridNx * 9, d_PhiA_A[i],
-                                      h_PhiA_A[0][0], d_NeA_A[i], h_NeA_A[0][0]);
         }
 
         if (hostId == 0) {

@@ -1229,7 +1229,7 @@ __global__ void GyroAlignedRK4(picReal* __restrict__ pic1d, picReal* __restrict_
             coes[1] = hx[1] + sx[1] * dx;
             FieldGather1d2d<2>(qId, coes, pic1d, gyroX);
 
-            gyroZ = vec2[2] - q * (gyroY - vec2[1]) - vec2[1] * (gyroX - q);
+            gyroZ = vec2[2] - q * (gyroY - vec2[1]) - vec2[1] * (gyroX - q) - (gyroY - vec2[1]) * (gyroX - q);
 
             if constexpr (std::is_same_v<picReal, double>) {
                 gyroZ = gyroZ + gyroX * floor((gyroY - yori) / yrange) * yrange;

@@ -18,10 +18,9 @@
 |---|---|---|---|---|
 | `mhdReal` | `float` / `double` | MHD 计算精度。 | MHD 精度应高于或等于 PIC 精度。 | `using mhdReal = double;` |
 | `picReal` | `float` / `double` | PIC 计算精度。 | PIC 精度应低于或等于 MHD 精度。 | `using picReal = float;` |
-| `inputDir` | 字符串路径 | 输入文件目录。 | 从头算时，仅需提供 `MHDCollocated` 以及可选的 `MHDStaggered` 文件。<br>继续算时，还需要提供 `MHDContinue` 和 `PICContinue` 文件，它们来自上一次任务 `outputDir/final`。 | `const std::string inputDir = "/path/to/input";` |
+| `inputDir` | 字符串路径 | 输入文件目录。 | 从头算时，仅需提供 `MHDEquilibrium` 文件。<br>继续算时，还需要提供 `MHDContinue` 和 `PICContinue` 文件，它们来自上一次任务 `outputDir/final`。 | `const std::string inputDir = "/path/to/input";` |
 | `outputDir` | 字符串路径 | 输出文件目录。 |  | `const std::string outputDir = "/path/to/output";` |
-| `MHDCollocated` | `.bin` 文件名 | collocated MHD 平衡文件。 |  | `const std::string MHDCollocated = "MHDCollocated.bin";` |
-| `MHDStaggered` | `.bin` 文件名 | staggered MHD 平衡文件。 | 仅 `ifStaggered=trueType` 时需要。 | `const std::string MHDStaggered = "MHDStaggered.bin";` |
+| `MHDEquilibrium` | `.bin` 文件名 | MHD 平衡文件。 |  | `const std::string MHDEquilibrium = "MHDEquilibrium_384_32.bin";` |
 | `<Species>PhaseSpaceMapping` | `.bin` 文件名 | 相空间轨道映射文件。 | 仅 `ifOutputPhaseSpaceOrbit=trueType` 时需要。 | `const std::string IonPhaseSpaceMapping = "IonPhaseSpaceMapping.bin";` |
 
 ## 归一化参数
@@ -75,7 +74,6 @@
 
 | 参数名 | 允许的值 | 含义 | 注意事项 | 示范 |
 |---|---|---|---|---|
-| `ifStaggered` | `trueType` / `falseType` | 是否包含交错网格。 | 需要 `MHDStaggered` 文件。 | `using ifStaggered = falseType;` |
 | `ifNonlinearMHD` | `trueType` / `falseType` | 是否包含 MHD 非线性项。 |  | `using ifNonlinearMHD = trueType;` |
 | `ifEparallel` | `trueType` / `falseType` | 是否包含平行电场项。 |  | `using ifEparallel = trueType;` |
 | `ifFLRMHD` | `trueType` / `falseType` | 是否包含泊松方程中由背景热离子带来的 FLR 效应。 |  | `using ifFLRMHD = falseType;` |

@@ -9,7 +9,7 @@
 addpath：MATLAB 预处理脚本目录和 BSI 目录的位置。
 inputPath：DESC 输出数据和 NTP.mat 所在目录。当前脚本会从该目录读取 standard2D.mat，NTP.mat。
 outputPath：MATLAB 生成 cuGMEC 输入文件的输出目录。
-equilibriumName：最终生成的平衡输入二进制文件名，例如 MHDCollocated_256_32.bin。
+equilibriumName：最终生成的平衡输入二进制文件名，例如 MHDEquilibrium_256_32.bin。
 
 3. 代码块 (2) 的参数含义
 NTP.mat 需要包含：
@@ -35,7 +35,7 @@ Type = 3：该粒子组分不存在。
 
 4. 代码块 (3) 的输出
 运行后，outputPath 下会生成：
-equilibriumName，即 cuGMEC 的平衡输入文件，对应 cuGMEC 参数中的 MHDCollocated 或 MHDStaggered。
+equilibriumName，即 cuGMEC 的平衡输入文件，对应 cuGMEC 参数中的 MHDEquilibrium。
 normalization2D.mat，即后续设置 cuGMEC 参数所需的归一化文件。
 normalization2D.mat 中包含 B0，L0，VA0，RHO0，RHO1，PSITMAX，IonBeta，AlphaBeta，BeamBeta。
 
@@ -50,7 +50,7 @@ addpath('C:\Users\Desktop\preprocess\BSI')
 
 inputPath = 'C:\Users\Desktop\';
 outputPath = 'C:\Users\Desktop\';
-equilibriumName = 'MHDCollocated_256_32.bin';
+equilibriumName = 'MHDEquilibrium_256_32.bin';
 
 if ~exist(outputPath, 'dir')
     mkdir(outputPath);

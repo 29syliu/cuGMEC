@@ -21,7 +21,7 @@
 
 /*----------------------------------------MHD Kernels-----------------------------------------*/
 
-template <int rk4, typename nonlinear, typename local, typename staggered, typename Eparallel, typename type>
+template <int rk4, typename nonlinear, typename local, typename Eparallel, typename type>
 __global__ void MHDLinearRK4(type* __restrict__ d_qtheta, type* __restrict__ w_beg, type* __restrict__ w_midl,
                              type* __restrict__ w_midr, type* __restrict__ w_end, type* __restrict__ A_beg,
                              type* __restrict__ A_midl, type* __restrict__ A_midr, type* __restrict__ A_end,
@@ -226,17 +226,8 @@ __global__ void MHDLinearRK4(type* __restrict__ d_qtheta, type* __restrict__ w_b
 
     /*--------------------Electric Potential in Parallel Vector Potential---------------------*/
 
-    if constexpr (std::is_same_v<staggered, trueType>) {
-
-        Collocated2S<local>(0, 0, i, j, k, offset2d, offset3d, lane_id, shift_k, shift_lk, shift_dk, d_qtheta, qtheta,
-                            qtheta_lr, Phi_mid, field_du, field_lr, field);
-        field_py = (field_lr[0] - 27 * field_lr[1] + 27 * field_lr[2] - field_lr[3]) / (24 * mhdGridDy);
-
-    } else {
-
-        PartialY<local>(k, offset3d, lane_id, shift_k, shift_lk, shift_dk, qtheta, qtheta_lr, Phi_mid, field_du,
-                        field_lr, field_py);
-    }
+    PartialY<local>(k, offset3d, lane_id, shift_k, shift_lk, shift_dk, qtheta, qtheta_lr, Phi_mid, field_du, field_lr,
+                    field_py);
 
     dAdt += compcoes[3] * field_py;
 
@@ -246,17 +237,8 @@ __global__ void MHDLinearRK4(type* __restrict__ d_qtheta, type* __restrict__ w_b
 
         if constexpr (std::is_same_v<nonlinear, falseType>) {
 
-            if constexpr (std::is_same_v<staggered, trueType>) {
-
-                Collocated2S<local>(0, 0, i, j, k, offset2d, offset3d, lane_id, shift_k, shift_lk, shift_dk, d_qtheta,
-                                    qtheta, qtheta_lr, dNe_midl, field_du, field_lr, field);
-                field_py = (field_lr[0] - 27 * field_lr[1] + 27 * field_lr[2] - field_lr[3]) / (24 * mhdGridDy);
-
-            } else {
-
-                PartialY<local>(k, offset3d, lane_id, shift_k, shift_lk, shift_dk, qtheta, qtheta_lr, dNe_midl,
-                                field_du, field_lr, field_py);
-            }
+            PartialY<local>(k, offset3d, lane_id, shift_k, shift_lk, shift_dk, qtheta, qtheta_lr, dNe_midl, field_du,
+                            field_lr, field_py);
 
             dAdt += compcoes[4] * field_py;
         }
@@ -264,60 +246,29 @@ __global__ void MHDLinearRK4(type* __restrict__ d_qtheta, type* __restrict__ w_b
 
     /*--------------Parallel Vector Potential in Vorticity and Electron Density---------------*/
 
-    if constexpr (std::is_same_v<staggered, trueType>) {
+    field = A_midl[offset3d];
 
-        S2CPartialXYZ<local>(i, j, k, offset2d, offset3d, lane_id, shift_k, shift_lk, shift_dk, d_qtheta, qtheta,
-                             qtheta_lr, A_midl, field_du, field_lr, field, field_px, field_py, field_pz);
+    PartialZ<local>(k, offset3d, lane_id, A_midl, field, field_du, field_pz);
+    PartialX(0, i, k, offset3d, A_midl, field, field_lr, field_px);
+    PartialY<local>(k, offset3d, lane_id, shift_k, shift_lk, shift_dk, qtheta, qtheta_lr, A_midl, field_du, field_lr,
+                    field_py);
 
-        for (int index = 0; index < 4; index++)
-            compcoes[index] = d_wdPAdJpB2w[offset2d * 10 + index + 5];
+    for (int index = 0; index < 4; index++)
+        compcoes[index] = d_wdPAdJpB2w[offset2d * 10 + index + 5];
 
-        dwdt += compcoes[0] * field + compcoes[1] * field_px + compcoes[2] * field_py + compcoes[3] * field_pz;
-        dNedt +=
-            (compcoes[0] * field + compcoes[1] * field_px + compcoes[2] * field_py + compcoes[3] * field_pz) / NormQE;
-
-    } else {
-
-        field = A_midl[offset3d];
-
-        PartialZ<local>(k, offset3d, lane_id, A_midl, field, field_du, field_pz);
-        PartialX(0, i, k, offset3d, A_midl, field, field_lr, field_px);
-        PartialY<local>(k, offset3d, lane_id, shift_k, shift_lk, shift_dk, qtheta, qtheta_lr, A_midl, field_du,
-                        field_lr, field_py);
-
-        for (int index = 0; index < 4; index++)
-            compcoes[index] = d_wdPAdJpB2w[offset2d * 10 + index + 5];
-
-        dwdt += compcoes[0] * field + compcoes[1] * field_px + compcoes[2] * field_py + compcoes[3] * field_pz;
-        dNedt +=
-            (compcoes[0] * field + compcoes[1] * field_px + compcoes[2] * field_py + compcoes[3] * field_pz) / NormQE;
-    }
+    dwdt += compcoes[0] * field + compcoes[1] * field_px + compcoes[2] * field_py + compcoes[3] * field_pz;
+    dNedt += (compcoes[0] * field + compcoes[1] * field_px + compcoes[2] * field_py + compcoes[3] * field_pz) / NormQE;
 
     /*-----------------------------Parallel Current in Vorticity------------------------------*/
 
-    if constexpr (std::is_same_v<staggered, trueType>) {
+    PartialY<local>(k, offset3d, lane_id, shift_k, shift_lk, shift_dk, qtheta, qtheta_lr, dJpB_mid, field_du, field_lr,
+                    field_py);
 
-        Staggered2C<local>(0, 0, i, j, k, offset2d, offset3d, lane_id, shift_k, shift_lk, shift_dk, d_qtheta, qtheta,
-                           qtheta_lr, dJpB_mid, field_du, field_lr, field);
-        field_py = (field_lr[0] - 27 * field_lr[1] + 27 * field_lr[2] - field_lr[3]) / (24 * mhdGridDy);
+    for (int index = 0; index < 1; index++)
+        compcoes[index] = d_wdPAdJpB2w[offset2d * 10 + index + 9];
 
-        for (int index = 0; index < 1; index++)
-            compcoes[index] = d_wdPAdJpB2w[offset2d * 10 + index + 9];
-
-        dwdt += compcoes[0] * field_py;
-        dNedt += compcoes[0] * field_py / NormQE;
-
-    } else {
-
-        PartialY<local>(k, offset3d, lane_id, shift_k, shift_lk, shift_dk, qtheta, qtheta_lr, dJpB_mid, field_du,
-                        field_lr, field_py);
-
-        for (int index = 0; index < 1; index++)
-            compcoes[index] = d_wdPAdJpB2w[offset2d * 10 + index + 9];
-
-        dwdt += compcoes[0] * field_py;
-        dNedt += compcoes[0] * field_py / NormQE;
-    }
+    dwdt += compcoes[0] * field_py;
+    dNedt += compcoes[0] * field_py / NormQE;
 
     /*------------------------------------------RK4-------------------------------------------*/
 
@@ -388,7 +339,7 @@ __global__ void MHDLinearRK4(type* __restrict__ d_qtheta, type* __restrict__ w_b
 }
 
 template <int rk4, typename MaxwellStress, typename ReynoldsStress, typename diagZFDrive, typename local,
-          typename staggered, typename Eparallel, typename type>
+          typename Eparallel, typename type>
 __global__ void MHDNonlinearRK4(type* __restrict__ d_qtheta, type* __restrict__ w_midl, type* __restrict__ w_midr,
                                 type* __restrict__ w_end, type* __restrict__ A_midl, type* __restrict__ A_midr,
                                 type* __restrict__ A_end, type* __restrict__ dNe_midl, type* __restrict__ dNe_midr,
@@ -468,38 +419,17 @@ __global__ void MHDNonlinearRK4(type* __restrict__ d_qtheta, type* __restrict__ 
     PartialY<local>(k, offset3d, lane_id, shift_k, shift_lk, shift_dk, qtheta, qtheta_lr, Phi_mid, field_du, field_lr,
                     Phi_py);
 
-    if constexpr (std::is_same_v<staggered, falseType>) {
+    A = A_midl[offset3d];
+    PartialZ<local>(k, offset3d, lane_id, A_midl, A, field_du, A_pz);
+    PartialX(0, i, k, offset3d, A_midl, A, field_lr, A_px);
+    PartialY<local>(k, offset3d, lane_id, shift_k, shift_lk, shift_dk, qtheta, qtheta_lr, A_midl, field_du, field_lr,
+                    A_py);
 
-        A = A_midl[offset3d];
-        PartialZ<local>(k, offset3d, lane_id, A_midl, A, field_du, A_pz);
-        PartialX(0, i, k, offset3d, A_midl, A, field_lr, A_px);
-        PartialY<local>(k, offset3d, lane_id, shift_k, shift_lk, shift_dk, qtheta, qtheta_lr, A_midl, field_du,
-                        field_lr, A_py);
-
-        field = dJpB_mid[offset3d];
-        PartialZ<local>(k, offset3d, lane_id, dJpB_mid, field, field_du, field_pz);
-        PartialX(0, i, k, offset3d, dJpB_mid, field, field_lr, field_px);
-        PartialY<local>(k, offset3d, lane_id, shift_k, shift_lk, shift_dk, qtheta, qtheta_lr, dJpB_mid, field_du,
-                        field_lr, field_py);
-
-    } else {
-
-        S2CPartialXYZ<local>(i, j, k, offset2d, offset3d, lane_id, shift_k, shift_lk, shift_dk, d_qtheta, qtheta,
-                             qtheta_lr, A_midl, field_du, field_lr, A, A_px, A_py, A_pz);
-
-        S2CPartialXYZ<local>(i, j, k, offset2d, offset3d, lane_id, shift_k, shift_lk, shift_dk, d_qtheta, qtheta,
-                             qtheta_lr, dJpB_mid, field_du, field_lr, field, field_px, field_py, field_pz);
-
-        offset2d = (j + gridGhost) * gridNx + i;
-
-        qtheta = d_qtheta[offset2d];
-        qtheta_lr[0] = d_qtheta[offset2d - 2 * gridNx];
-        qtheta_lr[1] = d_qtheta[offset2d - 1 * gridNx];
-        qtheta_lr[2] = d_qtheta[offset2d + 1 * gridNx];
-        qtheta_lr[3] = d_qtheta[offset2d + 2 * gridNx];
-
-        offset2d = j * gridNx + i;
-    }
+    field = dJpB_mid[offset3d];
+    PartialZ<local>(k, offset3d, lane_id, dJpB_mid, field, field_du, field_pz);
+    PartialX(0, i, k, offset3d, dJpB_mid, field, field_lr, field_px);
+    PartialY<local>(k, offset3d, lane_id, shift_k, shift_lk, shift_dk, qtheta, qtheta_lr, dJpB_mid, field_du, field_lr,
+                    field_py);
 
     /*-----------------------------------AdJpB in Vorticity-----------------------------------*/
 
@@ -638,25 +568,11 @@ __global__ void MHDNonlinearRK4(type* __restrict__ d_qtheta, type* __restrict__ 
     for (int index = 0; index < 9; index++)
         compcoes[index] = d_PhiA_A[offset2d * 9 + index];
 
-    if constexpr (std::is_same_v<staggered, trueType>) {
-
-        A = A_midl[offset3d];
-        PartialZ<local>(k, offset3d, lane_id, A_midl, A, field_du, A_pz);
-        PartialX(0, i, k, offset3d, A_midl, A, field_lr, A_px);
-        PartialY<local>(k, offset3d, lane_id, shift_k, shift_lk, shift_dk, qtheta, qtheta_lr, A_midl, field_du,
-                        field_lr, A_py);
-
-        C2SPartialXYZ<local>(i, j, k, offset2d, offset3d, lane_id, shift_k, shift_lk, shift_dk, d_qtheta, qtheta,
-                             qtheta_lr, Phi_mid, field_du, field_lr, Phi, Phi_px, Phi_py, Phi_pz);
-
-    } else {
-
-        Phi = Phi_mid[offset3d];
-        PartialZ<local>(k, offset3d, lane_id, Phi_mid, Phi, field_du, Phi_pz);
-        PartialX(0, i, k, offset3d, Phi_mid, Phi, field_lr, Phi_px);
-        PartialY<local>(k, offset3d, lane_id, shift_k, shift_lk, shift_dk, qtheta, qtheta_lr, Phi_mid, field_du,
-                        field_lr, Phi_py);
-    }
+    Phi = Phi_mid[offset3d];
+    PartialZ<local>(k, offset3d, lane_id, Phi_mid, Phi, field_du, Phi_pz);
+    PartialX(0, i, k, offset3d, Phi_mid, Phi, field_lr, Phi_px);
+    PartialY<local>(k, offset3d, lane_id, shift_k, shift_lk, shift_dk, qtheta, qtheta_lr, Phi_mid, field_du, field_lr,
+                    Phi_py);
 
     dAdt += compcoes[0] * Phi_px * A + compcoes[1] * Phi_px * A_py + compcoes[2] * Phi_px * A_pz +
             compcoes[3] * Phi_py * A + compcoes[4] * Phi_py * A_px + compcoes[5] * Phi_py * A_pz +
@@ -668,25 +584,11 @@ __global__ void MHDNonlinearRK4(type* __restrict__ d_qtheta, type* __restrict__ 
 
         compcoes[0] = d_APhidNe2A[offset2d * 5 + 4];
 
-        if constexpr (std::is_same_v<staggered, falseType>) {
-
-            field = dNe_midl[offset3d];
-            PartialZ<local>(k, offset3d, lane_id, dNe_midl, field, field_du, field_pz);
-            PartialX(0, i, k, offset3d, dNe_midl, field, field_lr, field_px);
-            PartialY<local>(k, offset3d, lane_id, shift_k, shift_lk, shift_dk, qtheta, qtheta_lr, dNe_midl, field_du,
-                            field_lr, field_py);
-
-        } else {
-
-            C2SPartialXYZ<local>(i, j, k, offset2d, offset3d, lane_id, shift_k, shift_lk, shift_dk, d_qtheta, qtheta,
-                                 qtheta_lr, dNe_midl, field_du, field_lr, field, field_px, field_py, field_pz);
-
-            Collocated2S<local>(0, 0, i, j, k, offset2d, offset3d, lane_id, shift_k, shift_lk, shift_dk, d_qtheta,
-                                qtheta, qtheta_lr, dTe_midl, field_du, field_lr, Te);
-
-            Ne = Ne0 + field;
-            Te = Te0 + Te;
-        }
+        field = dNe_midl[offset3d];
+        PartialZ<local>(k, offset3d, lane_id, dNe_midl, field, field_du, field_pz);
+        PartialX(0, i, k, offset3d, dNe_midl, field, field_lr, field_px);
+        PartialY<local>(k, offset3d, lane_id, shift_k, shift_lk, shift_dk, qtheta, qtheta_lr, dNe_midl, field_du,
+                        field_lr, field_py);
 
         dAdt += compcoes[0] * (Te / Te0 * Ne0 / Ne) * field_py;
     }
@@ -990,12 +892,6 @@ template <typename local, typename type, typename... types>
 __global__ void MHDAlignedGhost(type* __restrict__ d_qtheta, types* __restrict__... fields) {
 
     AlignedGhost<local>(d_qtheta, fields...);
-}
-
-template <typename local, typename type, typename... types>
-__global__ void MHDStaggered2C(type* __restrict__ d_qtheta, types* __restrict__... fields) {
-
-    Staggered2C<local>(d_qtheta, fields...);
 }
 
 template <int dir, typename local, typename type, typename... types>
@@ -1400,7 +1296,7 @@ __global__ void MHDSubtractMode(type* __restrict__ d_Subtrahend, type* __restric
     d_Minuend[offset3d] -= d_Subtrahend[offset3d];
 }
 
-template <typename nonlinear, typename local, typename staggered, typename Eparallel, typename type>
+template <typename nonlinear, typename local, typename Eparallel, typename type>
 __global__ void MHD2Apt(type* __restrict__ d_qtheta, type* __restrict__ A_mid, type* __restrict__ dNe_mid,
                         type* __restrict__ dTe_mid, type* __restrict__ Phi_mid, type* __restrict__ d_Ne0,
                         type* __restrict__ d_Te0, type* __restrict__ d_Ne0_px, type* __restrict__ d_APhidNe2A,
@@ -1477,18 +1373,10 @@ __global__ void MHD2Apt(type* __restrict__ d_qtheta, type* __restrict__ A_mid, t
 
         if constexpr (std::is_same_v<nonlinear, falseType>) {
 
-            if constexpr (std::is_same_v<staggered, falseType>) {
-
-                field = A_mid[offset3d];
-                PartialZ<local>(k, offset3d, lane_id, A_mid, field, field_du, field_pz);
-                PartialY<local>(k, offset3d, lane_id, shift_k, shift_lk, shift_dk, qtheta, qtheta_lr, A_mid, field_du,
-                                field_lr, field_py);
-
-            } else {
-
-                S2CPartialXYZ<local>(i, j, k, offset2d, offset3d, lane_id, shift_k, shift_lk, shift_dk, d_qtheta,
-                                     qtheta, qtheta_lr, A_mid, field_du, field_lr, field, field_px, field_py, field_pz);
-            }
+            field = A_mid[offset3d];
+            PartialZ<local>(k, offset3d, lane_id, A_mid, field, field_du, field_pz);
+            PartialY<local>(k, offset3d, lane_id, shift_k, shift_lk, shift_dk, qtheta, qtheta_lr, A_mid, field_du,
+                            field_lr, field_py);
 
             dAdt += compcoes[0] * field + compcoes[1] * field_py + compcoes[2] * field_pz;
         }
@@ -1511,29 +1399,11 @@ __global__ void MHD2Apt(type* __restrict__ d_qtheta, type* __restrict__ A_mid, t
         PartialY<local>(k, offset3d, lane_id, shift_k, shift_lk, shift_dk, qtheta, qtheta_lr, Phi_mid, field_du,
                         field_lr, Phi_py);
 
-        if constexpr (std::is_same_v<staggered, falseType>) {
-
-            A = A_mid[offset3d];
-            PartialZ<local>(k, offset3d, lane_id, A_mid, A, field_du, A_pz);
-            PartialX(0, i, k, offset3d, A_mid, A, field_lr, A_px);
-            PartialY<local>(k, offset3d, lane_id, shift_k, shift_lk, shift_dk, qtheta, qtheta_lr, A_mid, field_du,
-                            field_lr, A_py);
-
-        } else {
-
-            S2CPartialXYZ<local>(i, j, k, offset2d, offset3d, lane_id, shift_k, shift_lk, shift_dk, d_qtheta, qtheta,
-                                 qtheta_lr, A_mid, field_du, field_lr, A, A_px, A_py, A_pz);
-
-            offset2d = (j + gridGhost) * gridNx + i;
-
-            qtheta = d_qtheta[offset2d];
-            qtheta_lr[0] = d_qtheta[offset2d - 2 * gridNx];
-            qtheta_lr[1] = d_qtheta[offset2d - 1 * gridNx];
-            qtheta_lr[2] = d_qtheta[offset2d + 1 * gridNx];
-            qtheta_lr[3] = d_qtheta[offset2d + 2 * gridNx];
-
-            offset2d = j * gridNx + i;
-        }
+        A = A_mid[offset3d];
+        PartialZ<local>(k, offset3d, lane_id, A_mid, A, field_du, A_pz);
+        PartialX(0, i, k, offset3d, A_mid, A, field_lr, A_px);
+        PartialY<local>(k, offset3d, lane_id, shift_k, shift_lk, shift_dk, qtheta, qtheta_lr, A_mid, field_du, field_lr,
+                        A_py);
 
         /*-------------------------PhiA in Parallel Vector Potential--------------------------*/
 
@@ -1959,7 +1829,7 @@ __global__ void MHDDiagZFDrive(type* __restrict__ w_beg, type* __restrict__ w_en
     dwdtTotal[i] = (w_end[offset3d] - w_beg[offset3d]) / mhdGridDt;
 }
 
-template <typename nonlinear, typename staggered, typename Eparallel, typename type>
+template <typename nonlinear, typename Eparallel, typename type>
 __global__ void MHDDiagEparallel(type* __restrict__ d_qtheta, type* __restrict__ A_mid, type* __restrict__ dNe_mid,
                                  type* __restrict__ dTe_mid, type* __restrict__ Phi_mid, type* __restrict__ d_Ne0,
                                  type* __restrict__ d_Te0, type* __restrict__ d_Ne0_px, type* __restrict__ d_APhidNe2A,
@@ -2030,17 +1900,8 @@ __global__ void MHDDiagEparallel(type* __restrict__ d_qtheta, type* __restrict__
 
     /*--------------------Electric Potential in Parallel Vector Potential---------------------*/
 
-    if constexpr (std::is_same_v<staggered, trueType>) {
-
-        Collocated2S<falseType>(0, 0, i, j, k, offset2d, offset3d, lane_id, shift_k, shift_lk, shift_dk, d_qtheta,
-                                qtheta, qtheta_lr, Phi_mid, field_du, field_lr, field);
-        field_py = (field_lr[0] - 27 * field_lr[1] + 27 * field_lr[2] - field_lr[3]) / (24 * mhdGridDy);
-
-    } else {
-
-        PartialY<falseType>(k, offset3d, lane_id, shift_k, shift_lk, shift_dk, qtheta, qtheta_lr, Phi_mid, field_du,
-                            field_lr, field_py);
-    }
+    PartialY<falseType>(k, offset3d, lane_id, shift_k, shift_lk, shift_dk, qtheta, qtheta_lr, Phi_mid, field_du,
+                        field_lr, field_py);
 
     EparaES += compcoes[3] * field_py;
 
@@ -2050,17 +1911,8 @@ __global__ void MHDDiagEparallel(type* __restrict__ d_qtheta, type* __restrict__
 
         if constexpr (std::is_same_v<nonlinear, falseType>) {
 
-            if constexpr (std::is_same_v<staggered, trueType>) {
-
-                Collocated2S<falseType>(0, 0, i, j, k, offset2d, offset3d, lane_id, shift_k, shift_lk, shift_dk,
-                                        d_qtheta, qtheta, qtheta_lr, dNe_mid, field_du, field_lr, field);
-                field_py = (field_lr[0] - 27 * field_lr[1] + 27 * field_lr[2] - field_lr[3]) / (24 * mhdGridDy);
-
-            } else {
-
-                PartialY<falseType>(k, offset3d, lane_id, shift_k, shift_lk, shift_dk, qtheta, qtheta_lr, dNe_mid,
-                                    field_du, field_lr, field_py);
-            }
+            PartialY<falseType>(k, offset3d, lane_id, shift_k, shift_lk, shift_dk, qtheta, qtheta_lr, dNe_mid, field_du,
+                                field_lr, field_py);
 
             Epara += compcoes[4] * field_py;
         }
@@ -2093,19 +1945,11 @@ __global__ void MHDDiagEparallel(type* __restrict__ d_qtheta, type* __restrict__
         PartialY<falseType>(k, offset3d, lane_id, shift_k, shift_lk, shift_dk, qtheta, qtheta_lr, A_mid, field_du,
                             field_lr, A_py);
 
-        if constexpr (std::is_same_v<staggered, falseType>) {
-
-            Phi = Phi_mid[offset3d];
-            PartialZ<falseType>(k, offset3d, lane_id, Phi_mid, Phi, field_du, Phi_pz);
-            PartialX(0, i, k, offset3d, Phi_mid, Phi, field_lr, Phi_px);
-            PartialY<falseType>(k, offset3d, lane_id, shift_k, shift_lk, shift_dk, qtheta, qtheta_lr, Phi_mid, field_du,
-                                field_lr, Phi_py);
-
-        } else {
-
-            C2SPartialXYZ<falseType>(i, j, k, offset2d, offset3d, lane_id, shift_k, shift_lk, shift_dk, d_qtheta,
-                                     qtheta, qtheta_lr, Phi_mid, field_du, field_lr, Phi, Phi_px, Phi_py, Phi_pz);
-        }
+        Phi = Phi_mid[offset3d];
+        PartialZ<falseType>(k, offset3d, lane_id, Phi_mid, Phi, field_du, Phi_pz);
+        PartialX(0, i, k, offset3d, Phi_mid, Phi, field_lr, Phi_px);
+        PartialY<falseType>(k, offset3d, lane_id, shift_k, shift_lk, shift_dk, qtheta, qtheta_lr, Phi_mid, field_du,
+                            field_lr, Phi_py);
 
         /*-------------------------PhiA in Parallel Vector Potential--------------------------*/
 
@@ -2122,28 +1966,13 @@ __global__ void MHDDiagEparallel(type* __restrict__ d_qtheta, type* __restrict__
 
             compcoes[0] = d_APhidNe2A[offset2d * 5 + 4];
 
-            if constexpr (std::is_same_v<staggered, falseType>) {
+            field = dNe_mid[offset3d];
+            PartialZ<falseType>(k, offset3d, lane_id, dNe_mid, field, field_du, field_pz);
+            PartialX(0, i, k, offset3d, dNe_mid, field, field_lr, field_px);
+            PartialY<falseType>(k, offset3d, lane_id, shift_k, shift_lk, shift_dk, qtheta, qtheta_lr, dNe_mid, field_du,
+                                field_lr, field_py);
 
-                field = dNe_mid[offset3d];
-                PartialZ<falseType>(k, offset3d, lane_id, dNe_mid, field, field_du, field_pz);
-                PartialX(0, i, k, offset3d, dNe_mid, field, field_lr, field_px);
-                PartialY<falseType>(k, offset3d, lane_id, shift_k, shift_lk, shift_dk, qtheta, qtheta_lr, dNe_mid,
-                                    field_du, field_lr, field_py);
-
-                Ne = Ne0 + field;
-
-            } else {
-
-                C2SPartialXYZ<falseType>(i, j, k, offset2d, offset3d, lane_id, shift_k, shift_lk, shift_dk, d_qtheta,
-                                         qtheta, qtheta_lr, dNe_mid, field_du, field_lr, field, field_px, field_py,
-                                         field_pz);
-
-                Collocated2S<falseType>(0, 0, i, j, k, offset2d, offset3d, lane_id, shift_k, shift_lk, shift_dk,
-                                        d_qtheta, qtheta, qtheta_lr, dTe_mid, field_du, field_lr, Te);
-
-                Ne = Ne0 + field;
-                Te = Te0 + Te;
-            }
+            Ne = Ne0 + field;
 
             Epara += compcoes[0] * (Te / Te0 * Ne0 / Ne) * field_py;
         }

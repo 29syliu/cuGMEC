@@ -220,8 +220,6 @@ int main(int argc, char* argv[]) {
     REF(wPhi_w); REF(AdJpB_w); REF(PhiA_A); REF(NeA_A);
     REF(dNePhi_dNe); REF(PhiTe_dTe); REF(PhiTeA_dTe);
 
-    REF(pic_APhidNe2A); REF(pic_PhiA_A); REF(pic_NeA_A);
-
     REF(pic1d); REF(pic2d); REF(pic3d);
     REF(globalA);  REF(globalPhi); REF(globalApt);
     REF(globalPa); REF(globalPi);  REF(globalPb);
@@ -354,19 +352,18 @@ int main(int argc, char* argv[]) {
                                          mhdReal** dTe_out = nullptr) {
         if constexpr (stage != 5) {
             forEachDev([&](int i) {
-                MHDLinearRK4<stage, ifNonlinearMHD, ifLocal, ifStaggered, ifEparallel>
-                    <<<MRK4GridSize, MRK4BlockSize, 0, 0>>>(
-                        qtheta[i], w_beg[i], w_in[i], w_out[i], w_end[i], A_beg[i], A_in[i], A_out[i], A_end[i],
-                        dNe_beg[i], dNe_in[i], dNe_out[i], dNe_end[i], dTe_beg[i], dTe_in[i], dTe_out[i], dTe_end[i],
-                        Phi_midl[i], dJpB_midl[i], dPe_midl[i], dPi_midl[i], dPa_midl[i], dPb_midl[i], wdPAdJpB2w[i],
-                        APhidNe2A[i], dPePhiAdJpB2dNe[i], PhidTedNe2dTe[i]);
+                MHDLinearRK4<stage, ifNonlinearMHD, ifLocal, ifEparallel><<<MRK4GridSize, MRK4BlockSize, 0, 0>>>(
+                    qtheta[i], w_beg[i], w_in[i], w_out[i], w_end[i], A_beg[i], A_in[i], A_out[i], A_end[i], dNe_beg[i],
+                    dNe_in[i], dNe_out[i], dNe_end[i], dTe_beg[i], dTe_in[i], dTe_out[i], dTe_end[i], Phi_midl[i],
+                    dJpB_midl[i], dPe_midl[i], dPi_midl[i], dPa_midl[i], dPb_midl[i], wdPAdJpB2w[i], APhidNe2A[i],
+                    dPePhiAdJpB2dNe[i], PhidTedNe2dTe[i]);
                 if constexpr (std::is_same_v<ifNonlinearMHD, trueType>) {
-                    MHDNonlinearRK4<stage, ifMaxwellStress, ifReynoldsStress, ifDiagZFDrive, ifLocal, ifStaggered,
-                                    ifEparallel><<<MRK4GridSize, MRK4BlockSize, 0, 0>>>(
-                        qtheta[i], w_in[i], w_out[i], w_end[i], A_in[i], A_out[i], A_end[i], dNe_in[i], dNe_out[i],
-                        dNe_end[i], dTe_in[i], dTe_out[i], dTe_end[i], Phi_midl[i], dJpB_midl[i], dPe_midl[i], Ne0[i],
-                        Te0[i], Ne0_px[i], Te0_px[i], APhidNe2A[i], wPhi_w[i], AdJpB_w[i], PhiA_A[i], NeA_A[i],
-                        dNePhi_dNe[i], PhiTe_dTe[i], PhiTeA_dTe[i], Maxwell[i], Reynolds[i]);
+                    MHDNonlinearRK4<stage, ifMaxwellStress, ifReynoldsStress, ifDiagZFDrive, ifLocal, ifEparallel>
+                        <<<MRK4GridSize, MRK4BlockSize, 0, 0>>>(
+                            qtheta[i], w_in[i], w_out[i], w_end[i], A_in[i], A_out[i], A_end[i], dNe_in[i], dNe_out[i],
+                            dNe_end[i], dTe_in[i], dTe_out[i], dTe_end[i], Phi_midl[i], dJpB_midl[i], dPe_midl[i],
+                            Ne0[i], Te0[i], Ne0_px[i], Te0_px[i], APhidNe2A[i], wPhi_w[i], AdJpB_w[i], PhiA_A[i],
+                            NeA_A[i], dNePhi_dNe[i], PhiTe_dTe[i], PhiTeA_dTe[i], Maxwell[i], Reynolds[i]);
                 }
                 for (int j = 0; j < devNy; j++) {
                     cudssMatrixSetValues(laplacianBs[i][j], w_out[i] + (j + gridGhost) * gridNxz);
@@ -553,13 +550,6 @@ int main(int argc, char* argv[]) {
 
     auto mhdToPICMode = [&]<typename... Guards>(int mode) {
         if constexpr (allTrue<Guards...>) {
-            auto& A_shifted = [&]() -> mhdReal**& {
-                if constexpr (std::is_same_v<ifStaggered, trueType>)
-                    return A_midr;
-                else
-                    return A_midl;
-            }();
-
             auto filterModeN = [&](mhdReal** src, mhdReal** dst, int leftMode, int rightMode) {
                 forEachDev([&](int i) {
                     if constexpr (std::is_same_v<mhdReal, double>) {
@@ -576,27 +566,24 @@ int main(int argc, char* argv[]) {
             };
 
             forEachDev([&](int i) {
-                MHD2Apt<ifNonlinearMHD, ifLocal, ifStaggered, ifEparallel><<<MRK4GridSize, MRK4BlockSize, 0, 0>>>(
+                MHD2Apt<ifNonlinearMHD, ifLocal, ifEparallel><<<MRK4GridSize, MRK4BlockSize, 0, 0>>>(
                     qtheta[i], A_midl[i], dNe_midl[i], dTe_midl[i], Phi_midl[i], Ne0[i], Te0[i], Ne0_px[i],
-                    pic_APhidNe2A[i], pic_PhiA_A[i], pic_NeA_A[i], Apt_midl[i]);
-
-                if constexpr (std::is_same_v<ifStaggered, trueType>)
-                    MHDStaggered2C<ifLocal><<<MRK4GridSize, MRK4BlockSize, 0, 0>>>(qtheta[i], A_midl[i], A_midr[i]);
+                    APhidNe2A[i], PhiA_A[i], NeA_A[i], Apt_midl[i]);
             });
 
             filterModeN(Phi_midl, w_midr, mode, mode);
-            filterModeN(A_shifted, A_midr, mode, mode);
+            filterModeN(A_midl, dJpB_midr, mode, mode);
             filterModeN(Apt_midl, dPe_midr, mode, mode);
 
             forEachDev([&](int i) {
                 MHDShifted2A<0, ifLocal><<<MRK4GridSize, MRK4BlockSize, 0, 0>>>(
-                    qtheta[i], A_midr[i], dJpB_midr[i], w_midr[i], Phi_midr[i], dPe_midr[i], Apt_midr[i]);
+                    qtheta[i], dJpB_midr[i], A_midr[i], w_midr[i], Phi_midr[i], dPe_midr[i], Apt_midr[i]);
             });
 
             ncclGroupStart();
             for (int i = 0; i < devNums; i++) {
                 cudaSetDevice(localRank * devNums + i);
-                ncclAllGather(dJpB_midr[i] + gridGhost * gridNxz, globalA[i] + gridGhost * gridNxz, devNy * gridNxz,
+                ncclAllGather(A_midr[i] + gridGhost * gridNxz, globalA[i] + gridGhost * gridNxz, devNy * gridNxz,
                               ncclType, comms[i], 0);
                 ncclAllGather(Phi_midr[i] + gridGhost * gridNxz, globalPhi[i] + gridGhost * gridNxz, devNy * gridNxz,
                               ncclType, comms[i], 0);
@@ -644,7 +631,7 @@ int main(int argc, char* argv[]) {
 
         if constexpr (std::is_same_v<ifDiagEparallel, trueType>) {
             forEachDev([&](int i) {
-                MHDDiagEparallel<ifNonlinearMHD, ifStaggered, ifEparallel><<<8, gridNx / 8, 0, 0>>>(
+                MHDDiagEparallel<ifNonlinearMHD, ifEparallel><<<8, gridNx / 8, 0, 0>>>(
                     qtheta[i], A_midl[i], dNe_midl[i], dTe_midl[i], Phi_midl[i], Ne0[i], Te0[i], Ne0_px[i],
                     APhidNe2A[i], PhiA_A[i], NeA_A[i], Epara[i] + diagIdx / diagSteps * gridNx,
                     EparaES[i] + diagIdx / diagSteps * gridNx);
@@ -827,33 +814,18 @@ int main(int argc, char* argv[]) {
 
     auto mhdToPIC = [&]<typename... Guards>() {
         if constexpr (allTrue<Guards...>) {
-            auto& A_shifted = [&]() -> mhdReal**& {
-                if constexpr (std::is_same_v<ifStaggered, trueType>)
-                    return A_midr;
-                else
-                    return A_midl;
-            }();
-            auto& A_aligned = [&]() -> mhdReal**& {
-                if constexpr (std::is_same_v<ifStaggered, trueType>)
-                    return dJpB_midr;
-                else
-                    return dJpB_midr;
-            }();
-
             forEachDev([&](int i) {
-                MHD2Apt<ifNonlinearMHD, ifLocal, ifStaggered, ifEparallel><<<MRK4GridSize, MRK4BlockSize, 0, 0>>>(
+                MHD2Apt<ifNonlinearMHD, ifLocal, ifEparallel><<<MRK4GridSize, MRK4BlockSize, 0, 0>>>(
                     qtheta[i], A_midl[i], dNe_midl[i], dTe_midl[i], Phi_midl[i], Ne0[i], Te0[i], Ne0_px[i],
-                    pic_APhidNe2A[i], pic_PhiA_A[i], pic_NeA_A[i], Apt_midl[i]);
-                if constexpr (std::is_same_v<ifStaggered, trueType>)
-                    MHDStaggered2C<ifLocal><<<MRK4GridSize, MRK4BlockSize, 0, 0>>>(qtheta[i], A_midl[i], A_midr[i]);
+                    APhidNe2A[i], PhiA_A[i], NeA_A[i], Apt_midl[i]);
                 MHDShifted2A<0, ifLocal><<<MRK4GridSize, MRK4BlockSize, 0, 0>>>(
-                    qtheta[i], A_shifted[i], A_aligned[i], Phi_midl[i], Phi_midr[i], Apt_midl[i], Apt_midr[i]);
+                    qtheta[i], A_midl[i], A_midr[i], Phi_midl[i], Phi_midr[i], Apt_midl[i], Apt_midr[i]);
             });
 
             ncclGroupStart();
             for (int i = 0; i < devNums; i++) {
                 cudaSetDevice(localRank * devNums + i);
-                ncclAllGather(A_aligned[i] + gridGhost * gridNxz, globalA[i] + gridGhost * gridNxz, devNy * gridNxz,
+                ncclAllGather(A_midr[i] + gridGhost * gridNxz, globalA[i] + gridGhost * gridNxz, devNy * gridNxz,
                               ncclType, comms[i], 0);
                 ncclAllGather(Phi_midr[i] + gridGhost * gridNxz, globalPhi[i] + gridGhost * gridNxz, devNy * gridNxz,
                               ncclType, comms[i], 0);

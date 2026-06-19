@@ -1013,10 +1013,6 @@ for i=1:N_rho
     thetap_withghost(i,:) = -pi+(-(ghost-0.5):1:N_theta+(ghost-0.5))/N_theta*2*pi;
 end
 
-if ifStaggered == 1
-    thetap_withghost = thetap_withghost-0.5*2*pi/N_theta;
-end
-
 qtheta = q_withghost.*thetap_withghost;
 
 vars = ["rho","theta","phi"];
