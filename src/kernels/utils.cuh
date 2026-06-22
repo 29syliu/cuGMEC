@@ -440,7 +440,7 @@ __device__ void FieldGather1d2d(int& address, type* coes, type* pic1d2d, type& f
 }
 
 template <typename type>
-__device__ void FieldGather3d(int& i, int& j, int& k, int& offset, type* coes, type* pic3d, type* fields) {
+__device__ void FieldGather3d(int& address, type* coes, type* pic3d, type* fields) {
 
     const int gridPointCount = gridNyPlusGhost * gridNx * gridNzPlusGhost;
     const int xStride = gridNzPlusGhost;
@@ -449,12 +449,10 @@ __device__ void FieldGather3d(int& i, int& j, int& k, int& offset, type* coes, t
     const int fieldGroup1Base = 1 * gridPointCount;
     const int fieldGroup2Base = 2 * gridPointCount;
     const int fieldGroup3Base = 3 * gridPointCount;
-    const int cornerX0Y0Z0Id = j * yStride + i * xStride + k;
+    const int cornerX0Y0Z0Id = address;
     const int cornerX1Y0Z0Id = cornerX0Y0Z0Id + xStride;
     const int cornerX0Y1Z0Id = cornerX0Y0Z0Id + yStride;
     const int cornerX1Y1Z0Id = cornerX0Y1Z0Id + xStride;
-
-    offset = (cornerX1Y1Z0Id + 1) * 8;
 
     if constexpr (std::is_same_v<type, float>) {
         const float4* pic3dFloat4 = reinterpret_cast<const float4*>(pic3d);

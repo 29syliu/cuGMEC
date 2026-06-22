@@ -1450,7 +1450,7 @@ __global__ void MHD2Apt(type* __restrict__ d_qtheta, type* __restrict__ A_mid, t
     d_A_pt[offset3d] = dAdt;
 }
 
-template <typename local, typename mhdReal, typename picReal>
+template <typename mhdReal, typename picReal>
 __global__ void MHD2PIC(picReal* __restrict__ pic3d, mhdReal* __restrict__ globalA, mhdReal* __restrict__ globalPhi,
                         mhdReal* __restrict__ globalApt) {
 
@@ -1468,6 +1468,7 @@ __global__ void MHD2PIC(picReal* __restrict__ pic3d, mhdReal* __restrict__ globa
     mhdReal phi_px, phi_py, phi_pz;
     mhdReal field_du[4];
     int gridPointId;
+    int unusedLaneId = 0;
     const int gridPointCount = gridNyPlusGhost * gridNx * gridNzPlusGhost;
     const int fieldGroup0Base = 0 * gridPointCount;
     const int fieldGroup1Base = 1 * gridPointCount;
@@ -1493,7 +1494,7 @@ __global__ void MHD2PIC(picReal* __restrict__ pic3d, mhdReal* __restrict__ globa
 
     field = globalA[offset3d];
 
-    PartialZ<local>(k, offset3d, offset3d, globalA, field, field_du, field_pz);
+    PartialZ<falseType>(k, offset3d, unusedLaneId, globalA, field, field_du, field_pz);
     PartialX(0, i, k, offset3d, globalA, field, field_du, field_px);
 
     field_du[0] = globalA[offset3d - 2 * gridNxz];
@@ -1525,7 +1526,7 @@ __global__ void MHD2PIC(picReal* __restrict__ pic3d, mhdReal* __restrict__ globa
 
     field = globalPhi[offset3d];
 
-    PartialZ<local>(k, offset3d, offset3d, globalPhi, field, field_du, field_pz);
+    PartialZ<falseType>(k, offset3d, unusedLaneId, globalPhi, field, field_du, field_pz);
     PartialX(0, i, k, offset3d, globalPhi, field, field_du, field_px);
 
     field_du[0] = globalPhi[offset3d - 2 * gridNxz];
@@ -1565,7 +1566,7 @@ __global__ void MHD2PIC(picReal* __restrict__ pic3d, mhdReal* __restrict__ globa
 
         field = globalA[offset3d];
 
-        PartialZ<local>(k, offset3d, offset3d, globalA, field, field_du, field_pz);
+        PartialZ<falseType>(k, offset3d, unusedLaneId, globalA, field, field_du, field_pz);
         PartialX(0, i, k, offset3d, globalA, field, field_du, field_px);
 
         if (j == 0) {
@@ -1614,7 +1615,7 @@ __global__ void MHD2PIC(picReal* __restrict__ pic3d, mhdReal* __restrict__ globa
 
         field = globalPhi[offset3d];
 
-        PartialZ<local>(k, offset3d, offset3d, globalPhi, field, field_du, field_pz);
+        PartialZ<falseType>(k, offset3d, unusedLaneId, globalPhi, field, field_du, field_pz);
         PartialX(0, i, k, offset3d, globalPhi, field, field_du, field_px);
 
         if (j == 0) {
@@ -1670,7 +1671,7 @@ __global__ void MHD2PIC(picReal* __restrict__ pic3d, mhdReal* __restrict__ globa
 
         field = globalA[offset3d];
 
-        PartialZ<local>(k, offset3d, offset3d, globalA, field, field_du, field_pz);
+        PartialZ<falseType>(k, offset3d, unusedLaneId, globalA, field, field_du, field_pz);
         PartialX(0, i, k, offset3d, globalA, field, field_du, field_px);
 
         if (j == gridNy - 1) {
@@ -1719,7 +1720,7 @@ __global__ void MHD2PIC(picReal* __restrict__ pic3d, mhdReal* __restrict__ globa
 
         field = globalPhi[offset3d];
 
-        PartialZ<local>(k, offset3d, offset3d, globalPhi, field, field_du, field_pz);
+        PartialZ<falseType>(k, offset3d, unusedLaneId, globalPhi, field, field_du, field_pz);
         PartialX(0, i, k, offset3d, globalPhi, field, field_du, field_px);
 
         if (j == gridNy - 1) {

@@ -274,27 +274,27 @@ class HybridModel {
 
 	double** gconxx; double** gconxx_px; double** gconxx_py;
 	double** gconxy; double** gconxy_px; double** gconxy_py;
-	double** gconxz; double** gconxz_px; double** gconxz_py;
 	double** gconyy; double** gconyy_px; double** gconyy_py;
+	double** gconxz; double** gconxz_px; double** gconxz_py;
 	double** gconyz; double** gconyz_px; double** gconyz_py;
 	double** gconzz; double** gconzz_px; double** gconzz_py;
 	double** gcovxx; double** gcovxx_px; double** gcovxx_py;
 	double** gcovxy; double** gcovxy_px; double** gcovxy_py;
-	double** gcovxz; double** gcovxz_px; double** gcovxz_py;
 	double** gcovyy; double** gcovyy_px; double** gcovyy_py;
+	double** gcovxz; double** gcovxz_px; double** gcovxz_py;
 	double** gcovyz; double** gcovyz_px; double** gcovyz_py;
 	double** gcovzz; double** gcovzz_px; double** gcovzz_py;
 
 	double** SFAconxx; double** SFAconxx_px; double** SFAconxx_py;
 	double** SFAconxy; double** SFAconxy_px; double** SFAconxy_py;
-	double** SFAconxz; double** SFAconxz_px; double** SFAconxz_py;
 	double** SFAconyy; double** SFAconyy_px; double** SFAconyy_py;
+	double** SFAconxz; double** SFAconxz_px; double** SFAconxz_py;
 	double** SFAconyz; double** SFAconyz_px; double** SFAconyz_py;
 	double** SFAconzz; double** SFAconzz_px; double** SFAconzz_py;
 	double** SFAcovxx; double** SFAcovxx_px; double** SFAcovxx_py;
 	double** SFAcovxy; double** SFAcovxy_px; double** SFAcovxy_py;
-	double** SFAcovxz; double** SFAcovxz_px; double** SFAcovxz_py;
 	double** SFAcovyy; double** SFAcovyy_px; double** SFAcovyy_py;
+	double** SFAcovxz; double** SFAcovxz_px; double** SFAcovxz_py;
 	double** SFAcovyz; double** SFAcovyz_px; double** SFAcovyz_py;
 	double** SFAcovzz; double** SFAcovzz_px; double** SFAcovzz_py;
 
@@ -349,7 +349,7 @@ class HybridModel {
 	mhdReal** h_dNe_dTe; mhdReal** h_dNe_px_dTe; mhdReal** h_dNe_py_dTe; mhdReal** h_dNe_pz_dTe;
 
 	mhdReal** h_Ne0; mhdReal** h_Te0;
-	mhdReal** h_Ne0_px; mhdReal** h_Te0_px; mhdReal** h_Pe0_px;
+	mhdReal** h_Ne0_px; mhdReal** h_Te0_px;
 
 	mhdReal*** h_F2perp2;
 	mhdReal*** h_A2dJpB;
@@ -1042,7 +1042,7 @@ class HybridModel {
 
         HostAllocator.allocateHostArrays(gridNy, gridNx, h_Phi_dTe, h_Phi_px_dTe, h_Phi_py_dTe, h_Phi_pz_dTe, h_dTe_dTe,
                                          h_dTe_px_dTe, h_dTe_py_dTe, h_dTe_pz_dTe, h_dNe_dTe, h_dNe_px_dTe,
-                                         h_dNe_py_dTe, h_dNe_pz_dTe, h_Ne0, h_Te0, h_Ne0_px, h_Te0_px, h_Pe0_px);
+                                         h_dNe_py_dTe, h_dNe_pz_dTe, h_Ne0, h_Te0, h_Ne0_px, h_Te0_px);
 
         HostAllocator.allocateHostArrays(gridNy, gridNx, 5, h_F2perp2);
         HostAllocator.allocateHostArrays(gridNy, gridNx, 6, h_A2dJpB);
@@ -1221,7 +1221,7 @@ class HybridModel {
 
         HostAllocator.releaseHostArrays(h_Phi_dTe, h_Phi_px_dTe, h_Phi_py_dTe, h_Phi_pz_dTe, h_dTe_dTe, h_dTe_px_dTe,
                                         h_dTe_py_dTe, h_dTe_pz_dTe, h_dNe_dTe, h_dNe_px_dTe, h_dNe_py_dTe, h_dNe_pz_dTe,
-                                        h_Ne0, h_Te0, h_Ne0_px, h_Te0_px, h_Pe0_px);
+                                        h_Ne0, h_Te0, h_Ne0_px, h_Te0_px);
 
         HostAllocator.releaseHostArrays(h_F2perp2);
         HostAllocator.releaseHostArrays(h_A2dJpB);
@@ -2530,11 +2530,12 @@ class HybridModel {
         };
 
         auto loadPICStraight = [&](int index, int offset, int i, int j, double**& field) {
-            j = (j - gridGhost + gridNy) % gridNy;
-            h_pic2d[index][offset + 0] = field[i][j];
-            h_pic2d[index][offset + 1] = field[i + 1][j];
-            h_pic2d[index][offset + 2] = field[i][j + 1];
-            h_pic2d[index][offset + 3] = field[i + 1][j + 1];
+            int j0 = (j + 0 - gridGhost + gridNy) % gridNy;
+            int j1 = (j + 1 - gridGhost + gridNy) % gridNy;
+            h_pic2d[index][offset + 0] = field[i][j0];
+            h_pic2d[index][offset + 1] = field[i + 1][j0];
+            h_pic2d[index][offset + 2] = field[i][j1];
+            h_pic2d[index][offset + 3] = field[i + 1][j1];
         };
 
         auto loadPICAligned = [&](int index, int offset, int i, int j, double**& field) {
@@ -2973,7 +2974,6 @@ class HybridModel {
                 h_Te0[j][i] = Te[i][j];
                 h_Ne0_px[j][i] = Ne_px[i][j];
                 h_Te0_px[j][i] = Te_px[i][j];
-                h_Pe0_px[j][i] = Pe_px[i][j];
             }
         }
 

@@ -595,7 +595,7 @@ int main(int argc, char* argv[]) {
             forEachDev([&](int i) {
                 MHDAlignedGhost<ifLocal>
                     <<<GhostGridSize, GhostBlockSize, 0, 0>>>(qtheta[i], globalA[i], globalPhi[i], globalApt[i]);
-                MHD2PIC<ifLocal, mhdReal, picReal>
+                MHD2PIC<mhdReal, picReal>
                     <<<M2PGridSize, M2PBlockSize, 0, 0>>>(pic3d[i], globalA[i], globalPhi[i], globalApt[i]);
             });
         }
@@ -837,7 +837,7 @@ int main(int argc, char* argv[]) {
             forEachDev([&](int i) {
                 MHDAlignedGhost<ifLocal>
                     <<<GhostGridSize, GhostBlockSize, 0, 0>>>(qtheta[i], globalA[i], globalPhi[i], globalApt[i]);
-                MHD2PIC<ifLocal, mhdReal, picReal>
+                MHD2PIC<mhdReal, picReal>
                     <<<M2PGridSize, M2PBlockSize, 0, 0>>>(pic3d[i], globalA[i], globalPhi[i], globalApt[i]);
             });
         }

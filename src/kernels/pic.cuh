@@ -206,7 +206,6 @@ __global__ void DriftAlignedRK4(picReal* __restrict__ pic1d, picReal* __restrict
     for (int id = 0; id < pptNums; id++) {
 
         picId = blockIdx.x * blockDim.x * pptNums + id * blockDim.x + threadIdx.x;
-        cellId = pic_keys_in[picId];
         vec0[0] = pic_values_in[picId + 0 * picDev];
         vec0[1] = pic_values_in[picId + 1 * picDev];
         vec0[2] = pic_values_in[picId + 2 * picDev];
@@ -240,7 +239,7 @@ __global__ void DriftAlignedRK4(picReal* __restrict__ pic1d, picReal* __restrict
 
         qId = i * qStride;
         tileId = (j * cellNx + i) * tileStride;
-        cellId *= cellStride;
+        cellId = j * gridNx * gridNzPlusGhost + i * gridNzPlusGhost + k;
         illegal = 0;
 
         auto dfdt_XVpara = [&]() {
@@ -330,7 +329,7 @@ __global__ void DriftAlignedRK4(picReal* __restrict__ pic1d, picReal* __restrict
             for (int index = 0; index < 8; index++)
                 APhiApt[index] = 0;
 
-            FieldGather3d(i, j, k, cellId, coes, pic3d, APhiApt);
+            FieldGather3d(cellId, coes, pic3d, APhiApt);
 
             m2e = cm * partMass / partChar;
             mu2e = cm * mu / partChar;
@@ -472,8 +471,9 @@ __global__ void DriftAlignedRK4(picReal* __restrict__ pic1d, picReal* __restrict
 
             dy = lj - j;
             dz = lk - k;
+            qId = i * qStride;
             tileId = (j * cellNx + i) * tileStride;
-            cellId = (j * cellNxz + i * cellNz + k) * cellStride;
+            cellId = j * gridNx * gridNzPlusGhost + i * gridNzPlusGhost + k;
         };
 
         /*--------------------------------------1st RK4---------------------------------------*/
@@ -670,7 +670,6 @@ __global__ void GyroAlignedRK4(picReal* __restrict__ pic1d, picReal* __restrict_
     for (int id = 0; id < pptNums; id++) {
 
         picId = blockIdx.x * blockDim.x * pptNums + id * blockDim.x + threadIdx.x;
-        cellId = pic_keys_in[picId];
         vec0[0] = pic_values_in[picId + 0 * picDev];
         vec0[1] = pic_values_in[picId + 1 * picDev];
         vec0[2] = pic_values_in[picId + 2 * picDev];
@@ -704,7 +703,7 @@ __global__ void GyroAlignedRK4(picReal* __restrict__ pic1d, picReal* __restrict_
 
         qId = i * qStride;
         tileId = (j * cellNx + i) * tileStride;
-        cellId *= cellStride;
+        cellId = j * gridNx * gridNzPlusGhost + i * gridNzPlusGhost + k;
         illegal = 0;
 
         auto dfdt_XVpara = [&]() {
@@ -941,8 +940,7 @@ __global__ void GyroAlignedRK4(picReal* __restrict__ pic1d, picReal* __restrict_
 
                 dy = lj - j;
                 dz = lk - k;
-                tileId = (j * cellNx + i) * tileStride;
-                cellId = (j * cellNxz + i * cellNz + k) * cellStride;
+                cellId = j * gridNx * gridNzPlusGhost + i * gridNzPlusGhost + k;
 
                 for (int index = 0; index < 2; index++)
                     coes[index + 2] = coes[index];
@@ -959,7 +957,7 @@ __global__ void GyroAlignedRK4(picReal* __restrict__ pic1d, picReal* __restrict_
                 for (int index = 0; index < 8; index++)
                     APhiApt[index] = 0;
 
-                FieldGather3d(i, j, k, cellId, coes, pic3d, APhiApt);
+                FieldGather3d(cellId, coes, pic3d, APhiApt);
 
                 avecxdxA += cx * APhiApt[0] + dxy * APhiApt[2] - dxz * APhiApt[3];
                 avecydyA += cy * APhiApt[0] + dyz * APhiApt[3] - dxy * APhiApt[1];
@@ -1079,8 +1077,9 @@ __global__ void GyroAlignedRK4(picReal* __restrict__ pic1d, picReal* __restrict_
 
             dy = lj - j;
             dz = lk - k;
+            qId = i * qStride;
             tileId = (j * cellNx + i) * tileStride;
-            cellId = (j * cellNxz + i * cellNz + k) * cellStride;
+            cellId = j * gridNx * gridNzPlusGhost + i * gridNzPlusGhost + k;
         };
 
         /*--------------------------------------1st RK4---------------------------------------*/
@@ -1631,7 +1630,7 @@ __global__ void PICDiagPhasePower(picReal* __restrict__ pic1d, picReal* __restri
                                   mhdReal* __restrict__ phasePower) {
 
     int i, j, k, ie, ip, il;
-    int qId, tileId, picId, cellId;
+    int qId, tileId, cellId, picId;
 
     picReal x, y, z, vp, pw, mu;
     picReal li, lj, lk, dx, dy, dz;
@@ -1692,7 +1691,6 @@ __global__ void PICDiagPhasePower(picReal* __restrict__ pic1d, picReal* __restri
     for (int id = 0; id < pptNums; id++) {
 
         picId = blockIdx.x * blockDim.x * pptNums + id * blockDim.x + threadIdx.x;
-        cellId = pic_keys_in[picId];
         x = pic_values_in[picId + 0 * picDev];
         y = pic_values_in[picId + 1 * picDev];
         z = pic_values_in[picId + 2 * picDev];
@@ -1780,7 +1778,7 @@ __global__ void PICDiagPhasePower(picReal* __restrict__ pic1d, picReal* __restri
 
         qId = i * qStride;
         tileId = (j * cellNx + i) * tileStride;
-        cellId *= cellStride;
+        cellId = j * gridNx * gridNzPlusGhost + i * gridNzPlusGhost + k;
 
         for (int index = 0; index < 2; index++)
             coes[index] = (hx[index] + sx[index] * dx);
@@ -1844,7 +1842,7 @@ __global__ void PICDiagPhasePower(picReal* __restrict__ pic1d, picReal* __restri
             for (int index = 0; index < 8; index++)
                 APhiApt[index] = 0;
 
-            FieldGather3d(i, j, k, cellId, coes, pic3d, APhiApt);
+            FieldGather3d(cellId, coes, pic3d, APhiApt);
 
             avecxdxA = cx * APhiApt[0] + dxy * APhiApt[2] - dxz * APhiApt[3];
             avecydyA = cy * APhiApt[0] + dyz * APhiApt[3] - dxy * APhiApt[1];
@@ -1964,8 +1962,7 @@ __global__ void PICDiagPhasePower(picReal* __restrict__ pic1d, picReal* __restri
 
                 dy = lj - j;
                 dz = lk - k;
-                tileId = (j * cellNx + i) * tileStride;
-                cellId = (j * cellNxz + i * cellNz + k) * cellStride;
+                cellId = j * gridNx * gridNzPlusGhost + i * gridNzPlusGhost + k;
 
                 for (int index = 0; index < 2; index++)
                     coes[index + 2] = coes[index];
@@ -1982,7 +1979,7 @@ __global__ void PICDiagPhasePower(picReal* __restrict__ pic1d, picReal* __restri
                 for (int index = 0; index < 8; index++)
                     APhiApt[index] = 0;
 
-                FieldGather3d(i, j, k, cellId, coes, pic3d, APhiApt);
+                FieldGather3d(cellId, coes, pic3d, APhiApt);
 
                 avecxdxA += cx * APhiApt[0] + dxy * APhiApt[2] - dxz * APhiApt[3];
                 avecydyA += cy * APhiApt[0] + dyz * APhiApt[3] - dxy * APhiApt[1];
@@ -2064,7 +2061,7 @@ __global__ void PICDiagPitchPower(picReal* __restrict__ pic1d, picReal* __restri
                                   mhdReal* __restrict__ pitchPower) {
 
     int i, j, k, iv, ip;
-    int qId, tileId, picId, cellId;
+    int qId, tileId, cellId, picId;
 
     picReal x, y, z, vp, pw, mu;
     picReal li, lj, lk, dx, dy, dz;
@@ -2111,7 +2108,6 @@ __global__ void PICDiagPitchPower(picReal* __restrict__ pic1d, picReal* __restri
     for (int id = 0; id < pptNums; id++) {
 
         picId = blockIdx.x * blockDim.x * pptNums + id * blockDim.x + threadIdx.x;
-        cellId = pic_keys_in[picId];
         x = pic_values_in[picId + 0 * picDev];
         y = pic_values_in[picId + 1 * picDev];
         z = pic_values_in[picId + 2 * picDev];
@@ -2183,7 +2179,7 @@ __global__ void PICDiagPitchPower(picReal* __restrict__ pic1d, picReal* __restri
 
         qId = i * qStride;
         tileId = (j * cellNx + i) * tileStride;
-        cellId *= cellStride;
+        cellId = j * gridNx * gridNzPlusGhost + i * gridNzPlusGhost + k;
 
         for (int index = 0; index < 2; index++)
             coes[index] = (hx[index] + sx[index] * dx);
@@ -2247,7 +2243,7 @@ __global__ void PICDiagPitchPower(picReal* __restrict__ pic1d, picReal* __restri
             for (int index = 0; index < 8; index++)
                 APhiApt[index] = 0;
 
-            FieldGather3d(i, j, k, cellId, coes, pic3d, APhiApt);
+            FieldGather3d(cellId, coes, pic3d, APhiApt);
 
             avecxdxA = cx * APhiApt[0] + dxy * APhiApt[2] - dxz * APhiApt[3];
             avecydyA = cy * APhiApt[0] + dyz * APhiApt[3] - dxy * APhiApt[1];
@@ -2367,8 +2363,7 @@ __global__ void PICDiagPitchPower(picReal* __restrict__ pic1d, picReal* __restri
 
                 dy = lj - j;
                 dz = lk - k;
-                tileId = (j * cellNx + i) * tileStride;
-                cellId = (j * cellNxz + i * cellNz + k) * cellStride;
+                cellId = j * gridNx * gridNzPlusGhost + i * gridNzPlusGhost + k;
 
                 for (int index = 0; index < 2; index++)
                     coes[index + 2] = coes[index];
@@ -2385,7 +2380,7 @@ __global__ void PICDiagPitchPower(picReal* __restrict__ pic1d, picReal* __restri
                 for (int index = 0; index < 8; index++)
                     APhiApt[index] = 0;
 
-                FieldGather3d(i, j, k, cellId, coes, pic3d, APhiApt);
+                FieldGather3d(cellId, coes, pic3d, APhiApt);
 
                 avecxdxA += cx * APhiApt[0] + dxy * APhiApt[2] - dxz * APhiApt[3];
                 avecydyA += cy * APhiApt[0] + dyz * APhiApt[3] - dxy * APhiApt[1];
@@ -2501,7 +2496,6 @@ __global__ void PICDiagDiffusivity(picReal* __restrict__ pic1d, picReal* __restr
     for (int id = 0; id < pptNums; id++) {
 
         picId = blockIdx.x * blockDim.x * pptNums + id * blockDim.x + threadIdx.x;
-        cellId = pic_keys_in[picId];
         vec0[0] = pic_values_in[picId + 0 * picDev];
         vec0[1] = pic_values_in[picId + 1 * picDev];
         vec0[2] = pic_values_in[picId + 2 * picDev];
@@ -2529,7 +2523,7 @@ __global__ void PICDiagDiffusivity(picReal* __restrict__ pic1d, picReal* __restr
 
         qId = i * qStride;
         tileId = (j * cellNx + i) * tileStride;
-        cellId *= cellStride;
+        cellId = j * gridNx * gridNzPlusGhost + i * gridNzPlusGhost + k;
 
         auto interpRK4 = [&]() {
             for (int index = 0; index < 2; index++)
@@ -2591,7 +2585,7 @@ __global__ void PICDiagDiffusivity(picReal* __restrict__ pic1d, picReal* __restr
                 for (int index = 0; index < 8; index++)
                     APhiApt[index] = 0;
 
-                FieldGather3d(i, j, k, cellId, coes, pic3d, APhiApt);
+                FieldGather3d(cellId, coes, pic3d, APhiApt);
 
                 avecxdxA = cx * APhiApt[0] + dxy * APhiApt[2] - dxz * APhiApt[3];
                 avecydyA = cy * APhiApt[0] + dyz * APhiApt[3] - dxy * APhiApt[1];
@@ -2715,8 +2709,7 @@ __global__ void PICDiagDiffusivity(picReal* __restrict__ pic1d, picReal* __restr
 
                 dy = lj - j;
                 dz = lk - k;
-                tileId = (j * cellNx + i) * tileStride;
-                cellId = (j * cellNxz + i * cellNz + k) * cellStride;
+                cellId = j * gridNx * gridNzPlusGhost + i * gridNzPlusGhost + k;
 
                 for (int index = 0; index < 2; index++)
                     coes[index + 2] = coes[index];
@@ -2733,7 +2726,7 @@ __global__ void PICDiagDiffusivity(picReal* __restrict__ pic1d, picReal* __restr
                 for (int index = 0; index < 8; index++)
                     APhiApt[index] = 0;
 
-                FieldGather3d(i, j, k, cellId, coes, pic3d, APhiApt);
+                FieldGather3d(cellId, coes, pic3d, APhiApt);
 
                 avecxdxA += cx * APhiApt[0] + dxy * APhiApt[2] - dxz * APhiApt[3];
                 avecydyA += cy * APhiApt[0] + dyz * APhiApt[3] - dxy * APhiApt[1];
