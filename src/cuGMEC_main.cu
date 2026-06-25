@@ -116,6 +116,7 @@ int main(int argc, char* argv[]) {
                   .gridNx = gridNx,
                   .gridNy = gridNy,
                   .gridNz = gridNz,
+                  .NFP = NFP,
                   .gridGhost = gridGhost,
                   .ppcNums = ppcNums,
                   .tubes = tubes},

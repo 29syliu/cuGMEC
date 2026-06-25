@@ -1,17 +1,21 @@
 %%
 %先得到所有平衡量在PEST坐标下的导数，再转换为Shifted Metric坐标下的导数，并进行归一化
 
+zero_ = @(f) zeros(size(f));
+
 transfer2xy_1d = @(f, df_drho, f0) {f/f0, Drho.*df_drho/f0};
-transfer2xy_3d = @(f, df_drho, df_dtheta, f0) {f/f0, df_drho.*Drho/f0, df_dtheta/f0};
+transfer2xy_3d = @(f, df_drho, df_dtheta, f0) {f/f0, df_drho.*Drho/f0, df_dtheta/f0, zero_(f)};
 transfer2xy_3d2 = @(f, df_drho, df_dtheta, df_drho2, df_drhodtheta, df_dtheta2, f0) ...
     {f/f0, ...
-    df_drho.*Drho/f0, df_dtheta/f0, ...
-    df_drho2.*Drho.^2/f0, Drho.*df_drhodtheta/f0, df_dtheta2/f0};
+    df_drho.*Drho/f0, df_dtheta/f0, zero_(f), ...
+    df_drho2.*Drho.^2/f0, Drho.*df_drhodtheta/f0, zero_(f), ...
+    df_dtheta2/f0, zero_(f), zero_(f)};
 
 output_ = @(f) reshape(f',[],1);
 
 metric_seq_ = @(g) {g{1,1}, g{1,2}, g{2,2}, g{1,3}, g{2,3}, g{3,3}};
-output_metric_ = @(g,dg_dx,dg_dy) reshape(mbind_col(metric_seq_,g,dg_dx,dg_dy),[],1);
+zero_metric_ = @(g) cellfun(@(x) zero_(x), g, 'UniformOutput', false);
+output_metric_ = @(g,dg_dx,dg_dy) reshape(mbind_col(metric_seq_,g,dg_dx,dg_dy,zero_metric_(g)),[],1);
 
 %% 1d
 

@@ -248,8 +248,8 @@ function [rhoArr, vparaArr, muArr, idArr, PphiErrorArr, nonemptyRatio, ranges] =
     Pphi1 = cm * species.Mass * species.Vmax * 2 * psitmax * drho .* rho .* SFAcovyz ./ ...
         (q .* J .* B) - species.Char .* psip;
 
-    minPphi = min(Pphi0(:));
-    maxPphi = max(Pphi1(:));
+    minPphi = min([Pphi0(:); Pphi1(:)]);
+    maxPphi = max([Pphi0(:); Pphi1(:)]);
 
     minLambda = 0.0;
     maxLambda = max(max(1 ./ B));

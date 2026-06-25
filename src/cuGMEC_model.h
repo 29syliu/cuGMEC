@@ -94,7 +94,7 @@ __global__ void PICReorderValues(int* __restrict__ sort_ids, picReal* __restrict
 struct HybridModelConfig {
     struct HyperDiffPair  { bool enable; double coef; };
 
-    struct Scale          { int devNums, hostNums, hostId, localId, gridNx, gridNy, gridNz, gridGhost, ppcNums, tubes; } scale;
+    struct Scale          { int devNums, hostNums, hostId, localId, gridNx, gridNy, gridNz, NFP, gridGhost, ppcNums, tubes; } scale;
     struct Normalization  { double B0, L0, VA0, RHO0, RHO1, PSITMAX, dt; } norm;
     struct HyperDiffusion { HyperDiffPair A, Phi, dNe, dTe, dP; } hyperDiff;
     struct SpeciesConfig  { bool enable; double mass, charge, beta, vmin, vmax, vb, deltaV, lambda0, deltaLambda2; } ion, alpha, beam;
@@ -116,7 +116,8 @@ class HybridModel {
 
           devNums{cfg.scale.devNums}, hostNums{cfg.scale.hostNums}, hostId{cfg.scale.hostId},
           localId{cfg.scale.localId}, gridNx{cfg.scale.gridNx}, gridNy{cfg.scale.gridNy}, gridNz{cfg.scale.gridNz},
-          gridGhost{cfg.scale.gridGhost}, ppcNums{cfg.scale.ppcNums}, tubes{cfg.scale.tubes},
+          equilNz{cfg.scale.NFP == 1 ? 1 : cfg.scale.gridNz}, NFP{cfg.scale.NFP}, gridGhost{cfg.scale.gridGhost},
+          ppcNums{cfg.scale.ppcNums}, tubes{cfg.scale.tubes},
 
           hostNy{gridNy / hostNums}, devNy{hostNy / devNums}, gridNxz{gridNx * gridNz}, gridNxPlusGhost{gridNx},
           gridNyPlusGhost{gridNy + 2 * gridGhost}, gridNzPlusGhost{gridNz + 2 * gridGhost}, cellNx{gridNxPlusGhost - 1},
@@ -193,7 +194,7 @@ class HybridModel {
 
 	const int devNums;
 	const int hostNums, hostId, localId;
-	const int gridNx, gridNy, gridNz;
+	const int gridNx, gridNy, gridNz, equilNz, NFP;
 	const int gridGhost, ppcNums, tubes;
 
 	const int hostNy, devNy, gridNxz;
@@ -248,59 +249,60 @@ class HybridModel {
 
 	/*---------------------------------------------------MHD Equilibrium on CPU---------------------------------------------------*/
 
-	double** q; double** q_px;
-	double** psip; double** psip_px;
+	double*** q; double*** q_px;
+	double*** psip; double*** psip_px;
 
-	double** Ni; double** Ni_px;
-	double** Ti; double** Ti_px;
-	double** Pi; double** Pi_px;
-	double** Ne; double** Ne_px;
-	double** Te; double** Te_px;
-	double** Pe; double** Pe_px;
-	double** Na; double** Na_px;
-	double** Ta; double** Ta_px;
-	double** Nb; double** Nb_px;
-	double** Tb; double** Tb_px;
+	double*** Ni; double*** Ni_px;
+	double*** Ti; double*** Ti_px;
+	double*** Pi; double*** Pi_px;
+	double*** Ne; double*** Ne_px;
+	double*** Te; double*** Te_px;
+	double*** Pe; double*** Pe_px;
+	double*** Na; double*** Na_px;
+	double*** Ta; double*** Ta_px;
+	double*** Nb; double*** Nb_px;
+	double*** Tb; double*** Tb_px;
 
-	double** B; double** B_px; double** B_py;
-	double** B_px2; double** B_pxy; double** B_py2;
+	double*** B; double*** B_px; double*** B_py; double*** B_pz;
+	double*** B_px2; double*** B_pxy; double*** B_pxz;
+	double*** B_py2; double*** B_pyz; double*** B_pz2;
 
-	double** J; double** J_px; double** J_py;
-	double** Bny; double** Bny_px; double** Bny_py;
-	double** Va; double** Va_px; double** Va_py;
-	double** Rho; double** Rho_px; double** Rho_py;
-	double** JpB; double** JpB_px; double** JpB_py;
-	double** R; double** Z;
+	double*** J; double*** J_px; double*** J_py; double*** J_pz;
+	double*** Bny; double*** Bny_px; double*** Bny_py; double*** Bny_pz;
+	double*** Va; double*** Va_px; double*** Va_py; double*** Va_pz;
+	double*** Rho; double*** Rho_px; double*** Rho_py; double*** Rho_pz;
+	double*** JpB; double*** JpB_px; double*** JpB_py; double*** JpB_pz;
+	double*** R; double*** Z;
 
-	double** gconxx; double** gconxx_px; double** gconxx_py;
-	double** gconxy; double** gconxy_px; double** gconxy_py;
-	double** gconyy; double** gconyy_px; double** gconyy_py;
-	double** gconxz; double** gconxz_px; double** gconxz_py;
-	double** gconyz; double** gconyz_px; double** gconyz_py;
-	double** gconzz; double** gconzz_px; double** gconzz_py;
-	double** gcovxx; double** gcovxx_px; double** gcovxx_py;
-	double** gcovxy; double** gcovxy_px; double** gcovxy_py;
-	double** gcovyy; double** gcovyy_px; double** gcovyy_py;
-	double** gcovxz; double** gcovxz_px; double** gcovxz_py;
-	double** gcovyz; double** gcovyz_px; double** gcovyz_py;
-	double** gcovzz; double** gcovzz_px; double** gcovzz_py;
+	double*** gconxx; double*** gconxx_px; double*** gconxx_py; double*** gconxx_pz;
+	double*** gconxy; double*** gconxy_px; double*** gconxy_py; double*** gconxy_pz;
+	double*** gconyy; double*** gconyy_px; double*** gconyy_py; double*** gconyy_pz;
+	double*** gconxz; double*** gconxz_px; double*** gconxz_py; double*** gconxz_pz;
+	double*** gconyz; double*** gconyz_px; double*** gconyz_py; double*** gconyz_pz;
+	double*** gconzz; double*** gconzz_px; double*** gconzz_py; double*** gconzz_pz;
+	double*** gcovxx; double*** gcovxx_px; double*** gcovxx_py; double*** gcovxx_pz;
+	double*** gcovxy; double*** gcovxy_px; double*** gcovxy_py; double*** gcovxy_pz;
+	double*** gcovyy; double*** gcovyy_px; double*** gcovyy_py; double*** gcovyy_pz;
+	double*** gcovxz; double*** gcovxz_px; double*** gcovxz_py; double*** gcovxz_pz;
+	double*** gcovyz; double*** gcovyz_px; double*** gcovyz_py; double*** gcovyz_pz;
+	double*** gcovzz; double*** gcovzz_px; double*** gcovzz_py; double*** gcovzz_pz;
 
-	double** SFAconxx; double** SFAconxx_px; double** SFAconxx_py;
-	double** SFAconxy; double** SFAconxy_px; double** SFAconxy_py;
-	double** SFAconyy; double** SFAconyy_px; double** SFAconyy_py;
-	double** SFAconxz; double** SFAconxz_px; double** SFAconxz_py;
-	double** SFAconyz; double** SFAconyz_px; double** SFAconyz_py;
-	double** SFAconzz; double** SFAconzz_px; double** SFAconzz_py;
-	double** SFAcovxx; double** SFAcovxx_px; double** SFAcovxx_py;
-	double** SFAcovxy; double** SFAcovxy_px; double** SFAcovxy_py;
-	double** SFAcovyy; double** SFAcovyy_px; double** SFAcovyy_py;
-	double** SFAcovxz; double** SFAcovxz_px; double** SFAcovxz_py;
-	double** SFAcovyz; double** SFAcovyz_px; double** SFAcovyz_py;
-	double** SFAcovzz; double** SFAcovzz_px; double** SFAcovzz_py;
+	double*** SFAconxx; double*** SFAconxx_px; double*** SFAconxx_py; double*** SFAconxx_pz;
+	double*** SFAconxy; double*** SFAconxy_px; double*** SFAconxy_py; double*** SFAconxy_pz;
+	double*** SFAconyy; double*** SFAconyy_px; double*** SFAconyy_py; double*** SFAconyy_pz;
+	double*** SFAconxz; double*** SFAconxz_px; double*** SFAconxz_py; double*** SFAconxz_pz;
+	double*** SFAconyz; double*** SFAconyz_px; double*** SFAconyz_py; double*** SFAconyz_pz;
+	double*** SFAconzz; double*** SFAconzz_px; double*** SFAconzz_py; double*** SFAconzz_pz;
+	double*** SFAcovxx; double*** SFAcovxx_px; double*** SFAcovxx_py; double*** SFAcovxx_pz;
+	double*** SFAcovxy; double*** SFAcovxy_px; double*** SFAcovxy_py; double*** SFAcovxy_pz;
+	double*** SFAcovyy; double*** SFAcovyy_px; double*** SFAcovyy_py; double*** SFAcovyy_pz;
+	double*** SFAcovxz; double*** SFAcovxz_px; double*** SFAcovxz_py; double*** SFAcovxz_pz;
+	double*** SFAcovyz; double*** SFAcovyz_px; double*** SFAcovyz_py; double*** SFAcovyz_pz;
+	double*** SFAcovzz; double*** SFAcovzz_px; double*** SFAcovzz_py; double*** SFAcovzz_pz;
 
 	/*--------------------------------------------------MHD Perturbation on CPU---------------------------------------------------*/
 
-	mhdReal** h_qtheta;
+	mhdReal*** h_qtheta;
 
 	mhdReal*** h_w;
 	mhdReal*** h_A;
@@ -314,42 +316,42 @@ class HybridModel {
 
 	/*-------------------------------------------Linear-------------------------------------------*/
 
-	mhdReal** h_A_w; mhdReal** h_A_px_w; mhdReal** h_A_py_w; mhdReal** h_A_pz_w;
-	mhdReal** h_dJpB_w; mhdReal** h_dJpB_px_w; mhdReal** h_dJpB_py_w; mhdReal** h_dJpB_pz_w;
-	mhdReal** h_dP_w; mhdReal** h_dP_px_w; mhdReal** h_dP_py_w; mhdReal** h_dP_pz_w;
-	mhdReal** h_w_py_w; mhdReal** h_w_pz_w; mhdReal** h_w_Phi;
+	mhdReal*** h_A_w; mhdReal*** h_A_px_w; mhdReal*** h_A_py_w; mhdReal*** h_A_pz_w;
+	mhdReal*** h_dJpB_w; mhdReal*** h_dJpB_px_w; mhdReal*** h_dJpB_py_w; mhdReal*** h_dJpB_pz_w;
+	mhdReal*** h_dP_w; mhdReal*** h_dP_px_w; mhdReal*** h_dP_py_w; mhdReal*** h_dP_pz_w;
+	mhdReal*** h_w_py_w; mhdReal*** h_w_pz_w; mhdReal*** h_w_Phi;
 
-	double** h_Phi_w;
-	double** h_Phi_px_w; double** h_Phi_pz_w;
-	double** h_Phi_px2_w;  double** h_Phi_pxz_w; double** h_Phi_pz2_w;
+	double*** h_Phi_w;
+	double*** h_Phi_px_w; double*** h_Phi_pz_w;
+	double*** h_Phi_px2_w;  double*** h_Phi_pxz_w; double*** h_Phi_pz2_w;
 
-	double** h_A_resistive;
-	double** h_A_px_resistive; double** h_A_pz_resistive;
-	double** h_A_px2_resistive; double** h_A_pxz_resistive; double** h_A_pz2_resistive;
+	double*** h_A_resistive;
+	double*** h_A_px_resistive; double*** h_A_pz_resistive;
+	double*** h_A_px2_resistive; double*** h_A_pxz_resistive; double*** h_A_pz2_resistive;
 
-	double** h_F_perp2;
-	double** h_F_px_perp2; double** h_F_pz_perp2;
-	double** h_F_px2_perp2; double** h_F_pxz_perp2; double** h_F_pz2_perp2;
+	double*** h_F_perp2;
+	double*** h_F_px_perp2; double*** h_F_pz_perp2;
+	double*** h_F_px2_perp2; double*** h_F_pxz_perp2; double*** h_F_pz2_perp2;
 
-	mhdReal** h_A_dJpB;
-	mhdReal** h_A_px_dJpB;  mhdReal** h_A_pz_dJpB;
-	mhdReal** h_A_px2_dJpB;  mhdReal** h_A_pxz_dJpB; mhdReal** h_A_pz2_dJpB;
+	mhdReal*** h_A_dJpB;
+	mhdReal*** h_A_px_dJpB;  mhdReal*** h_A_pz_dJpB;
+	mhdReal*** h_A_px2_dJpB;  mhdReal*** h_A_pxz_dJpB; mhdReal*** h_A_pz2_dJpB;
 
-	mhdReal** h_Phi_A; mhdReal** h_Phi_px_A; mhdReal** h_Phi_py_A; mhdReal** h_Phi_pz_A;
-	mhdReal** h_dNe_A; mhdReal** h_dNe_px_A; mhdReal** h_dNe_py_A; mhdReal** h_dNe_pz_A;
-	mhdReal** h_A_A; mhdReal** h_A_px_A; mhdReal** h_A_py_A; mhdReal** h_A_pz_A;
+	mhdReal*** h_Phi_A; mhdReal*** h_Phi_px_A; mhdReal*** h_Phi_py_A; mhdReal*** h_Phi_pz_A;
+	mhdReal*** h_dNe_A; mhdReal*** h_dNe_px_A; mhdReal*** h_dNe_py_A; mhdReal*** h_dNe_pz_A;
+	mhdReal*** h_A_A; mhdReal*** h_A_px_A; mhdReal*** h_A_py_A; mhdReal*** h_A_pz_A;
 
-	mhdReal** h_Phi_dNe; mhdReal** h_Phi_px_dNe; mhdReal** h_Phi_py_dNe; mhdReal** h_Phi_pz_dNe;
-	mhdReal** h_dPe_dNe; mhdReal** h_dPe_px_dNe; mhdReal** h_dPe_py_dNe; mhdReal** h_dPe_pz_dNe;
-	mhdReal** h_dJpB_dNe; mhdReal** h_dJpB_px_dNe; mhdReal** h_dJpB_py_dNe; mhdReal** h_dJpB_pz_dNe;
-	mhdReal** h_A_dNe; mhdReal** h_A_px_dNe; mhdReal** h_A_py_dNe; mhdReal** h_A_pz_dNe;
+	mhdReal*** h_Phi_dNe; mhdReal*** h_Phi_px_dNe; mhdReal*** h_Phi_py_dNe; mhdReal*** h_Phi_pz_dNe;
+	mhdReal*** h_dPe_dNe; mhdReal*** h_dPe_px_dNe; mhdReal*** h_dPe_py_dNe; mhdReal*** h_dPe_pz_dNe;
+	mhdReal*** h_dJpB_dNe; mhdReal*** h_dJpB_px_dNe; mhdReal*** h_dJpB_py_dNe; mhdReal*** h_dJpB_pz_dNe;
+	mhdReal*** h_A_dNe; mhdReal*** h_A_px_dNe; mhdReal*** h_A_py_dNe; mhdReal*** h_A_pz_dNe;
 
-	mhdReal** h_Phi_dTe; mhdReal** h_Phi_px_dTe; mhdReal** h_Phi_py_dTe; mhdReal** h_Phi_pz_dTe;
-	mhdReal** h_dTe_dTe; mhdReal** h_dTe_px_dTe; mhdReal** h_dTe_py_dTe; mhdReal** h_dTe_pz_dTe;
-	mhdReal** h_dNe_dTe; mhdReal** h_dNe_px_dTe; mhdReal** h_dNe_py_dTe; mhdReal** h_dNe_pz_dTe;
+	mhdReal*** h_Phi_dTe; mhdReal*** h_Phi_px_dTe; mhdReal*** h_Phi_py_dTe; mhdReal*** h_Phi_pz_dTe;
+	mhdReal*** h_dTe_dTe; mhdReal*** h_dTe_px_dTe; mhdReal*** h_dTe_py_dTe; mhdReal*** h_dTe_pz_dTe;
+	mhdReal*** h_dNe_dTe; mhdReal*** h_dNe_px_dTe; mhdReal*** h_dNe_py_dTe; mhdReal*** h_dNe_pz_dTe;
 
-	mhdReal** h_Ne0; mhdReal** h_Te0;
-	mhdReal** h_Ne0_px; mhdReal** h_Te0_px;
+	mhdReal*** h_Ne0; mhdReal*** h_Te0;
+	mhdReal*** h_Ne0_px; mhdReal*** h_Te0_px;
 
 	mhdReal*** h_F2perp2;
 	mhdReal*** h_A2dJpB;
@@ -751,17 +753,18 @@ class HybridModel {
         /*--------------------------------Help Initialize Equilibrium---------------------------------*/
 
         template <typename T, typename... Ts>
-        void binaryToHost(size_t offset, size_t dim1, size_t dim2, std::vector<double>& binary, T**& hostArray,
-                          Ts**&... hostArrays) {
+        void binaryToHost(size_t offset, size_t dim1, size_t dim2, size_t dim3, std::vector<double>& binary,
+                          T***& hostArray, Ts***&... hostArrays) {
 
             for (int i = 0; i < dim1; i++) {
                 for (int j = 0; j < dim2; j++) {
-                    hostArray[i][j] = binary[offset + i * dim2 + j];
+                    for (int k = 0; k < dim3; k++)
+                        hostArray[i][j][k] = binary[offset + i * dim2 * dim3 + j * dim3 + k];
                 }
             }
 
             if constexpr (sizeof...(hostArrays) > 0)
-                binaryToHost(offset + dim1 * dim2, dim1, dim2, binary, hostArrays...);
+                binaryToHost(offset + dim1 * dim2 * dim3, dim1, dim2, dim3, binary, hostArrays...);
         }
     };
 
@@ -808,7 +811,7 @@ class HybridModel {
 
         /*-----------------------------Sparse Matrices on Collocated Grid-----------------------------*/
 
-        compressCollocatedCoefficient();
+        compressCoefficient();
         computeSparseMatrix<Laplacian, trueType, trueType>();
         if constexpr (std::is_same_v<ifNablaPerp2A, trueType>)
             computeSparseMatrix<Resistive, trueType, trueType>();
@@ -822,6 +825,13 @@ class HybridModel {
             computeSparseMatrix<Perp2dP, trueType, trueType>();
 
         /*----------------------------------Phase-Space Diagnostics-----------------------------------*/
+
+        if constexpr (std::is_same_v<::ifIon, trueType>)
+            computePhaseSpaceRange<Ion>();
+        if constexpr (std::is_same_v<::ifAlpha, trueType>)
+            computePhaseSpaceRange<Alpha>();
+        if constexpr (std::is_same_v<::ifBeam, trueType>)
+            computePhaseSpaceRange<Beam>();
 
         if constexpr (std::is_same_v<ifContinue, falseType>) {
 
@@ -861,7 +871,10 @@ class HybridModel {
                         for (int i = 0; i < devNums; i++) {
                             CUDACHECK(cudaSetDevice(localId * devNums + i));
                             H2DAllocator.hostToDevice(cellNx * 30, 0, 0, d_pic1d[i], h_pic1d[0]);
-                            H2DAllocator.hostToDevice(cellNy * cellNx * 72, 0, 0, d_pic2d[i], h_pic2d[0]);
+                            if (NFP == 1)
+                                H2DAllocator.hostToDevice(cellNy * cellNx * 72, 0, 0, d_pic2d[i], h_pic2d[0]);
+                            else
+                                H2DAllocator.hostToDevice(cellNy * cellNxz * 232, 0, 0, d_pic2d[i], h_pic2d[0]);
                         }
 
                         if (hostId == 0)
@@ -954,13 +967,6 @@ class HybridModel {
             }
         }
 
-        if constexpr (std::is_same_v<::ifIon, trueType>)
-            computePhaseSpaceRange<Ion>();
-        if constexpr (std::is_same_v<::ifAlpha, trueType>)
-            computePhaseSpaceRange<Alpha>();
-        if constexpr (std::is_same_v<::ifBeam, trueType>)
-            computePhaseSpaceRange<Beam>();
-
         /*----------------------------------Constant Symbols Upload-----------------------------------*/
 
         for (int i = 0; i < devNums; i++) {
@@ -993,73 +999,77 @@ class HybridModel {
         /*-----------------------------------MHD Equilibrium on CPU-----------------------------------*/
 
         HostAllocator.allocateHostArrays(
-            gridNx, gridNy, q, q_px, psip, psip_px, Ni, Ni_px, Ti, Ti_px, Pi, Pi_px, Ne, Ne_px, Te, Te_px, Pe, Pe_px,
-            Na, Na_px, Ta, Ta_px, Nb, Nb_px, Tb, Tb_px, B, B_px, B_py, B_px2, B_pxy, B_py2, J, J_px, J_py, Bny, Bny_px,
-            Bny_py, Va, Va_px, Va_py, Rho, Rho_px, Rho_py, JpB, JpB_px, JpB_py, R, Z, gconxx, gconxx_px, gconxx_py,
-            gconxy, gconxy_px, gconxy_py, gconxz, gconxz_px, gconxz_py, gconyy, gconyy_px, gconyy_py, gconyz, gconyz_px,
-            gconyz_py, gconzz, gconzz_px, gconzz_py, gcovxx, gcovxx_px, gcovxx_py, gcovxy, gcovxy_px, gcovxy_py, gcovxz,
-            gcovxz_px, gcovxz_py, gcovyy, gcovyy_px, gcovyy_py, gcovyz, gcovyz_px, gcovyz_py, gcovzz, gcovzz_px,
-            gcovzz_py);
+            gridNx, gridNy, equilNz, q, q_px, psip, psip_px, Ni, Ni_px, Ti, Ti_px, Pi, Pi_px, Ne, Ne_px, Te, Te_px, Pe,
+            Pe_px, Na, Na_px, Ta, Ta_px, Nb, Nb_px, Tb, Tb_px, B, B_px, B_py, B_pz, B_px2, B_pxy, B_pxz, B_py2, B_pyz,
+            B_pz2, J, J_px, J_py, J_pz, Bny, Bny_px, Bny_py, Bny_pz, Va, Va_px, Va_py, Va_pz, Rho, Rho_px, Rho_py,
+            Rho_pz, JpB, JpB_px, JpB_py, JpB_pz, R, Z, gconxx, gconxx_px, gconxx_py, gconxx_pz, gconxy, gconxy_px,
+            gconxy_py, gconxy_pz, gconyy, gconyy_px, gconyy_py, gconyy_pz, gconxz, gconxz_px, gconxz_py, gconxz_pz,
+            gconyz, gconyz_px, gconyz_py, gconyz_pz, gconzz, gconzz_px, gconzz_py, gconzz_pz, gcovxx, gcovxx_px,
+            gcovxx_py, gcovxx_pz, gcovxy, gcovxy_px, gcovxy_py, gcovxy_pz, gcovyy, gcovyy_px, gcovyy_py, gcovyy_pz,
+            gcovxz, gcovxz_px, gcovxz_py, gcovxz_pz, gcovyz, gcovyz_px, gcovyz_py, gcovyz_pz, gcovzz, gcovzz_px,
+            gcovzz_py, gcovzz_pz);
 
         HostAllocator.allocateHostArrays(
-            gridNx, gridNyPlusGhost, SFAconxx, SFAconxx_px, SFAconxx_py, SFAconxy, SFAconxy_px, SFAconxy_py, SFAconxz,
-            SFAconxz_px, SFAconxz_py, SFAconyy, SFAconyy_px, SFAconyy_py, SFAconyz, SFAconyz_px, SFAconyz_py, SFAconzz,
-            SFAconzz_px, SFAconzz_py, SFAcovxx, SFAcovxx_px, SFAcovxx_py, SFAcovxy, SFAcovxy_px, SFAcovxy_py, SFAcovxz,
-            SFAcovxz_px, SFAcovxz_py, SFAcovyy, SFAcovyy_px, SFAcovyy_py, SFAcovyz, SFAcovyz_px, SFAcovyz_py, SFAcovzz,
-            SFAcovzz_px, SFAcovzz_py);
+            gridNx, gridNyPlusGhost, equilNz, SFAconxx, SFAconxx_px, SFAconxx_py, SFAconxx_pz, SFAconxy, SFAconxy_px,
+            SFAconxy_py, SFAconxy_pz, SFAconyy, SFAconyy_px, SFAconyy_py, SFAconyy_pz, SFAconxz, SFAconxz_px,
+            SFAconxz_py, SFAconxz_pz, SFAconyz, SFAconyz_px, SFAconyz_py, SFAconyz_pz, SFAconzz, SFAconzz_px,
+            SFAconzz_py, SFAconzz_pz, SFAcovxx, SFAcovxx_px, SFAcovxx_py, SFAcovxx_pz, SFAcovxy, SFAcovxy_px,
+            SFAcovxy_py, SFAcovxy_pz, SFAcovyy, SFAcovyy_px, SFAcovyy_py, SFAcovyy_pz, SFAcovxz, SFAcovxz_px,
+            SFAcovxz_py, SFAcovxz_pz, SFAcovyz, SFAcovyz_px, SFAcovyz_py, SFAcovyz_pz, SFAcovzz, SFAcovzz_px,
+            SFAcovzz_py, SFAcovzz_pz);
 
         /*----------------------------------MHD Perturbation on CPU-----------------------------------*/
 
-        HostAllocator.allocateHostArrays(gridNyPlusGhost, gridNx, h_qtheta);
+        HostAllocator.allocateHostArrays(gridNyPlusGhost, gridNx, equilNz, h_qtheta);
         HostAllocator.allocateHostArrays(gridNyPlusGhost, gridNx, gridNz, h_w, h_A, h_dNe, h_dTe, h_Phi, h_dJpB, h_dPe);
 
         /*-------------------------------Coefficient Compression on CPU-------------------------------*/
 
         /*---------------------------Linear---------------------------*/
 
-        HostAllocator.allocateHostArrays(gridNy, gridNx, h_A_w, h_A_px_w, h_A_py_w, h_A_pz_w, h_dJpB_w, h_dJpB_px_w,
-                                         h_dJpB_py_w, h_dJpB_pz_w, h_dP_w, h_dP_px_w, h_dP_py_w, h_dP_pz_w, h_w_py_w,
-                                         h_w_pz_w, h_w_Phi);
+        HostAllocator.allocateHostArrays(gridNy, gridNx, equilNz, h_A_w, h_A_px_w, h_A_py_w, h_A_pz_w, h_dJpB_w,
+                                         h_dJpB_px_w, h_dJpB_py_w, h_dJpB_pz_w, h_dP_w, h_dP_px_w, h_dP_py_w, h_dP_pz_w,
+                                         h_w_py_w, h_w_pz_w, h_w_Phi);
 
-        HostAllocator.allocateHostArrays(gridNy, gridNx, h_Phi_w, h_Phi_px_w, h_Phi_pz_w, h_Phi_px2_w, h_Phi_pxz_w,
-                                         h_Phi_pz2_w);
+        HostAllocator.allocateHostArrays(gridNy, gridNx, equilNz, h_Phi_w, h_Phi_px_w, h_Phi_pz_w, h_Phi_px2_w,
+                                         h_Phi_pxz_w, h_Phi_pz2_w);
 
-        HostAllocator.allocateHostArrays(gridNy, gridNx, h_A_resistive, h_A_px_resistive, h_A_pz_resistive,
+        HostAllocator.allocateHostArrays(gridNy, gridNx, equilNz, h_A_resistive, h_A_px_resistive, h_A_pz_resistive,
                                          h_A_px2_resistive, h_A_pxz_resistive, h_A_pz2_resistive);
 
-        HostAllocator.allocateHostArrays(gridNy, gridNx, h_F_perp2, h_F_px_perp2, h_F_pz_perp2, h_F_px2_perp2,
+        HostAllocator.allocateHostArrays(gridNy, gridNx, equilNz, h_F_perp2, h_F_px_perp2, h_F_pz_perp2, h_F_px2_perp2,
                                          h_F_pxz_perp2, h_F_pz2_perp2);
 
-        HostAllocator.allocateHostArrays(gridNy, gridNx, h_A_dJpB, h_A_px_dJpB, h_A_pz_dJpB, h_A_px2_dJpB, h_A_pxz_dJpB,
-                                         h_A_pz2_dJpB);
+        HostAllocator.allocateHostArrays(gridNy, gridNx, equilNz, h_A_dJpB, h_A_px_dJpB, h_A_pz_dJpB, h_A_px2_dJpB,
+                                         h_A_pxz_dJpB, h_A_pz2_dJpB);
 
-        HostAllocator.allocateHostArrays(gridNy, gridNx, h_Phi_A, h_Phi_px_A, h_Phi_py_A, h_Phi_pz_A, h_dNe_A,
+        HostAllocator.allocateHostArrays(gridNy, gridNx, equilNz, h_Phi_A, h_Phi_px_A, h_Phi_py_A, h_Phi_pz_A, h_dNe_A,
                                          h_dNe_px_A, h_dNe_py_A, h_dNe_pz_A, h_A_A, h_A_px_A, h_A_py_A, h_A_pz_A);
 
-        HostAllocator.allocateHostArrays(gridNy, gridNx, h_Phi_dNe, h_Phi_px_dNe, h_Phi_py_dNe, h_Phi_pz_dNe, h_dPe_dNe,
-                                         h_dPe_px_dNe, h_dPe_py_dNe, h_dPe_pz_dNe, h_dJpB_dNe, h_dJpB_px_dNe,
+        HostAllocator.allocateHostArrays(gridNy, gridNx, equilNz, h_Phi_dNe, h_Phi_px_dNe, h_Phi_py_dNe, h_Phi_pz_dNe,
+                                         h_dPe_dNe, h_dPe_px_dNe, h_dPe_py_dNe, h_dPe_pz_dNe, h_dJpB_dNe, h_dJpB_px_dNe,
                                          h_dJpB_py_dNe, h_dJpB_pz_dNe, h_A_dNe, h_A_px_dNe, h_A_py_dNe, h_A_pz_dNe);
 
-        HostAllocator.allocateHostArrays(gridNy, gridNx, h_Phi_dTe, h_Phi_px_dTe, h_Phi_py_dTe, h_Phi_pz_dTe, h_dTe_dTe,
-                                         h_dTe_px_dTe, h_dTe_py_dTe, h_dTe_pz_dTe, h_dNe_dTe, h_dNe_px_dTe,
+        HostAllocator.allocateHostArrays(gridNy, gridNx, equilNz, h_Phi_dTe, h_Phi_px_dTe, h_Phi_py_dTe, h_Phi_pz_dTe,
+                                         h_dTe_dTe, h_dTe_px_dTe, h_dTe_py_dTe, h_dTe_pz_dTe, h_dNe_dTe, h_dNe_px_dTe,
                                          h_dNe_py_dTe, h_dNe_pz_dTe, h_Ne0, h_Te0, h_Ne0_px, h_Te0_px);
 
-        HostAllocator.allocateHostArrays(gridNy, gridNx, 5, h_F2perp2);
-        HostAllocator.allocateHostArrays(gridNy, gridNx, 6, h_A2dJpB);
-        HostAllocator.allocateHostArrays(gridNy, gridNx, 5, h_Phi2w);
-        HostAllocator.allocateHostArrays(gridNy, gridNx, 10, h_wdPAdJpB2w);
-        HostAllocator.allocateHostArrays(gridNy, gridNx, 5, h_APhidNe2A);
-        HostAllocator.allocateHostArrays(gridNy, gridNx, 11, h_dPePhiAdJpB2dNe);
-        HostAllocator.allocateHostArrays(gridNy, gridNx, 6, h_PhidTedNe2dTe);
+        HostAllocator.allocateHostArrays(gridNy, gridNx, equilNz * 5, h_F2perp2);
+        HostAllocator.allocateHostArrays(gridNy, gridNx, equilNz * 6, h_A2dJpB);
+        HostAllocator.allocateHostArrays(gridNy, gridNx, equilNz * 5, h_Phi2w);
+        HostAllocator.allocateHostArrays(gridNy, gridNx, equilNz * 10, h_wdPAdJpB2w);
+        HostAllocator.allocateHostArrays(gridNy, gridNx, equilNz * 5, h_APhidNe2A);
+        HostAllocator.allocateHostArrays(gridNy, gridNx, equilNz * 11, h_dPePhiAdJpB2dNe);
+        HostAllocator.allocateHostArrays(gridNy, gridNx, equilNz * 6, h_PhidTedNe2dTe);
 
         /*-------------------------Nonlinear--------------------------*/
 
-        HostAllocator.allocateHostArrays(gridNy, gridNx, 6, h_wPhi_w);
-        HostAllocator.allocateHostArrays(gridNy, gridNx, 9, h_AdJpB_w);
-        HostAllocator.allocateHostArrays(gridNy, gridNx, 9, h_PhiA_A, h_NeA_A);
-        HostAllocator.allocateHostArrays(gridNy, gridNx, 9, h_AdJpB_dNe, h_dNePhi_dNe);
-        HostAllocator.allocateHostArrays(gridNy, gridNx, 6, h_PhiTe_dTe);
-        HostAllocator.allocateHostArrays(gridNy, gridNx, 18, h_PhiTeA_dTe);
+        HostAllocator.allocateHostArrays(gridNy, gridNx, equilNz * 6, h_wPhi_w);
+        HostAllocator.allocateHostArrays(gridNy, gridNx, equilNz * 9, h_AdJpB_w);
+        HostAllocator.allocateHostArrays(gridNy, gridNx, equilNz * 9, h_PhiA_A, h_NeA_A);
+        HostAllocator.allocateHostArrays(gridNy, gridNx, equilNz * 9, h_AdJpB_dNe, h_dNePhi_dNe);
+        HostAllocator.allocateHostArrays(gridNy, gridNx, equilNz * 6, h_PhiTe_dTe);
+        HostAllocator.allocateHostArrays(gridNy, gridNx, equilNz * 18, h_PhiTeA_dTe);
 
         /*--------------------------------------Particle in Cell--------------------------------------*/
 
@@ -1082,7 +1092,10 @@ class HybridModel {
         }
 
         HostAllocator.allocateHostArrays(cellNx, 30, h_pic1d);
-        HostAllocator.allocateHostArrays(cellNy * cellNx, 72, h_pic2d);
+        if (NFP == 1)
+            HostAllocator.allocateHostArrays(cellNy * cellNx, 72, h_pic2d);
+        else
+            HostAllocator.allocateHostArrays(cellNy * cellNxz, 232, h_pic2d);
         HostAllocator.allocateHostArrays(gridNyPlusGhost, gridNx * gridNzPlusGhost * 8, h_pic3d);
 
         HostAllocator.allocateHostArrays(gridNyPlusGhost, gridNx, gridNz, h_globalPi, h_globalPa, h_globalPb,
@@ -1176,18 +1189,21 @@ class HybridModel {
 
         HostAllocator.releaseHostArrays(
             q, q_px, psip, psip_px, Ni, Ni_px, Ti, Ti_px, Pi, Pi_px, Ne, Ne_px, Te, Te_px, Pe, Pe_px, Na, Na_px, Ta,
-            Ta_px, Nb, Nb_px, Tb, Tb_px, B, B_px, B_py, B_px2, B_pxy, B_py2, J, J_px, J_py, Bny, Bny_px, Bny_py, Va,
-            Va_px, Va_py, Rho, Rho_px, Rho_py, JpB, JpB_px, JpB_py, R, Z, gconxx, gconxx_px, gconxx_py, gconxy,
-            gconxy_px, gconxy_py, gconxz, gconxz_px, gconxz_py, gconyy, gconyy_px, gconyy_py, gconyz, gconyz_px,
-            gconyz_py, gconzz, gconzz_px, gconzz_py, gcovxx, gcovxx_px, gcovxx_py, gcovxy, gcovxy_px, gcovxy_py, gcovxz,
-            gcovxz_px, gcovxz_py, gcovyy, gcovyy_px, gcovyy_py, gcovyz, gcovyz_px, gcovyz_py, gcovzz, gcovzz_px,
-            gcovzz_py);
+            Ta_px, Nb, Nb_px, Tb, Tb_px, B, B_px, B_py, B_pz, B_px2, B_pxy, B_pxz, B_py2, B_pyz, B_pz2, J, J_px, J_py,
+            J_pz, Bny, Bny_px, Bny_py, Bny_pz, Va, Va_px, Va_py, Va_pz, Rho, Rho_px, Rho_py, Rho_pz, JpB, JpB_px,
+            JpB_py, JpB_pz, R, Z, gconxx, gconxx_px, gconxx_py, gconxx_pz, gconxy, gconxy_px, gconxy_py, gconxy_pz,
+            gconyy, gconyy_px, gconyy_py, gconyy_pz, gconxz, gconxz_px, gconxz_py, gconxz_pz, gconyz, gconyz_px,
+            gconyz_py, gconyz_pz, gconzz, gconzz_px, gconzz_py, gconzz_pz, gcovxx, gcovxx_px, gcovxx_py, gcovxx_pz,
+            gcovxy, gcovxy_px, gcovxy_py, gcovxy_pz, gcovyy, gcovyy_px, gcovyy_py, gcovyy_pz, gcovxz, gcovxz_px,
+            gcovxz_py, gcovxz_pz, gcovyz, gcovyz_px, gcovyz_py, gcovyz_pz, gcovzz, gcovzz_px, gcovzz_py, gcovzz_pz);
 
         HostAllocator.releaseHostArrays(
-            SFAconxx, SFAconxx_px, SFAconxx_py, SFAconxy, SFAconxy_px, SFAconxy_py, SFAconxz, SFAconxz_px, SFAconxz_py,
-            SFAconyy, SFAconyy_px, SFAconyy_py, SFAconyz, SFAconyz_px, SFAconyz_py, SFAconzz, SFAconzz_px, SFAconzz_py,
-            SFAcovxx, SFAcovxx_px, SFAcovxx_py, SFAcovxy, SFAcovxy_px, SFAcovxy_py, SFAcovxz, SFAcovxz_px, SFAcovxz_py,
-            SFAcovyy, SFAcovyy_px, SFAcovyy_py, SFAcovyz, SFAcovyz_px, SFAcovyz_py, SFAcovzz, SFAcovzz_px, SFAcovzz_py);
+            SFAconxx, SFAconxx_px, SFAconxx_py, SFAconxx_pz, SFAconxy, SFAconxy_px, SFAconxy_py, SFAconxy_pz, SFAconyy,
+            SFAconyy_px, SFAconyy_py, SFAconyy_pz, SFAconxz, SFAconxz_px, SFAconxz_py, SFAconxz_pz, SFAconyz,
+            SFAconyz_px, SFAconyz_py, SFAconyz_pz, SFAconzz, SFAconzz_px, SFAconzz_py, SFAconzz_pz, SFAcovxx,
+            SFAcovxx_px, SFAcovxx_py, SFAcovxx_pz, SFAcovxy, SFAcovxy_px, SFAcovxy_py, SFAcovxy_pz, SFAcovyy,
+            SFAcovyy_px, SFAcovyy_py, SFAcovyy_pz, SFAcovxz, SFAcovxz_px, SFAcovxz_py, SFAcovxz_pz, SFAcovyz,
+            SFAcovyz_px, SFAcovyz_py, SFAcovyz_pz, SFAcovzz, SFAcovzz_px, SFAcovzz_py, SFAcovzz_pz);
 
         /*----------------------------------MHD Perturbation on CPU-----------------------------------*/
 
@@ -1271,7 +1287,7 @@ class HybridModel {
 
         /*----------------------------------MHD Perturbation on GPU-----------------------------------*/
 
-        DeviceAllocator.allocateDeviceArrays(localId, devNums, (devNy + 2 * gridGhost) * gridNx, d_qtheta);
+        DeviceAllocator.allocateDeviceArrays(localId, devNums, (devNy + 2 * gridGhost) * gridNx * equilNz, d_qtheta);
 
         DeviceAllocator.allocateDeviceArrays(localId, devNums, gridNy * gridNxz, d_w, d_A, d_dNe, d_dTe, d_Phi, d_dJpB,
                                              d_dPe);
@@ -1287,23 +1303,24 @@ class HybridModel {
 
         /*---------------------------Linear---------------------------*/
 
-        DeviceAllocator.allocateDeviceArrays(localId, devNums, devNy * gridNx, d_Ne0, d_Te0, d_Ne0_px, d_Te0_px);
-        DeviceAllocator.allocateDeviceArrays(localId, devNums, devNy * gridNx, d_w2Phi);
-        DeviceAllocator.allocateDeviceArrays(localId, devNums, devNy * gridNx * 5, d_Phi2w);
-        DeviceAllocator.allocateDeviceArrays(localId, devNums, devNy * gridNx * 6, d_A2dJpB);
-        DeviceAllocator.allocateDeviceArrays(localId, devNums, devNy * gridNx * 10, d_wdPAdJpB2w);
-        DeviceAllocator.allocateDeviceArrays(localId, devNums, devNy * gridNx * 5, d_APhidNe2A);
-        DeviceAllocator.allocateDeviceArrays(localId, devNums, devNy * gridNx * 11, d_dPePhiAdJpB2dNe);
-        DeviceAllocator.allocateDeviceArrays(localId, devNums, devNy * gridNx * 6, d_PhidTedNe2dTe);
+        DeviceAllocator.allocateDeviceArrays(localId, devNums, devNy * gridNx * equilNz, d_Ne0, d_Te0, d_Ne0_px,
+                                             d_Te0_px);
+        DeviceAllocator.allocateDeviceArrays(localId, devNums, devNy * gridNx * equilNz, d_w2Phi);
+        DeviceAllocator.allocateDeviceArrays(localId, devNums, devNy * gridNx * equilNz * 5, d_Phi2w);
+        DeviceAllocator.allocateDeviceArrays(localId, devNums, devNy * gridNx * equilNz * 6, d_A2dJpB);
+        DeviceAllocator.allocateDeviceArrays(localId, devNums, devNy * gridNx * equilNz * 10, d_wdPAdJpB2w);
+        DeviceAllocator.allocateDeviceArrays(localId, devNums, devNy * gridNx * equilNz * 5, d_APhidNe2A);
+        DeviceAllocator.allocateDeviceArrays(localId, devNums, devNy * gridNx * equilNz * 11, d_dPePhiAdJpB2dNe);
+        DeviceAllocator.allocateDeviceArrays(localId, devNums, devNy * gridNx * equilNz * 6, d_PhidTedNe2dTe);
 
         /*-------------------------Nonlinear--------------------------*/
 
-        DeviceAllocator.allocateDeviceArrays(localId, devNums, devNy * gridNx * 6, d_wPhi_w);
-        DeviceAllocator.allocateDeviceArrays(localId, devNums, devNy * gridNx * 9, d_AdJpB_w);
-        DeviceAllocator.allocateDeviceArrays(localId, devNums, devNy * gridNx * 9, d_PhiA_A, d_NeA_A);
-        DeviceAllocator.allocateDeviceArrays(localId, devNums, devNy * gridNx * 9, d_AdJpB_dNe, d_dNePhi_dNe);
-        DeviceAllocator.allocateDeviceArrays(localId, devNums, devNy * gridNx * 6, d_PhiTe_dTe);
-        DeviceAllocator.allocateDeviceArrays(localId, devNums, devNy * gridNx * 18, d_PhiTeA_dTe);
+        DeviceAllocator.allocateDeviceArrays(localId, devNums, devNy * gridNx * equilNz * 6, d_wPhi_w);
+        DeviceAllocator.allocateDeviceArrays(localId, devNums, devNy * gridNx * equilNz * 9, d_AdJpB_w);
+        DeviceAllocator.allocateDeviceArrays(localId, devNums, devNy * gridNx * equilNz * 9, d_PhiA_A, d_NeA_A);
+        DeviceAllocator.allocateDeviceArrays(localId, devNums, devNy * gridNx * equilNz * 9, d_AdJpB_dNe, d_dNePhi_dNe);
+        DeviceAllocator.allocateDeviceArrays(localId, devNums, devNy * gridNx * equilNz * 6, d_PhiTe_dTe);
+        DeviceAllocator.allocateDeviceArrays(localId, devNums, devNy * gridNx * equilNz * 18, d_PhiTeA_dTe);
 
         /*--------------------------------------Particle in Cell--------------------------------------*/
 
@@ -1335,7 +1352,10 @@ class HybridModel {
         }
 
         DeviceAllocator.allocateDeviceArrays(localId, devNums, cellNx * 30, d_pic1d);
-        DeviceAllocator.allocateDeviceArrays(localId, devNums, cellNy * cellNx * 72, d_pic2d);
+        if (NFP == 1)
+            DeviceAllocator.allocateDeviceArrays(localId, devNums, cellNy * cellNx * 72, d_pic2d);
+        else
+            DeviceAllocator.allocateDeviceArrays(localId, devNums, cellNy * cellNxz * 232, d_pic2d);
         DeviceAllocator.allocateDeviceArrays(localId, devNums, gridNyPlusGhost * gridNx * gridNzPlusGhost * 8, d_pic3d);
 
         DeviceAllocator.allocateDeviceArrays(localId, devNums, gridNyPlusGhost * gridNxz, d_globalA, d_globalPhi,
@@ -1797,58 +1817,70 @@ class HybridModel {
 
             CUDACHECK(cudaSetDevice(localId * devNums + i));
 
-            H2DAllocator.hostToDevice((devNy + 2 * gridGhost) * gridNx, 0, (hostId * hostNy + i * devNy) * gridNx,
-                                      d_qtheta[i], h_qtheta[0]);
+            H2DAllocator.hostToDevice((devNy + 2 * gridGhost) * gridNx * equilNz, 0,
+                                      (hostId * hostNy + i * devNy) * gridNx * equilNz, d_qtheta[i], h_qtheta[0][0]);
 
             /*-------------------------------------------Linear-------------------------------------------*/
 
             /*------------Equilibrium Density and Temperature-------------*/
 
-            H2DAllocator.hostToDevice(devNy * gridNx, 0, (hostId * hostNy + i * devNy) * gridNx, d_Ne0[i], h_Ne0[0],
-                                      d_Te0[i], h_Te0[0], d_Ne0_px[i], h_Ne0_px[0], d_Te0_px[i], h_Te0_px[0]);
+            H2DAllocator.hostToDevice(devNy * gridNx * equilNz, 0, (hostId * hostNy + i * devNy) * gridNx * equilNz,
+                                      d_Ne0[i], h_Ne0[0][0], d_Te0[i], h_Te0[0][0], d_Ne0_px[i], h_Ne0_px[0][0],
+                                      d_Te0_px[i], h_Te0_px[0][0]);
 
             /*--------------------------wAdNedTe--------------------------*/
 
-            H2DAllocator.hostToDevice(devNy * gridNx, 0, (hostId * hostNy + i * devNy) * gridNx, d_w2Phi[i],
-                                      h_w_Phi[0]);
-            H2DAllocator.hostToDevice(devNy * gridNx * 5, 0, (hostId * hostNy + i * devNy) * gridNx * 5, d_Phi2w[i],
-                                      h_Phi2w[0][0]);
-            H2DAllocator.hostToDevice(devNy * gridNx * 6, 0, (hostId * hostNy + i * devNy) * gridNx * 6, d_A2dJpB[i],
+            H2DAllocator.hostToDevice(devNy * gridNx * equilNz, 0, (hostId * hostNy + i * devNy) * gridNx * equilNz,
+                                      d_w2Phi[i], h_w_Phi[0][0]);
+            H2DAllocator.hostToDevice(devNy * gridNx * equilNz * 5, 0,
+                                      (hostId * hostNy + i * devNy) * gridNx * equilNz * 5, d_Phi2w[i], h_Phi2w[0][0]);
+            H2DAllocator.hostToDevice(devNy * gridNx * equilNz * 6, 0,
+                                      (hostId * hostNy + i * devNy) * gridNx * equilNz * 6, d_A2dJpB[i],
                                       h_A2dJpB[0][0]);
-            H2DAllocator.hostToDevice(devNy * gridNx * 10, 0, (hostId * hostNy + i * devNy) * gridNx * 10,
-                                      d_wdPAdJpB2w[i], h_wdPAdJpB2w[0][0]);
-            H2DAllocator.hostToDevice(devNy * gridNx * 5, 0, (hostId * hostNy + i * devNy) * gridNx * 5, d_APhidNe2A[i],
+            H2DAllocator.hostToDevice(devNy * gridNx * equilNz * 10, 0,
+                                      (hostId * hostNy + i * devNy) * gridNx * equilNz * 10, d_wdPAdJpB2w[i],
+                                      h_wdPAdJpB2w[0][0]);
+            H2DAllocator.hostToDevice(devNy * gridNx * equilNz * 5, 0,
+                                      (hostId * hostNy + i * devNy) * gridNx * equilNz * 5, d_APhidNe2A[i],
                                       h_APhidNe2A[0][0]);
-            H2DAllocator.hostToDevice(devNy * gridNx * 11, 0, (hostId * hostNy + i * devNy) * gridNx * 11,
-                                      d_dPePhiAdJpB2dNe[i], h_dPePhiAdJpB2dNe[0][0]);
-            H2DAllocator.hostToDevice(devNy * gridNx * 6, 0, (hostId * hostNy + i * devNy) * gridNx * 6,
-                                      d_PhidTedNe2dTe[i], h_PhidTedNe2dTe[0][0]);
+            H2DAllocator.hostToDevice(devNy * gridNx * equilNz * 11, 0,
+                                      (hostId * hostNy + i * devNy) * gridNx * equilNz * 11, d_dPePhiAdJpB2dNe[i],
+                                      h_dPePhiAdJpB2dNe[0][0]);
+            H2DAllocator.hostToDevice(devNy * gridNx * equilNz * 6, 0,
+                                      (hostId * hostNy + i * devNy) * gridNx * equilNz * 6, d_PhidTedNe2dTe[i],
+                                      h_PhidTedNe2dTe[0][0]);
 
             /*-----------------------------------------Nonlinear------------------------------------------*/
 
             /*-------------------------Vorticity--------------------------*/
 
-            H2DAllocator.hostToDevice(devNy * gridNx * 6, 0, (hostId * hostNy + i * devNy) * gridNx * 6, d_wPhi_w[i],
+            H2DAllocator.hostToDevice(devNy * gridNx * equilNz * 6, 0,
+                                      (hostId * hostNy + i * devNy) * gridNx * equilNz * 6, d_wPhi_w[i],
                                       h_wPhi_w[0][0]);
-            H2DAllocator.hostToDevice(devNy * gridNx * 9, 0, (hostId * hostNy + i * devNy) * gridNx * 9, d_AdJpB_w[i],
+            H2DAllocator.hostToDevice(devNy * gridNx * equilNz * 9, 0,
+                                      (hostId * hostNy + i * devNy) * gridNx * equilNz * 9, d_AdJpB_w[i],
                                       h_AdJpB_w[0][0]);
 
             /*------------Perturbed Parallel Vector Potential-------------*/
 
-            H2DAllocator.hostToDevice(devNy * gridNx * 9, 0, (hostId * hostNy + i * devNy) * gridNx * 9, d_PhiA_A[i],
-                                      h_PhiA_A[0][0], d_NeA_A[i], h_NeA_A[0][0]);
+            H2DAllocator.hostToDevice(devNy * gridNx * equilNz * 9, 0,
+                                      (hostId * hostNy + i * devNy) * gridNx * equilNz * 9, d_PhiA_A[i], h_PhiA_A[0][0],
+                                      d_NeA_A[i], h_NeA_A[0][0]);
 
             /*---------------------Perturbed Density----------------------*/
 
-            H2DAllocator.hostToDevice(devNy * gridNx * 9, 0, (hostId * hostNy + i * devNy) * gridNx * 9, d_AdJpB_dNe[i],
+            H2DAllocator.hostToDevice(devNy * gridNx * equilNz * 9, 0,
+                                      (hostId * hostNy + i * devNy) * gridNx * equilNz * 9, d_AdJpB_dNe[i],
                                       h_AdJpB_dNe[0][0], d_dNePhi_dNe[i], h_dNePhi_dNe[0][0]);
 
             /*-------------------Perturbed Temperature--------------------*/
 
-            H2DAllocator.hostToDevice(devNy * gridNx * 6, 0, (hostId * hostNy + i * devNy) * gridNx * 6, d_PhiTe_dTe[i],
+            H2DAllocator.hostToDevice(devNy * gridNx * equilNz * 6, 0,
+                                      (hostId * hostNy + i * devNy) * gridNx * equilNz * 6, d_PhiTe_dTe[i],
                                       h_PhiTe_dTe[0][0]);
-            H2DAllocator.hostToDevice(devNy * gridNx * 18, 0, (hostId * hostNy + i * devNy) * gridNx * 18,
-                                      d_PhiTeA_dTe[i], h_PhiTeA_dTe[0][0]);
+            H2DAllocator.hostToDevice(devNy * gridNx * equilNz * 18, 0,
+                                      (hostId * hostNy + i * devNy) * gridNx * equilNz * 18, d_PhiTeA_dTe[i],
+                                      h_PhiTeA_dTe[0][0]);
 
             /*--------------------------------------------MHD---------------------------------------------*/
 
@@ -1899,7 +1931,10 @@ class HybridModel {
             }
 
             H2DAllocator.hostToDevice(cellNx * 30, 0, 0, d_pic1d[i], h_pic1d[0]);
-            H2DAllocator.hostToDevice(cellNy * cellNx * 72, 0, 0, d_pic2d[i], h_pic2d[0]);
+            if (NFP == 1)
+                H2DAllocator.hostToDevice(cellNy * cellNx * 72, 0, 0, d_pic2d[i], h_pic2d[0]);
+            else
+                H2DAllocator.hostToDevice(cellNy * cellNxz * 232, 0, 0, d_pic2d[i], h_pic2d[0]);
             H2DAllocator.hostToDevice(gridNyPlusGhost * gridNx * gridNzPlusGhost * 8, 0, 0, d_pic3d[i], h_pic3d[0]);
 
             H2DAllocator.hostToDevice(gridNyPlusGhost * gridNxz, 0, 0, d_globalPi[i], h_dPe[0][0], d_globalPa[i],
@@ -2502,47 +2537,78 @@ class HybridModel {
 
         for (int i = 0; i < gridNx; i++) {
             for (int j = 0; j < gridNyPlusGhost; j++) {
-                h_qtheta[j][i] = binaryData[i * gridNyPlusGhost + j];
+                for (int k = 0; k < equilNz; k++)
+                    h_qtheta[j][i][k] = binaryData[i * gridNyPlusGhost * equilNz + j * equilNz + k];
             }
         }
 
         Allocator B2HAllocator;
 
-        B2HAllocator.binaryToHost(gridNx * gridNyPlusGhost, gridNx, gridNyPlusGhost, binaryData, SFAconxx, SFAconxx_px,
-                                  SFAconxx_py, SFAconxy, SFAconxy_px, SFAconxy_py, SFAconyy, SFAconyy_px, SFAconyy_py,
-                                  SFAconxz, SFAconxz_px, SFAconxz_py, SFAconyz, SFAconyz_px, SFAconyz_py, SFAconzz,
-                                  SFAconzz_px, SFAconzz_py, SFAcovxx, SFAcovxx_px, SFAcovxx_py, SFAcovxy, SFAcovxy_px,
-                                  SFAcovxy_py, SFAcovyy, SFAcovyy_px, SFAcovyy_py, SFAcovxz, SFAcovxz_px, SFAcovxz_py,
-                                  SFAcovyz, SFAcovyz_px, SFAcovyz_py, SFAcovzz, SFAcovzz_px, SFAcovzz_py);
+        B2HAllocator.binaryToHost(
+            gridNx * gridNyPlusGhost * equilNz, gridNx, gridNyPlusGhost, equilNz, binaryData, SFAconxx, SFAconxx_px,
+            SFAconxx_py, SFAconxx_pz, SFAconxy, SFAconxy_px, SFAconxy_py, SFAconxy_pz, SFAconyy, SFAconyy_px,
+            SFAconyy_py, SFAconyy_pz, SFAconxz, SFAconxz_px, SFAconxz_py, SFAconxz_pz, SFAconyz, SFAconyz_px,
+            SFAconyz_py, SFAconyz_pz, SFAconzz, SFAconzz_px, SFAconzz_py, SFAconzz_pz, SFAcovxx, SFAcovxx_px,
+            SFAcovxx_py, SFAcovxx_pz, SFAcovxy, SFAcovxy_px, SFAcovxy_py, SFAcovxy_pz, SFAcovyy, SFAcovyy_px,
+            SFAcovyy_py, SFAcovyy_pz, SFAcovxz, SFAcovxz_px, SFAcovxz_py, SFAcovxz_pz, SFAcovyz, SFAcovyz_px,
+            SFAcovyz_py, SFAcovyz_pz, SFAcovzz, SFAcovzz_px, SFAcovzz_py, SFAcovzz_pz);
 
         B2HAllocator.binaryToHost(
-            gridNx * gridNyPlusGhost * 37, gridNx, gridNy, binaryData, q, q_px, psip, psip_px, Ni, Ni_px, Ti, Ti_px, Pi,
-            Pi_px, Ne, Ne_px, Te, Te_px, Pe, Pe_px, Na, Na_px, Ta, Ta_px, Nb, Nb_px, Tb, Tb_px, gconxx, gconxx_px,
-            gconxx_py, gconxy, gconxy_px, gconxy_py, gconyy, gconyy_px, gconyy_py, gconxz, gconxz_px, gconxz_py, gconyz,
-            gconyz_px, gconyz_py, gconzz, gconzz_px, gconzz_py, gcovxx, gcovxx_px, gcovxx_py, gcovxy, gcovxy_px,
-            gcovxy_py, gcovyy, gcovyy_px, gcovyy_py, gcovxz, gcovxz_px, gcovxz_py, gcovyz, gcovyz_px, gcovyz_py, gcovzz,
-            gcovzz_px, gcovzz_py, J, J_px, J_py, Bny, Bny_px, Bny_py, JpB, JpB_px, JpB_py, Rho, Rho_px, Rho_py, Va,
-            Va_px, Va_py, R, Z, B, B_px, B_py, B_px2, B_pxy, B_py2);
+            gridNx * gridNyPlusGhost * equilNz * 49, gridNx, gridNy, equilNz, binaryData, q, q_px, psip, psip_px, Ni,
+            Ni_px, Ti, Ti_px, Pi, Pi_px, Ne, Ne_px, Te, Te_px, Pe, Pe_px, Na, Na_px, Ta, Ta_px, Nb, Nb_px, Tb, Tb_px,
+            gconxx, gconxx_px, gconxx_py, gconxx_pz, gconxy, gconxy_px, gconxy_py, gconxy_pz, gconyy, gconyy_px,
+            gconyy_py, gconyy_pz, gconxz, gconxz_px, gconxz_py, gconxz_pz, gconyz, gconyz_px, gconyz_py, gconyz_pz,
+            gconzz, gconzz_px, gconzz_py, gconzz_pz, gcovxx, gcovxx_px, gcovxx_py, gcovxx_pz, gcovxy, gcovxy_px,
+            gcovxy_py, gcovxy_pz, gcovyy, gcovyy_px, gcovyy_py, gcovyy_pz, gcovxz, gcovxz_px, gcovxz_py, gcovxz_pz,
+            gcovyz, gcovyz_px, gcovyz_py, gcovyz_pz, gcovzz, gcovzz_px, gcovzz_py, gcovzz_pz, J, J_px, J_py, J_pz, Bny,
+            Bny_px, Bny_py, Bny_pz, JpB, JpB_px, JpB_py, JpB_pz, Rho, Rho_px, Rho_py, Rho_pz, Va, Va_px, Va_py, Va_pz,
+            R, Z, B, B_px, B_py, B_pz, B_px2, B_pxy, B_pxz, B_py2, B_pyz, B_pz2);
 
-        auto loadPICProfile = [&](int index, int offset, double**& field) {
-            h_pic1d[index][offset + 0] = field[index][0];
-            h_pic1d[index][offset + 1] = field[index + 1][0];
+        auto loadPICProfile = [&](int index, int offset, double***& field) {
+            h_pic1d[index][offset + 0] = field[index][0][0];
+            h_pic1d[index][offset + 1] = field[index + 1][0][0];
         };
 
-        auto loadPICStraight = [&](int index, int offset, int i, int j, double**& field) {
+        auto loadPICStraight = [&](int index, int offset, int i, int j, int k, double***& field) {
             int j0 = (j + 0 - gridGhost + gridNy) % gridNy;
             int j1 = (j + 1 - gridGhost + gridNy) % gridNy;
-            h_pic2d[index][offset + 0] = field[i][j0];
-            h_pic2d[index][offset + 1] = field[i + 1][j0];
-            h_pic2d[index][offset + 2] = field[i][j1];
-            h_pic2d[index][offset + 3] = field[i + 1][j1];
+            if (NFP == 1) {
+                h_pic2d[index][offset + 0] = field[i][j0][0];
+                h_pic2d[index][offset + 1] = field[i + 1][j0][0];
+                h_pic2d[index][offset + 2] = field[i][j1][0];
+                h_pic2d[index][offset + 3] = field[i + 1][j1][0];
+            } else {
+                int k0 = (k + 0 - gridGhost + gridNz) % gridNz;
+                int k1 = (k + 1 - gridGhost + gridNz) % gridNz;
+                h_pic2d[index][offset + 0] = field[i][j0][k0];
+                h_pic2d[index][offset + 1] = field[i + 1][j0][k0];
+                h_pic2d[index][offset + 2] = field[i][j1][k0];
+                h_pic2d[index][offset + 3] = field[i + 1][j1][k0];
+                h_pic2d[index][offset + 4] = field[i][j0][k1];
+                h_pic2d[index][offset + 5] = field[i + 1][j0][k1];
+                h_pic2d[index][offset + 6] = field[i][j1][k1];
+                h_pic2d[index][offset + 7] = field[i + 1][j1][k1];
+            }
         };
 
-        auto loadPICAligned = [&](int index, int offset, int i, int j, double**& field) {
-            h_pic2d[index][offset + 0] = field[i][j];
-            h_pic2d[index][offset + 1] = field[i + 1][j];
-            h_pic2d[index][offset + 2] = field[i][j + 1];
-            h_pic2d[index][offset + 3] = field[i + 1][j + 1];
+        auto loadPICAligned = [&](int index, int offset, int i, int j, int k, double***& field) {
+            if (NFP == 1) {
+                h_pic2d[index][offset + 0] = field[i][j][0];
+                h_pic2d[index][offset + 1] = field[i + 1][j][0];
+                h_pic2d[index][offset + 2] = field[i][j + 1][0];
+                h_pic2d[index][offset + 3] = field[i + 1][j + 1][0];
+            } else {
+                int k0 = (k + 0 - gridGhost + gridNz) % gridNz;
+                int k1 = (k + 1 - gridGhost + gridNz) % gridNz;
+                h_pic2d[index][offset + 0] = field[i][j][k0];
+                h_pic2d[index][offset + 1] = field[i + 1][j][k0];
+                h_pic2d[index][offset + 2] = field[i][j + 1][k0];
+                h_pic2d[index][offset + 3] = field[i + 1][j + 1][k0];
+                h_pic2d[index][offset + 4] = field[i][j][k1];
+                h_pic2d[index][offset + 5] = field[i + 1][j][k1];
+                h_pic2d[index][offset + 6] = field[i][j + 1][k1];
+                h_pic2d[index][offset + 7] = field[i + 1][j + 1][k1];
+            }
         };
 
         for (int index = 0; index < cellNx; index++) {
@@ -2567,31 +2633,73 @@ class HybridModel {
                 h_pic1d[index][i] *= 1.0e-19;
         }
 
-        for (int index = 0; index < cellNy * cellNx; index++) {
+        if (NFP == 1) {
+            for (int index = 0; index < cellNy * cellNx; index++) {
 
-            int i = index % cellNx;
-            int j = index / cellNx;
+                int i = index % cellNx;
+                int j = index / cellNx;
+                int k = 0;
 
-            loadPICStraight(index, 0, i, j, J);
-            loadPICStraight(index, 4, i, j, B);
-            loadPICStraight(index, 8, i, j, J_px);
-            loadPICStraight(index, 12, i, j, J_py);
-            loadPICStraight(index, 16, i, j, B_px);
-            loadPICStraight(index, 20, i, j, B_py);
+                loadPICStraight(index, 0, i, j, k, J);
+                loadPICStraight(index, 4, i, j, k, B);
+                loadPICStraight(index, 8, i, j, k, J_px);
+                loadPICStraight(index, 12, i, j, k, J_py);
+                loadPICStraight(index, 16, i, j, k, B_px);
+                loadPICStraight(index, 20, i, j, k, B_py);
 
-            loadPICAligned(index, 24, i, j, SFAcovxy);
-            loadPICAligned(index, 28, i, j, SFAcovyy);
-            loadPICAligned(index, 32, i, j, SFAcovyz);
-            loadPICAligned(index, 36, i, j, SFAcovxy_py);
-            loadPICAligned(index, 40, i, j, SFAcovyy_px);
-            loadPICAligned(index, 44, i, j, SFAcovyz_px);
-            loadPICAligned(index, 48, i, j, SFAcovyz_py);
-            loadPICAligned(index, 52, i, j, SFAconxx);
-            loadPICAligned(index, 56, i, j, SFAconxy);
-            loadPICAligned(index, 60, i, j, SFAconyy);
+                loadPICAligned(index, 24, i, j, k, SFAcovxy);
+                loadPICAligned(index, 28, i, j, k, SFAcovyy);
+                loadPICAligned(index, 32, i, j, k, SFAcovyz);
+                loadPICAligned(index, 36, i, j, k, SFAcovxy_py);
+                loadPICAligned(index, 40, i, j, k, SFAcovyy_px);
+                loadPICAligned(index, 44, i, j, k, SFAcovyz_px);
+                loadPICAligned(index, 48, i, j, k, SFAcovyz_py);
+                loadPICAligned(index, 52, i, j, k, SFAconxx);
+                loadPICAligned(index, 56, i, j, k, SFAconxy);
+                loadPICAligned(index, 60, i, j, k, SFAconyy);
 
-            loadPICStraight(index, 64, i, j, R);
-            loadPICStraight(index, 68, i, j, Z);
+                loadPICStraight(index, 64, i, j, k, R);
+                loadPICStraight(index, 68, i, j, k, Z);
+            }
+        } else {
+            for (int index = 0; index < cellNy * cellNxz; index++) {
+
+                int i = (index / cellNz) % cellNx;
+                int j = index / cellNxz;
+                int k = index % cellNz;
+
+                loadPICStraight(index, 0, i, j, k, J);
+                loadPICStraight(index, 8, i, j, k, B);
+                loadPICStraight(index, 16, i, j, k, J_px);
+                loadPICStraight(index, 24, i, j, k, J_py);
+                loadPICStraight(index, 32, i, j, k, J_pz);
+                loadPICStraight(index, 40, i, j, k, B_px);
+                loadPICStraight(index, 48, i, j, k, B_py);
+                loadPICStraight(index, 56, i, j, k, B_pz);
+
+                loadPICAligned(index, 64, i, j, k, SFAcovxy);
+                loadPICAligned(index, 72, i, j, k, SFAcovxz);
+                loadPICAligned(index, 80, i, j, k, SFAcovyy);
+                loadPICAligned(index, 88, i, j, k, SFAcovyz);
+                loadPICAligned(index, 96, i, j, k, SFAcovzz);
+                loadPICAligned(index, 104, i, j, k, SFAcovxy_py);
+                loadPICAligned(index, 112, i, j, k, SFAcovxy_pz);
+                loadPICAligned(index, 120, i, j, k, SFAcovxz_py);
+                loadPICAligned(index, 128, i, j, k, SFAcovxz_pz);
+                loadPICAligned(index, 136, i, j, k, SFAcovyy_px);
+                loadPICAligned(index, 144, i, j, k, SFAcovyy_pz);
+                loadPICAligned(index, 152, i, j, k, SFAcovyz_px);
+                loadPICAligned(index, 160, i, j, k, SFAcovyz_py);
+                loadPICAligned(index, 168, i, j, k, SFAcovyz_pz);
+                loadPICAligned(index, 176, i, j, k, SFAcovzz_px);
+                loadPICAligned(index, 184, i, j, k, SFAcovzz_py);
+                loadPICAligned(index, 192, i, j, k, SFAconxx);
+                loadPICAligned(index, 200, i, j, k, SFAconxy);
+                loadPICAligned(index, 208, i, j, k, SFAconyy);
+
+                loadPICStraight(index, 216, i, j, k, R);
+                loadPICStraight(index, 224, i, j, k, Z);
+            }
         }
 
         if (hostId == 0) {
@@ -2643,7 +2751,7 @@ class HybridModel {
 
         const mhdReal xCenter = (radialIndex - 1) * gridDx;
         const mhdReal sigma2 = 2.0 * width * width;
-        const mhdReal qCenter = q[radialIndex - 1][0];
+        const mhdReal qCenter = q[radialIndex - 1][0][0];
         const mhdReal qRounded = std::round(qCenter * 10.0) / 10.0;
 
         const int primaryN = rightN * tubes;
@@ -2687,553 +2795,1403 @@ class HybridModel {
             logDone();
         }
     }
-    void compressCollocatedCoefficient() {
+    void compressCoefficient() {
 
-        logStart("Compress collocated coefficient in shifted metric coordinate.");
+        logStart("Compress coefficient in shifted metric coordinate.");
 
-        /*---------------------------Linear---------------------------*/
+        if (NFP == 1) {
 
-        for (int i = 0; i < gridNx; i++) {
-            for (int j = 0; j < gridNy; j++) {
+            /*---------------------------Linear---------------------------*/
 
-                // Vorticity
+            for (int i = 0; i < gridNx; i++) {
+                for (int j = 0; j < gridNy; j++) {
 
-                h_A_w[j][i] =
-                    std::pow(B[i][j], -2.0) * std::pow(J[i][j], -1.0) *
-                    (B[i][j] * gcovyz[i][j] * (Bny_py[i][j] * JpB_px[i][j] + (-1.0) * Bny_px[i][j] * JpB_py[i][j]) +
-                     Bny[i][j] *
-                         (gcovyz[i][j] * ((-1.0) * B_py[i][j] * JpB_px[i][j] + B_px[i][j] * JpB_py[i][j]) +
-                          B[i][j] * (gcovyz_py[i][j] * JpB_px[i][j] + (-1.0) * gcovyz_px[i][j] * JpB_py[i][j])));
-                h_A_px_w[j][i] = (-1.0) * std::pow(B[i][j], -1.0) * Bny[i][j] * gcovyz[i][j] * std::pow(J[i][j], -1.0) *
-                                 JpB_py[i][j];
-                h_A_py_w[j][i] =
-                    std::pow(B[i][j], -1.0) * Bny[i][j] * gcovyz[i][j] * std::pow(J[i][j], -1.0) * JpB_px[i][j];
-                h_A_pz_w[j][i] = std::pow(B[i][j], -1.0) * Bny[i][j] * std::pow(J[i][j], -1.0) *
-                                 ((-1.0) * gcovyy[i][j] * JpB_px[i][j] + gcovxy[i][j] * JpB_py[i][j]);
+                    // Vorticity
 
-                h_dJpB_w[j][i] = 0.0;
-                h_dJpB_px_w[j][i] = 0.0;
-                h_dJpB_py_w[j][i] = Bny[i][j];
-                h_dJpB_pz_w[j][i] = 0.0;
+                    h_A_w[j][i][0] =
+                        std::pow(B[i][j][0], -2.0) * std::pow(J[i][j][0], -1.0) *
+                        (B[i][j][0] * gcovyz[i][j][0] *
+                             (Bny_py[i][j][0] * JpB_px[i][j][0] + (-1.0) * Bny_px[i][j][0] * JpB_py[i][j][0]) +
+                         Bny[i][j][0] * (gcovyz[i][j][0] * ((-1.0) * B_py[i][j][0] * JpB_px[i][j][0] +
+                                                            B_px[i][j][0] * JpB_py[i][j][0]) +
+                                         B[i][j][0] * (gcovyz_py[i][j][0] * JpB_px[i][j][0] +
+                                                       (-1.0) * gcovyz_px[i][j][0] * JpB_py[i][j][0])));
+                    h_A_px_w[j][i][0] = (-1.0) * std::pow(B[i][j][0], -1.0) * Bny[i][j][0] * gcovyz[i][j][0] *
+                                        std::pow(J[i][j][0], -1.0) * JpB_py[i][j][0];
+                    h_A_py_w[j][i][0] = std::pow(B[i][j][0], -1.0) * Bny[i][j][0] * gcovyz[i][j][0] *
+                                        std::pow(J[i][j][0], -1.0) * JpB_px[i][j][0];
+                    h_A_pz_w[j][i][0] =
+                        std::pow(B[i][j][0], -1.0) * Bny[i][j][0] * std::pow(J[i][j][0], -1.0) *
+                        ((-1.0) * gcovyy[i][j][0] * JpB_px[i][j][0] + gcovxy[i][j][0] * JpB_py[i][j][0]);
 
-                h_dP_w[j][i] = 0.0;
-                h_dP_px_w[j][i] = std::pow(B[i][j], -3.0) *
-                                  (B[i][j] * Bny_py[i][j] * gcovyz[i][j] +
-                                   Bny[i][j] * ((-1.0) * B_py[i][j] * gcovyz[i][j] + B[i][j] * gcovyz_py[i][j])) *
-                                  std::pow(J[i][j], -1.0);
-                h_dP_py_w[j][i] =
-                    std::pow(B[i][j], -4.0) *
-                    (B[i][j] * Bny[i][j] * B_px[i][j] * gcovyz[i][j] +
-                     (-1.0) * std::pow(B[i][j], 2.0) * (Bny_px[i][j] * gcovyz[i][j] + Bny[i][j] * gcovyz_px[i][j]) +
-                     std::pow(Bny[i][j], 3.0) *
-                         ((gcovxy_py[i][j] + (-1.0) * gcovyy_px[i][j]) * gcovyz[i][j] + gcovyy[i][j] * gcovyz_px[i][j] +
-                          (-1.0) * gcovxy[i][j] * gcovyz_py[i][j])) *
-                    std::pow(J[i][j], -1.0);
-                h_dP_pz_w[j][i] = std::pow(B[i][j], -3.0) *
-                                  (B[i][j] * ((-1.0) * Bny_py[i][j] * gcovxy[i][j] + Bny_px[i][j] * gcovyy[i][j]) +
-                                   Bny[i][j] * (B_py[i][j] * gcovxy[i][j] + (-1.0) * B_px[i][j] * gcovyy[i][j] +
-                                                B[i][j] * ((-1.0) * gcovxy_py[i][j] + gcovyy_px[i][j]))) *
-                                  std::pow(J[i][j], -1.0);
+                    h_dJpB_w[j][i][0] = 0.0;
+                    h_dJpB_px_w[j][i][0] = 0.0;
+                    h_dJpB_py_w[j][i][0] = Bny[i][j][0];
+                    h_dJpB_pz_w[j][i][0] = 0.0;
 
-                h_w_py_w[j][i] = (-1.0 / 2.0) * std::pow(B[i][j], -2.0) * Bny[i][j] * gcovyz[i][j] *
-                                 std::pow(J[i][j], -1.0) * std::pow(Ni[i][j], -1.0) * Pi_px[i][j] *
-                                 std::pow(NormQE, -1.0);
-                h_w_pz_w[j][i] = (1.0 / 2.0) * std::pow(B[i][j], -2.0) * Bny[i][j] * gcovyy[i][j] *
-                                 std::pow(J[i][j], -1.0) * std::pow(Ni[i][j], -1.0) * Pi_px[i][j] *
-                                 std::pow(NormQE, -1.0);
-                h_w_Phi[j][i] = -std::pow(Rho[i][j], 2.0) * std::pow(Va[i][j], 2.0);
+                    h_dP_w[j][i][0] = 0.0;
+                    h_dP_px_w[j][i][0] =
+                        std::pow(B[i][j][0], -3.0) *
+                        (B[i][j][0] * Bny_py[i][j][0] * gcovyz[i][j][0] +
+                         Bny[i][j][0] * ((-1.0) * B_py[i][j][0] * gcovyz[i][j][0] + B[i][j][0] * gcovyz_py[i][j][0])) *
+                        std::pow(J[i][j][0], -1.0);
+                    h_dP_py_w[j][i][0] =
+                        std::pow(B[i][j][0], -4.0) *
+                        (B[i][j][0] * Bny[i][j][0] * B_px[i][j][0] * gcovyz[i][j][0] +
+                         (-1.0) * std::pow(B[i][j][0], 2.0) *
+                             (Bny_px[i][j][0] * gcovyz[i][j][0] + Bny[i][j][0] * gcovyz_px[i][j][0]) +
+                         std::pow(Bny[i][j][0], 3.0) *
+                             ((gcovxy_py[i][j][0] + (-1.0) * gcovyy_px[i][j][0]) * gcovyz[i][j][0] +
+                              gcovyy[i][j][0] * gcovyz_px[i][j][0] + (-1.0) * gcovxy[i][j][0] * gcovyz_py[i][j][0])) *
+                        std::pow(J[i][j][0], -1.0);
+                    h_dP_pz_w[j][i][0] =
+                        std::pow(B[i][j][0], -3.0) *
+                        (B[i][j][0] * ((-1.0) * Bny_py[i][j][0] * gcovxy[i][j][0] + Bny_px[i][j][0] * gcovyy[i][j][0]) +
+                         Bny[i][j][0] * (B_py[i][j][0] * gcovxy[i][j][0] + (-1.0) * B_px[i][j][0] * gcovyy[i][j][0] +
+                                         B[i][j][0] * ((-1.0) * gcovxy_py[i][j][0] + gcovyy_px[i][j][0]))) *
+                        std::pow(J[i][j][0], -1.0);
 
-                h_wdPAdJpB2w[j][i][0] = h_w_py_w[j][i];
-                h_wdPAdJpB2w[j][i][1] = h_w_pz_w[j][i];
-                h_wdPAdJpB2w[j][i][2] = h_dP_px_w[j][i];
-                h_wdPAdJpB2w[j][i][3] = h_dP_py_w[j][i];
-                h_wdPAdJpB2w[j][i][4] = h_dP_pz_w[j][i];
-                h_wdPAdJpB2w[j][i][5] = h_A_w[j][i];
-                h_wdPAdJpB2w[j][i][6] = h_A_px_w[j][i];
-                h_wdPAdJpB2w[j][i][7] = h_A_py_w[j][i];
-                h_wdPAdJpB2w[j][i][8] = h_A_pz_w[j][i];
-                h_wdPAdJpB2w[j][i][9] = h_dJpB_py_w[j][i];
+                    h_w_py_w[j][i][0] = (-1.0 / 2.0) * std::pow(B[i][j][0], -2.0) * Bny[i][j][0] * gcovyz[i][j][0] *
+                                        std::pow(J[i][j][0], -1.0) * std::pow(Ni[i][j][0], -1.0) * Pi_px[i][j][0] *
+                                        std::pow(NormQE, -1.0);
+                    h_w_pz_w[j][i][0] = (1.0 / 2.0) * std::pow(B[i][j][0], -2.0) * Bny[i][j][0] * gcovyy[i][j][0] *
+                                        std::pow(J[i][j][0], -1.0) * std::pow(Ni[i][j][0], -1.0) * Pi_px[i][j][0] *
+                                        std::pow(NormQE, -1.0);
+                    h_w_Phi[j][i][0] = -std::pow(Rho[i][j][0], 2.0) * std::pow(Va[i][j][0], 2.0);
 
-                // Poisson Equation
+                    h_wdPAdJpB2w[j][i][0 * 10 + 0] = h_w_py_w[j][i][0];
+                    h_wdPAdJpB2w[j][i][0 * 10 + 1] = h_w_pz_w[j][i][0];
+                    h_wdPAdJpB2w[j][i][0 * 10 + 2] = h_dP_px_w[j][i][0];
+                    h_wdPAdJpB2w[j][i][0 * 10 + 3] = h_dP_py_w[j][i][0];
+                    h_wdPAdJpB2w[j][i][0 * 10 + 4] = h_dP_pz_w[j][i][0];
+                    h_wdPAdJpB2w[j][i][0 * 10 + 5] = h_A_w[j][i][0];
+                    h_wdPAdJpB2w[j][i][0 * 10 + 6] = h_A_px_w[j][i][0];
+                    h_wdPAdJpB2w[j][i][0 * 10 + 7] = h_A_py_w[j][i][0];
+                    h_wdPAdJpB2w[j][i][0 * 10 + 8] = h_A_pz_w[j][i][0];
+                    h_wdPAdJpB2w[j][i][0 * 10 + 9] = h_dJpB_py_w[j][i][0];
 
-                h_Phi_w[j][i] = 0.0;
-                h_Phi_px_w[j][i] =
-                    std::pow(Va[i][j], -3.0) * (std::pow(J[i][j], -1.0) *
-                                                    ((gconxx_px[i][j] + gconxy_py[i][j]) * J[i][j] +
-                                                     gconxx[i][j] * J_px[i][j] + gconxy[i][j] * J_py[i][j]) *
-                                                    Va[i][j] +
-                                                (-2.0) * (gconxx[i][j] * Va_px[i][j] + gconxy[i][j] * Va_py[i][j]));
-                h_Phi_pz_w[j][i] =
-                    std::pow(Va[i][j], -3.0) * (std::pow(J[i][j], -1.0) *
-                                                    ((gconxz_px[i][j] + gconyz_py[i][j]) * J[i][j] +
-                                                     gconxz[i][j] * J_px[i][j] + gconyz[i][j] * J_py[i][j]) *
-                                                    Va[i][j] +
-                                                (-2.0) * (gconxz[i][j] * Va_px[i][j] + gconyz[i][j] * Va_py[i][j]));
-                h_Phi_px2_w[j][i] = gconxx[i][j] * std::pow(Va[i][j], -2.0);
-                h_Phi_pxz_w[j][i] = 2.0 * gconxz[i][j] * std::pow(Va[i][j], -2.0);
-                h_Phi_pz2_w[j][i] = gconzz[i][j] * std::pow(Va[i][j], -2.0);
-                h_Phi2w[j][i][0] = h_Phi_px_w[j][i];
-                h_Phi2w[j][i][1] = h_Phi_pz_w[j][i];
-                h_Phi2w[j][i][2] = h_Phi_px2_w[j][i];
-                h_Phi2w[j][i][3] = h_Phi_pxz_w[j][i];
-                h_Phi2w[j][i][4] = h_Phi_pz2_w[j][i];
+                    // Poisson Equation
 
-                // Perturbed Parallel Current
+                    h_Phi_w[j][i][0] = 0.0;
+                    h_Phi_px_w[j][i][0] =
+                        std::pow(Va[i][j][0], -3.0) *
+                        (std::pow(J[i][j][0], -1.0) *
+                             ((gconxx_px[i][j][0] + gconxy_py[i][j][0]) * J[i][j][0] + gconxx[i][j][0] * J_px[i][j][0] +
+                              gconxy[i][j][0] * J_py[i][j][0]) *
+                             Va[i][j][0] +
+                         (-2.0) * (gconxx[i][j][0] * Va_px[i][j][0] + gconxy[i][j][0] * Va_py[i][j][0]));
+                    h_Phi_pz_w[j][i][0] =
+                        std::pow(Va[i][j][0], -3.0) *
+                        (std::pow(J[i][j][0], -1.0) *
+                             ((gconxz_px[i][j][0] + gconyz_py[i][j][0]) * J[i][j][0] + gconxz[i][j][0] * J_px[i][j][0] +
+                              gconyz[i][j][0] * J_py[i][j][0]) *
+                             Va[i][j][0] +
+                         (-2.0) * (gconxz[i][j][0] * Va_px[i][j][0] + gconyz[i][j][0] * Va_py[i][j][0]));
+                    h_Phi_px2_w[j][i][0] = gconxx[i][j][0] * std::pow(Va[i][j][0], -2.0);
+                    h_Phi_pxz_w[j][i][0] = 2.0 * gconxz[i][j][0] * std::pow(Va[i][j][0], -2.0);
+                    h_Phi_pz2_w[j][i][0] = gconzz[i][j][0] * std::pow(Va[i][j][0], -2.0);
+                    h_Phi2w[j][i][0 * 5 + 0] = h_Phi_px_w[j][i][0];
+                    h_Phi2w[j][i][0 * 5 + 1] = h_Phi_pz_w[j][i][0];
+                    h_Phi2w[j][i][0 * 5 + 2] = h_Phi_px2_w[j][i][0];
+                    h_Phi2w[j][i][0 * 5 + 3] = h_Phi_pxz_w[j][i][0];
+                    h_Phi2w[j][i][0 * 5 + 4] = h_Phi_pz2_w[j][i][0];
 
-                h_A_dJpB[j][i] = std::pow(B[i][j], -3.0) * std::pow(J[i][j], -1.0) *
-                                 (B[i][j] * B_px2[i][j] * gconxx[i][j] * J[i][j] +
-                                  2.0 * B_px[i][j] * B_py[i][j] * gconxy[i][j] * J[i][j] +
-                                  B[i][j] * B_px[i][j] *
-                                      (gconxx_px[i][j] * J[i][j] + gconxy_py[i][j] * J[i][j] +
-                                       gconxx[i][j] * J_px[i][j] + gconxy[i][j] * J_py[i][j]));
-                h_A_px_dJpB[j][i] =
-                    (-1.0) * std::pow(B[i][j], -2.0) *
-                    (2.0 * B_py[i][j] * gconxy[i][j] + B[i][j] * std::pow(J[i][j], -1.0) *
-                                                           ((gconxx_px[i][j] + gconxy_py[i][j]) * J[i][j] +
-                                                            gconxx[i][j] * J_px[i][j] + gconxy[i][j] * J_py[i][j]));
-                h_A_pz_dJpB[j][i] =
-                    (-1.0) * std::pow(B[i][j], -2.0) *
-                    (2.0 * B_py[i][j] * gconyz[i][j] + B[i][j] * std::pow(J[i][j], -1.0) *
-                                                           ((gconxz_px[i][j] + gconyz_py[i][j]) * J[i][j] +
-                                                            gconxz[i][j] * J_px[i][j] + gconyz[i][j] * J_py[i][j]));
-                h_A_px2_dJpB[j][i] = (-1.0) * std::pow(B[i][j], -1.0) * gconxx[i][j];
-                h_A_pxz_dJpB[j][i] = (-2.0) * std::pow(B[i][j], -1.0) * gconxz[i][j];
-                h_A_pz2_dJpB[j][i] = (-1.0) * std::pow(B[i][j], -1.0) * gconzz[i][j];
-                h_A2dJpB[j][i][0] = h_A_dJpB[j][i];
-                h_A2dJpB[j][i][1] = h_A_px_dJpB[j][i];
-                h_A2dJpB[j][i][2] = h_A_pz_dJpB[j][i];
-                h_A2dJpB[j][i][3] = h_A_px2_dJpB[j][i];
-                h_A2dJpB[j][i][4] = h_A_pxz_dJpB[j][i];
-                h_A2dJpB[j][i][5] = h_A_pz2_dJpB[j][i];
+                    // Perturbed Parallel Current
 
-                // Parallel Resistive
+                    h_A_dJpB[j][i][0] = std::pow(B[i][j][0], -3.0) * std::pow(J[i][j][0], -1.0) *
+                                        (B[i][j][0] * B_px2[i][j][0] * gconxx[i][j][0] * J[i][j][0] +
+                                         2.0 * B_px[i][j][0] * B_py[i][j][0] * gconxy[i][j][0] * J[i][j][0] +
+                                         B[i][j][0] * B_px[i][j][0] *
+                                             (gconxx_px[i][j][0] * J[i][j][0] + gconxy_py[i][j][0] * J[i][j][0] +
+                                              gconxx[i][j][0] * J_px[i][j][0] + gconxy[i][j][0] * J_py[i][j][0]));
+                    h_A_px_dJpB[j][i][0] = (-1.0) * std::pow(B[i][j][0], -2.0) *
+                                           (2.0 * B_py[i][j][0] * gconxy[i][j][0] +
+                                            B[i][j][0] * std::pow(J[i][j][0], -1.0) *
+                                                ((gconxx_px[i][j][0] + gconxy_py[i][j][0]) * J[i][j][0] +
+                                                 gconxx[i][j][0] * J_px[i][j][0] + gconxy[i][j][0] * J_py[i][j][0]));
+                    h_A_pz_dJpB[j][i][0] = (-1.0) * std::pow(B[i][j][0], -2.0) *
+                                           (2.0 * B_py[i][j][0] * gconyz[i][j][0] +
+                                            B[i][j][0] * std::pow(J[i][j][0], -1.0) *
+                                                ((gconxz_px[i][j][0] + gconyz_py[i][j][0]) * J[i][j][0] +
+                                                 gconxz[i][j][0] * J_px[i][j][0] + gconyz[i][j][0] * J_py[i][j][0]));
+                    h_A_px2_dJpB[j][i][0] = (-1.0) * std::pow(B[i][j][0], -1.0) * gconxx[i][j][0];
+                    h_A_pxz_dJpB[j][i][0] = (-2.0) * std::pow(B[i][j][0], -1.0) * gconxz[i][j][0];
+                    h_A_pz2_dJpB[j][i][0] = (-1.0) * std::pow(B[i][j][0], -1.0) * gconzz[i][j][0];
+                    h_A2dJpB[j][i][0 * 6 + 0] = h_A_dJpB[j][i][0];
+                    h_A2dJpB[j][i][0 * 6 + 1] = h_A_px_dJpB[j][i][0];
+                    h_A2dJpB[j][i][0 * 6 + 2] = h_A_pz_dJpB[j][i][0];
+                    h_A2dJpB[j][i][0 * 6 + 3] = h_A_px2_dJpB[j][i][0];
+                    h_A2dJpB[j][i][0 * 6 + 4] = h_A_pxz_dJpB[j][i][0];
+                    h_A2dJpB[j][i][0 * 6 + 5] = h_A_pz2_dJpB[j][i][0];
 
-                h_A_resistive[j][i] = h_A_dJpB[j][i] * B[i][j] * dt * nablaPerp2A.coef + 1.0;
-                h_A_px_resistive[j][i] = h_A_px_dJpB[j][i] * B[i][j] * dt * nablaPerp2A.coef;
-                h_A_pz_resistive[j][i] = h_A_pz_dJpB[j][i] * B[i][j] * dt * nablaPerp2A.coef;
-                h_A_px2_resistive[j][i] = h_A_px2_dJpB[j][i] * B[i][j] * dt * nablaPerp2A.coef;
-                h_A_pxz_resistive[j][i] = h_A_pxz_dJpB[j][i] * B[i][j] * dt * nablaPerp2A.coef;
-                h_A_pz2_resistive[j][i] = h_A_pz2_dJpB[j][i] * B[i][j] * dt * nablaPerp2A.coef;
+                    // Parallel Resistive
 
-                // Perpendicular Dissipation
+                    h_A_resistive[j][i][0] = h_A_dJpB[j][i][0] * B[i][j][0] * dt * nablaPerp2A.coef + 1.0;
+                    h_A_px_resistive[j][i][0] = h_A_px_dJpB[j][i][0] * B[i][j][0] * dt * nablaPerp2A.coef;
+                    h_A_pz_resistive[j][i][0] = h_A_pz_dJpB[j][i][0] * B[i][j][0] * dt * nablaPerp2A.coef;
+                    h_A_px2_resistive[j][i][0] = h_A_px2_dJpB[j][i][0] * B[i][j][0] * dt * nablaPerp2A.coef;
+                    h_A_pxz_resistive[j][i][0] = h_A_pxz_dJpB[j][i][0] * B[i][j][0] * dt * nablaPerp2A.coef;
+                    h_A_pz2_resistive[j][i][0] = h_A_pz2_dJpB[j][i][0] * B[i][j][0] * dt * nablaPerp2A.coef;
 
-                h_F_perp2[j][i] = 1.0;
-                h_F_px_perp2[j][i] = (1.0) * std::pow(J[i][j], -1.0) *
-                                     ((gconxx_px[i][j] + gconxy_py[i][j]) * J[i][j] + gconxx[i][j] * J_px[i][j] +
-                                      gconxy[i][j] * J_py[i][j]);
-                h_F_pz_perp2[j][i] = (1.0) * std::pow(J[i][j], -1.0) *
-                                     ((gconxz_px[i][j] + gconyz_py[i][j]) * J[i][j] + gconxz[i][j] * J_px[i][j] +
-                                      gconyz[i][j] * J_py[i][j]);
-                h_F_px2_perp2[j][i] = (1.0) * gconxx[i][j];
-                h_F_pxz_perp2[j][i] = (2.0) * gconxz[i][j];
-                h_F_pz2_perp2[j][i] = (1.0) * gconzz[i][j];
-                h_F2perp2[j][i][0] = h_F_px_perp2[j][i];
-                h_F2perp2[j][i][1] = h_F_pz_perp2[j][i];
-                h_F2perp2[j][i][2] = h_F_px2_perp2[j][i];
-                h_F2perp2[j][i][3] = h_F_pxz_perp2[j][i];
-                h_F2perp2[j][i][4] = h_F_pz2_perp2[j][i];
+                    // Perpendicular Dissipation
 
-                // Perturbed Parallel Vector Potential
+                    h_F_perp2[j][i][0] = 1.0;
+                    h_F_px_perp2[j][i][0] = (1.0) * std::pow(J[i][j][0], -1.0) *
+                                            ((gconxx_px[i][j][0] + gconxy_py[i][j][0]) * J[i][j][0] +
+                                             gconxx[i][j][0] * J_px[i][j][0] + gconxy[i][j][0] * J_py[i][j][0]);
+                    h_F_pz_perp2[j][i][0] = (1.0) * std::pow(J[i][j][0], -1.0) *
+                                            ((gconxz_px[i][j][0] + gconyz_py[i][j][0]) * J[i][j][0] +
+                                             gconxz[i][j][0] * J_px[i][j][0] + gconyz[i][j][0] * J_py[i][j][0]);
+                    h_F_px2_perp2[j][i][0] = (1.0) * gconxx[i][j][0];
+                    h_F_pxz_perp2[j][i][0] = (2.0) * gconxz[i][j][0];
+                    h_F_pz2_perp2[j][i][0] = (1.0) * gconzz[i][j][0];
+                    h_F2perp2[j][i][0 * 5 + 0] = h_F_px_perp2[j][i][0];
+                    h_F2perp2[j][i][0 * 5 + 1] = h_F_pz_perp2[j][i][0];
+                    h_F2perp2[j][i][0 * 5 + 2] = h_F_px2_perp2[j][i][0];
+                    h_F2perp2[j][i][0 * 5 + 3] = h_F_pxz_perp2[j][i][0];
+                    h_F2perp2[j][i][0 * 5 + 4] = h_F_pz2_perp2[j][i][0];
 
-                h_Phi_A[j][i] = 0.0;
-                h_Phi_px_A[j][i] = 0.0;
-                h_Phi_py_A[j][i] = (-1.0) * std::pow(B[i][j], -1.0) * Bny[i][j];
-                h_Phi_pz_A[j][i] = 0.0;
+                    // Perturbed Parallel Vector Potential
 
-                h_dNe_A[j][i] = 0.0;
-                h_dNe_px_A[j][i] = 0.0;
-                h_dNe_py_A[j][i] = (1.0 / 2.0) * std::pow(B[i][j], -1.0) * Bny[i][j] * std::pow(Ne[i][j], -1.0) *
-                                   Te[i][j] * std::pow(NormQE, -1.0);
-                h_dNe_pz_A[j][i] = 0.0;
+                    h_Phi_A[j][i][0] = 0.0;
+                    h_Phi_px_A[j][i][0] = 0.0;
+                    h_Phi_py_A[j][i][0] = (-1.0) * std::pow(B[i][j][0], -1.0) * Bny[i][j][0];
+                    h_Phi_pz_A[j][i][0] = 0.0;
 
-                h_A_A[j][i] = (1.0 / 2.0) * std::pow(B[i][j], -3.0) *
-                              (B[i][j] * Bny_py[i][j] * gcovyz[i][j] +
-                               Bny[i][j] * ((-1.0) * B_py[i][j] * gcovyz[i][j] + B[i][j] * gcovyz_py[i][j])) *
-                              std::pow(J[i][j], -1.0) * std::pow(Ne[i][j], -1.0) * Ne_px[i][j] * Te[i][j] *
-                              std::pow(NormQE, -1.0);
-                h_A_px_A[j][i] = 0.0;
-                h_A_py_A[j][i] = (1.0 / 2.0) * std::pow(B[i][j], -2.0) * Bny[i][j] * gcovyz[i][j] *
-                                 std::pow(J[i][j], -1.0) * std::pow(Ne[i][j], -1.0) * Ne_px[i][j] * Te[i][j] *
-                                 std::pow(NormQE, -1.0);
-                h_A_pz_A[j][i] = (-1.0 / 2.0) * std::pow(B[i][j], -2.0) * Bny[i][j] * gcovyy[i][j] *
-                                 std::pow(J[i][j], -1.0) * std::pow(Ne[i][j], -1.0) * Ne_px[i][j] * Te[i][j] *
-                                 std::pow(NormQE, -1.0);
+                    h_dNe_A[j][i][0] = 0.0;
+                    h_dNe_px_A[j][i][0] = 0.0;
+                    h_dNe_py_A[j][i][0] = (1.0 / 2.0) * std::pow(B[i][j][0], -1.0) * Bny[i][j][0] *
+                                          std::pow(Ne[i][j][0], -1.0) * Te[i][j][0] * std::pow(NormQE, -1.0);
+                    h_dNe_pz_A[j][i][0] = 0.0;
 
-                h_APhidNe2A[j][i][0] = h_A_A[j][i];
-                h_APhidNe2A[j][i][1] = h_A_py_A[j][i];
-                h_APhidNe2A[j][i][2] = h_A_pz_A[j][i];
-                h_APhidNe2A[j][i][3] = h_Phi_py_A[j][i];
-                h_APhidNe2A[j][i][4] = h_dNe_py_A[j][i];
+                    h_A_A[j][i][0] =
+                        (1.0 / 2.0) * std::pow(B[i][j][0], -3.0) *
+                        (B[i][j][0] * Bny_py[i][j][0] * gcovyz[i][j][0] +
+                         Bny[i][j][0] * ((-1.0) * B_py[i][j][0] * gcovyz[i][j][0] + B[i][j][0] * gcovyz_py[i][j][0])) *
+                        std::pow(J[i][j][0], -1.0) * std::pow(Ne[i][j][0], -1.0) * Ne_px[i][j][0] * Te[i][j][0] *
+                        std::pow(NormQE, -1.0);
+                    h_A_px_A[j][i][0] = 0.0;
+                    h_A_py_A[j][i][0] = (1.0 / 2.0) * std::pow(B[i][j][0], -2.0) * Bny[i][j][0] * gcovyz[i][j][0] *
+                                        std::pow(J[i][j][0], -1.0) * std::pow(Ne[i][j][0], -1.0) * Ne_px[i][j][0] *
+                                        Te[i][j][0] * std::pow(NormQE, -1.0);
+                    h_A_pz_A[j][i][0] = (-1.0 / 2.0) * std::pow(B[i][j][0], -2.0) * Bny[i][j][0] * gcovyy[i][j][0] *
+                                        std::pow(J[i][j][0], -1.0) * std::pow(Ne[i][j][0], -1.0) * Ne_px[i][j][0] *
+                                        Te[i][j][0] * std::pow(NormQE, -1.0);
 
-                // Perturbed Density
+                    h_APhidNe2A[j][i][0 * 5 + 0] = h_A_A[j][i][0];
+                    h_APhidNe2A[j][i][0 * 5 + 1] = h_A_py_A[j][i][0];
+                    h_APhidNe2A[j][i][0 * 5 + 2] = h_A_pz_A[j][i][0];
+                    h_APhidNe2A[j][i][0 * 5 + 3] = h_Phi_py_A[j][i][0];
+                    h_APhidNe2A[j][i][0 * 5 + 4] = h_dNe_py_A[j][i][0];
 
-                h_Phi_dNe[j][i] = 0.0;
-                h_Phi_px_dNe[j][i] = (-1.0) * std::pow(B[i][j], -3.0) *
-                                     (B[i][j] * Bny_py[i][j] * gcovyz[i][j] +
-                                      Bny[i][j] * ((-2.0) * B_py[i][j] * gcovyz[i][j] + B[i][j] * gcovyz_py[i][j])) *
-                                     std::pow(J[i][j], -1.0) * Ne[i][j];
-                h_Phi_py_dNe[j][i] =
-                    std::pow(B[i][j], -3.0) * std::pow(J[i][j], -1.0) *
-                    (B[i][j] * Bny_px[i][j] * gcovyz[i][j] * Ne[i][j] +
-                     Bny[i][j] * (B[i][j] * gcovyz_px[i][j] * Ne[i][j] +
-                                  gcovyz[i][j] * ((-2.0) * B_px[i][j] * Ne[i][j] + B[i][j] * Ne_px[i][j])));
-                h_Phi_pz_dNe[j][i] =
-                    std::pow(B[i][j], -3.0) * std::pow(J[i][j], -1.0) *
-                    (B[i][j] * (Bny_py[i][j] * gcovxy[i][j] + (-1.0) * Bny_px[i][j] * gcovyy[i][j]) * Ne[i][j] +
-                     (-1.0) * Bny[i][j] *
-                         (2.0 * B_py[i][j] * gcovxy[i][j] * Ne[i][j] + (-2.0) * B_px[i][j] * gcovyy[i][j] * Ne[i][j] +
-                          B[i][j] *
-                              (((-1.0) * gcovxy_py[i][j] + gcovyy_px[i][j]) * Ne[i][j] + gcovyy[i][j] * Ne_px[i][j])));
+                    // Perturbed Density
 
-                h_dPe_dNe[j][i] = 0.0;
-                h_dPe_px_dNe[j][i] = (1.0 / 2.0) * std::pow(B[i][j], -3.0) *
-                                     (B[i][j] * Bny_py[i][j] * gcovyz[i][j] +
-                                      Bny[i][j] * ((-2.0) * B_py[i][j] * gcovyz[i][j] + B[i][j] * gcovyz_py[i][j])) *
-                                     std::pow(J[i][j], -1.0) * std::pow(NormQE, -1.0);
-                h_dPe_py_dNe[j][i] =
-                    (1.0 / 2.0) * std::pow(B[i][j], -3.0) *
-                    ((-1.0) * B[i][j] * Bny_px[i][j] * gcovyz[i][j] +
-                     Bny[i][j] * (2.0 * B_px[i][j] * gcovyz[i][j] + (-1.0) * B[i][j] * gcovyz_px[i][j])) *
-                    std::pow(J[i][j], -1.0) * std::pow(NormQE, -1.0);
-                h_dPe_pz_dNe[j][i] =
-                    (1.0 / 2.0) * std::pow(B[i][j], -3.0) *
-                    (B[i][j] * ((-1.0) * Bny_py[i][j] * gcovxy[i][j] + Bny_px[i][j] * gcovyy[i][j]) +
-                     Bny[i][j] * (2.0 * B_py[i][j] * gcovxy[i][j] + (-2.0) * B_px[i][j] * gcovyy[i][j] +
-                                  B[i][j] * ((-1.0) * gcovxy_py[i][j] + gcovyy_px[i][j]))) *
-                    std::pow(J[i][j], -1.0) * std::pow(NormQE, -1.0);
+                    h_Phi_dNe[j][i][0] = 0.0;
+                    h_Phi_px_dNe[j][i][0] =
+                        (-1.0) * std::pow(B[i][j][0], -3.0) *
+                        (B[i][j][0] * Bny_py[i][j][0] * gcovyz[i][j][0] +
+                         Bny[i][j][0] * ((-2.0) * B_py[i][j][0] * gcovyz[i][j][0] + B[i][j][0] * gcovyz_py[i][j][0])) *
+                        std::pow(J[i][j][0], -1.0) * Ne[i][j][0];
+                    h_Phi_py_dNe[j][i][0] =
+                        std::pow(B[i][j][0], -3.0) * std::pow(J[i][j][0], -1.0) *
+                        (B[i][j][0] * Bny_px[i][j][0] * gcovyz[i][j][0] * Ne[i][j][0] +
+                         Bny[i][j][0] *
+                             (B[i][j][0] * gcovyz_px[i][j][0] * Ne[i][j][0] +
+                              gcovyz[i][j][0] * ((-2.0) * B_px[i][j][0] * Ne[i][j][0] + B[i][j][0] * Ne_px[i][j][0])));
+                    h_Phi_pz_dNe[j][i][0] =
+                        std::pow(B[i][j][0], -3.0) * std::pow(J[i][j][0], -1.0) *
+                        (B[i][j][0] * (Bny_py[i][j][0] * gcovxy[i][j][0] + (-1.0) * Bny_px[i][j][0] * gcovyy[i][j][0]) *
+                             Ne[i][j][0] +
+                         (-1.0) * Bny[i][j][0] *
+                             (2.0 * B_py[i][j][0] * gcovxy[i][j][0] * Ne[i][j][0] +
+                              (-2.0) * B_px[i][j][0] * gcovyy[i][j][0] * Ne[i][j][0] +
+                              B[i][j][0] * (((-1.0) * gcovxy_py[i][j][0] + gcovyy_px[i][j][0]) * Ne[i][j][0] +
+                                            gcovyy[i][j][0] * Ne_px[i][j][0])));
 
-                h_dJpB_dNe[j][i] = 0.0;
-                h_dJpB_px_dNe[j][i] = 0.0;
-                h_dJpB_py_dNe[j][i] = Bny[i][j] * std::pow(NormQE, -1.0);
-                h_dJpB_pz_dNe[j][i] = 0.0;
+                    h_dPe_dNe[j][i][0] = 0.0;
+                    h_dPe_px_dNe[j][i][0] =
+                        (1.0 / 2.0) * std::pow(B[i][j][0], -3.0) *
+                        (B[i][j][0] * Bny_py[i][j][0] * gcovyz[i][j][0] +
+                         Bny[i][j][0] * ((-2.0) * B_py[i][j][0] * gcovyz[i][j][0] + B[i][j][0] * gcovyz_py[i][j][0])) *
+                        std::pow(J[i][j][0], -1.0) * std::pow(NormQE, -1.0);
+                    h_dPe_py_dNe[j][i][0] = (1.0 / 2.0) * std::pow(B[i][j][0], -3.0) *
+                                            ((-1.0) * B[i][j][0] * Bny_px[i][j][0] * gcovyz[i][j][0] +
+                                             Bny[i][j][0] * (2.0 * B_px[i][j][0] * gcovyz[i][j][0] +
+                                                             (-1.0) * B[i][j][0] * gcovyz_px[i][j][0])) *
+                                            std::pow(J[i][j][0], -1.0) * std::pow(NormQE, -1.0);
+                    h_dPe_pz_dNe[j][i][0] =
+                        (1.0 / 2.0) * std::pow(B[i][j][0], -3.0) *
+                        (B[i][j][0] * ((-1.0) * Bny_py[i][j][0] * gcovxy[i][j][0] + Bny_px[i][j][0] * gcovyy[i][j][0]) +
+                         Bny[i][j][0] *
+                             (2.0 * B_py[i][j][0] * gcovxy[i][j][0] + (-2.0) * B_px[i][j][0] * gcovyy[i][j][0] +
+                              B[i][j][0] * ((-1.0) * gcovxy_py[i][j][0] + gcovyy_px[i][j][0]))) *
+                        std::pow(J[i][j][0], -1.0) * std::pow(NormQE, -1.0);
 
-                h_A_dNe[j][i] =
-                    std::pow(B[i][j], -2.0) * std::pow(J[i][j], -1.0) *
-                    (B[i][j] * gcovyz[i][j] * (Bny_py[i][j] * JpB_px[i][j] + (-1.0) * Bny_px[i][j] * JpB_py[i][j]) +
-                     Bny[i][j] *
-                         (gcovyz[i][j] * ((-1.0) * B_py[i][j] * JpB_px[i][j] + B_px[i][j] * JpB_py[i][j]) +
-                          B[i][j] * (gcovyz_py[i][j] * JpB_px[i][j] + (-1.0) * gcovyz_px[i][j] * JpB_py[i][j]))) *
-                    std::pow(NormQE, -1.0);
-                h_A_px_dNe[j][i] = (-1.0) * std::pow(B[i][j], -1.0) * Bny[i][j] * gcovyz[i][j] *
-                                   std::pow(J[i][j], -1.0) * JpB_py[i][j] * std::pow(NormQE, -1.0);
-                h_A_py_dNe[j][i] = std::pow(B[i][j], -1.0) * Bny[i][j] * gcovyz[i][j] * std::pow(J[i][j], -1.0) *
-                                   JpB_px[i][j] * std::pow(NormQE, -1.0);
-                h_A_pz_dNe[j][i] = std::pow(B[i][j], -1.0) * Bny[i][j] * std::pow(J[i][j], -1.0) *
-                                   ((-1.0) * gcovyy[i][j] * JpB_px[i][j] + gcovxy[i][j] * JpB_py[i][j]) *
-                                   std::pow(NormQE, -1.0);
+                    h_dJpB_dNe[j][i][0] = 0.0;
+                    h_dJpB_px_dNe[j][i][0] = 0.0;
+                    h_dJpB_py_dNe[j][i][0] = Bny[i][j][0] * std::pow(NormQE, -1.0);
+                    h_dJpB_pz_dNe[j][i][0] = 0.0;
 
-                h_dPePhiAdJpB2dNe[j][i][0] = h_dPe_px_dNe[j][i];
-                h_dPePhiAdJpB2dNe[j][i][1] = h_dPe_py_dNe[j][i];
-                h_dPePhiAdJpB2dNe[j][i][2] = h_dPe_pz_dNe[j][i];
-                h_dPePhiAdJpB2dNe[j][i][3] = h_Phi_px_dNe[j][i];
-                h_dPePhiAdJpB2dNe[j][i][4] = h_Phi_py_dNe[j][i];
-                h_dPePhiAdJpB2dNe[j][i][5] = h_Phi_pz_dNe[j][i];
-                h_dPePhiAdJpB2dNe[j][i][6] = h_A_dNe[j][i];
-                h_dPePhiAdJpB2dNe[j][i][7] = h_A_px_dNe[j][i];
-                h_dPePhiAdJpB2dNe[j][i][8] = h_A_py_dNe[j][i];
-                h_dPePhiAdJpB2dNe[j][i][9] = h_A_pz_dNe[j][i];
-                h_dPePhiAdJpB2dNe[j][i][10] = h_dJpB_py_dNe[j][i];
+                    h_A_dNe[j][i][0] =
+                        std::pow(B[i][j][0], -2.0) * std::pow(J[i][j][0], -1.0) *
+                        (B[i][j][0] * gcovyz[i][j][0] *
+                             (Bny_py[i][j][0] * JpB_px[i][j][0] + (-1.0) * Bny_px[i][j][0] * JpB_py[i][j][0]) +
+                         Bny[i][j][0] * (gcovyz[i][j][0] * ((-1.0) * B_py[i][j][0] * JpB_px[i][j][0] +
+                                                            B_px[i][j][0] * JpB_py[i][j][0]) +
+                                         B[i][j][0] * (gcovyz_py[i][j][0] * JpB_px[i][j][0] +
+                                                       (-1.0) * gcovyz_px[i][j][0] * JpB_py[i][j][0]))) *
+                        std::pow(NormQE, -1.0);
+                    h_A_px_dNe[j][i][0] = (-1.0) * std::pow(B[i][j][0], -1.0) * Bny[i][j][0] * gcovyz[i][j][0] *
+                                          std::pow(J[i][j][0], -1.0) * JpB_py[i][j][0] * std::pow(NormQE, -1.0);
+                    h_A_py_dNe[j][i][0] = std::pow(B[i][j][0], -1.0) * Bny[i][j][0] * gcovyz[i][j][0] *
+                                          std::pow(J[i][j][0], -1.0) * JpB_px[i][j][0] * std::pow(NormQE, -1.0);
+                    h_A_pz_dNe[j][i][0] =
+                        std::pow(B[i][j][0], -1.0) * Bny[i][j][0] * std::pow(J[i][j][0], -1.0) *
+                        ((-1.0) * gcovyy[i][j][0] * JpB_px[i][j][0] + gcovxy[i][j][0] * JpB_py[i][j][0]) *
+                        std::pow(NormQE, -1.0);
 
-                // Perturbed Temperature
+                    h_dPePhiAdJpB2dNe[j][i][0 * 11 + 0] = h_dPe_px_dNe[j][i][0];
+                    h_dPePhiAdJpB2dNe[j][i][0 * 11 + 1] = h_dPe_py_dNe[j][i][0];
+                    h_dPePhiAdJpB2dNe[j][i][0 * 11 + 2] = h_dPe_pz_dNe[j][i][0];
+                    h_dPePhiAdJpB2dNe[j][i][0 * 11 + 3] = h_Phi_px_dNe[j][i][0];
+                    h_dPePhiAdJpB2dNe[j][i][0 * 11 + 4] = h_Phi_py_dNe[j][i][0];
+                    h_dPePhiAdJpB2dNe[j][i][0 * 11 + 5] = h_Phi_pz_dNe[j][i][0];
+                    h_dPePhiAdJpB2dNe[j][i][0 * 11 + 6] = h_A_dNe[j][i][0];
+                    h_dPePhiAdJpB2dNe[j][i][0 * 11 + 7] = h_A_px_dNe[j][i][0];
+                    h_dPePhiAdJpB2dNe[j][i][0 * 11 + 8] = h_A_py_dNe[j][i][0];
+                    h_dPePhiAdJpB2dNe[j][i][0 * 11 + 9] = h_A_pz_dNe[j][i][0];
+                    h_dPePhiAdJpB2dNe[j][i][0 * 11 + 10] = h_dJpB_py_dNe[j][i][0];
 
-                h_Phi_dTe[j][i] = 0.0;
-                h_Phi_px_dTe[j][i] = 0.0;
-                h_Phi_py_dTe[j][i] =
-                    std::pow(B[i][j], -2.0) * Bny[i][j] * gcovyz[i][j] * std::pow(J[i][j], -1.0) * Te_px[i][j];
-                h_Phi_pz_dTe[j][i] =
-                    (-1.0) * std::pow(B[i][j], -2.0) * Bny[i][j] * gcovyy[i][j] * std::pow(J[i][j], -1.0) * Te_px[i][j];
+                    // Perturbed Temperature
 
-                h_dTe_dTe[j][i] = 0.0;
-                h_dTe_px_dTe[j][i] = 0.0;
-                h_dTe_py_dTe[j][i] = (1.0 / 2.0) * std::pow(B[i][j], -2.0) * Bny[i][j] * gcovyz[i][j] *
-                                     std::pow(J[i][j], -1.0) * std::pow(Ne[i][j], -1.0) * Ne_px[i][j] * Te[i][j] *
-                                     std::pow(NormQE, -1.0);
-                h_dTe_pz_dTe[j][i] = (-1.0 / 2.0) * std::pow(B[i][j], -2.0) * Bny[i][j] * gcovyy[i][j] *
-                                     std::pow(J[i][j], -1.0) * std::pow(Ne[i][j], -1.0) * Ne_px[i][j] * Te[i][j] *
-                                     std::pow(NormQE, -1.0);
+                    h_Phi_dTe[j][i][0] = 0.0;
+                    h_Phi_px_dTe[j][i][0] = 0.0;
+                    h_Phi_py_dTe[j][i][0] = std::pow(B[i][j][0], -2.0) * Bny[i][j][0] * gcovyz[i][j][0] *
+                                            std::pow(J[i][j][0], -1.0) * Te_px[i][j][0];
+                    h_Phi_pz_dTe[j][i][0] = (-1.0) * std::pow(B[i][j][0], -2.0) * Bny[i][j][0] * gcovyy[i][j][0] *
+                                            std::pow(J[i][j][0], -1.0) * Te_px[i][j][0];
 
-                h_dNe_dTe[j][i] = 0.0;
-                h_dNe_px_dTe[j][i] = 0.0;
-                h_dNe_py_dTe[j][i] = (-1.0 / 2.0) * std::pow(B[i][j], -2.0) * Bny[i][j] * gcovyz[i][j] *
-                                     std::pow(J[i][j], -1.0) * std::pow(Ne[i][j], -1.0) * Te[i][j] * Te_px[i][j] *
-                                     std::pow(NormQE, -1.0);
-                h_dNe_pz_dTe[j][i] = (1.0 / 2.0) * std::pow(B[i][j], -2.0) * Bny[i][j] * gcovyy[i][j] *
-                                     std::pow(J[i][j], -1.0) * std::pow(Ne[i][j], -1.0) * Te[i][j] * Te_px[i][j] *
-                                     std::pow(NormQE, -1.0);
+                    h_dTe_dTe[j][i][0] = 0.0;
+                    h_dTe_px_dTe[j][i][0] = 0.0;
+                    h_dTe_py_dTe[j][i][0] = (1.0 / 2.0) * std::pow(B[i][j][0], -2.0) * Bny[i][j][0] * gcovyz[i][j][0] *
+                                            std::pow(J[i][j][0], -1.0) * std::pow(Ne[i][j][0], -1.0) * Ne_px[i][j][0] *
+                                            Te[i][j][0] * std::pow(NormQE, -1.0);
+                    h_dTe_pz_dTe[j][i][0] = (-1.0 / 2.0) * std::pow(B[i][j][0], -2.0) * Bny[i][j][0] * gcovyy[i][j][0] *
+                                            std::pow(J[i][j][0], -1.0) * std::pow(Ne[i][j][0], -1.0) * Ne_px[i][j][0] *
+                                            Te[i][j][0] * std::pow(NormQE, -1.0);
 
-                h_PhidTedNe2dTe[j][i][0] = h_Phi_py_dTe[j][i];
-                h_PhidTedNe2dTe[j][i][1] = h_Phi_pz_dTe[j][i];
-                h_PhidTedNe2dTe[j][i][2] = h_dTe_py_dTe[j][i];
-                h_PhidTedNe2dTe[j][i][3] = h_dTe_pz_dTe[j][i];
-                h_PhidTedNe2dTe[j][i][4] = h_dNe_py_dTe[j][i];
-                h_PhidTedNe2dTe[j][i][5] = h_dNe_pz_dTe[j][i];
+                    h_dNe_dTe[j][i][0] = 0.0;
+                    h_dNe_px_dTe[j][i][0] = 0.0;
+                    h_dNe_py_dTe[j][i][0] = (-1.0 / 2.0) * std::pow(B[i][j][0], -2.0) * Bny[i][j][0] * gcovyz[i][j][0] *
+                                            std::pow(J[i][j][0], -1.0) * std::pow(Ne[i][j][0], -1.0) * Te[i][j][0] *
+                                            Te_px[i][j][0] * std::pow(NormQE, -1.0);
+                    h_dNe_pz_dTe[j][i][0] = (1.0 / 2.0) * std::pow(B[i][j][0], -2.0) * Bny[i][j][0] * gcovyy[i][j][0] *
+                                            std::pow(J[i][j][0], -1.0) * std::pow(Ne[i][j][0], -1.0) * Te[i][j][0] *
+                                            Te_px[i][j][0] * std::pow(NormQE, -1.0);
 
-                // Equilibrium Density and Temperature
+                    h_PhidTedNe2dTe[j][i][0 * 6 + 0] = h_Phi_py_dTe[j][i][0];
+                    h_PhidTedNe2dTe[j][i][0 * 6 + 1] = h_Phi_pz_dTe[j][i][0];
+                    h_PhidTedNe2dTe[j][i][0 * 6 + 2] = h_dTe_py_dTe[j][i][0];
+                    h_PhidTedNe2dTe[j][i][0 * 6 + 3] = h_dTe_pz_dTe[j][i][0];
+                    h_PhidTedNe2dTe[j][i][0 * 6 + 4] = h_dNe_py_dTe[j][i][0];
+                    h_PhidTedNe2dTe[j][i][0 * 6 + 5] = h_dNe_pz_dTe[j][i][0];
 
-                h_Ne0[j][i] = Ne[i][j];
-                h_Te0[j][i] = Te[i][j];
-                h_Ne0_px[j][i] = Ne_px[i][j];
-                h_Te0_px[j][i] = Te_px[i][j];
+                    // Equilibrium Density and Temperature
+
+                    h_Ne0[j][i][0] = Ne[i][j][0];
+                    h_Te0[j][i][0] = Te[i][j][0];
+                    h_Ne0_px[j][i][0] = Ne_px[i][j][0];
+                    h_Te0_px[j][i][0] = Te_px[i][j][0];
+                }
             }
-        }
 
-        /*-------------------------Nonlinear--------------------------*/
+            /*-------------------------Nonlinear--------------------------*/
 
-        for (int i = 0; i < gridNx; i++) {
-            for (int j = 0; j < gridNy; j++) {
+            for (int i = 0; i < gridNx; i++) {
+                for (int j = 0; j < gridNy; j++) {
 
-                // Vorticity
+                    // Vorticity
 
-                h_wPhi_w[j][i][0] = std::pow(B[i][j], -2.0) * Bny[i][j] * gcovyz[i][j] * std::pow(J[i][j], -1.0);
-                h_wPhi_w[j][i][1] =
-                    (-1.0) * std::pow(B[i][j], -2.0) * Bny[i][j] * gcovyy[i][j] * std::pow(J[i][j], -1.0);
-                h_wPhi_w[j][i][2] =
-                    (-1.0) * std::pow(B[i][j], -2.0) * Bny[i][j] * gcovyz[i][j] * std::pow(J[i][j], -1.0);
-                h_wPhi_w[j][i][3] = std::pow(B[i][j], -2.0) * Bny[i][j] * gcovxy[i][j] * std::pow(J[i][j], -1.0);
-                h_wPhi_w[j][i][4] = std::pow(B[i][j], -2.0) * Bny[i][j] * gcovyy[i][j] * std::pow(J[i][j], -1.0);
-                h_wPhi_w[j][i][5] =
-                    (-1.0) * std::pow(B[i][j], -2.0) * Bny[i][j] * gcovxy[i][j] * std::pow(J[i][j], -1.0);
+                    h_wPhi_w[j][i][0 * 6 + 0] =
+                        std::pow(B[i][j][0], -2.0) * Bny[i][j][0] * gcovyz[i][j][0] * std::pow(J[i][j][0], -1.0);
+                    h_wPhi_w[j][i][0 * 6 + 1] = (-1.0) * std::pow(B[i][j][0], -2.0) * Bny[i][j][0] * gcovyy[i][j][0] *
+                                                std::pow(J[i][j][0], -1.0);
+                    h_wPhi_w[j][i][0 * 6 + 2] = (-1.0) * std::pow(B[i][j][0], -2.0) * Bny[i][j][0] * gcovyz[i][j][0] *
+                                                std::pow(J[i][j][0], -1.0);
+                    h_wPhi_w[j][i][0 * 6 + 3] =
+                        std::pow(B[i][j][0], -2.0) * Bny[i][j][0] * gcovxy[i][j][0] * std::pow(J[i][j][0], -1.0);
+                    h_wPhi_w[j][i][0 * 6 + 4] =
+                        std::pow(B[i][j][0], -2.0) * Bny[i][j][0] * gcovyy[i][j][0] * std::pow(J[i][j][0], -1.0);
+                    h_wPhi_w[j][i][0 * 6 + 5] = (-1.0) * std::pow(B[i][j][0], -2.0) * Bny[i][j][0] * gcovxy[i][j][0] *
+                                                std::pow(J[i][j][0], -1.0);
 
-                h_AdJpB_w[j][i][0] = std::pow(B[i][j], -2.0) *
-                                     (B[i][j] * Bny_py[i][j] * gcovyz[i][j] +
-                                      Bny[i][j] * ((-1.0) * B_py[i][j] * gcovyz[i][j] + B[i][j] * gcovyz_py[i][j])) *
-                                     std::pow(J[i][j], -1.0);
-                h_AdJpB_w[j][i][1] = std::pow(B[i][j], -2.0) *
-                                     (Bny[i][j] * B_px[i][j] * gcovyz[i][j] +
-                                      (-1.0) * B[i][j] * (Bny_px[i][j] * gcovyz[i][j] + Bny[i][j] * gcovyz_px[i][j])) *
-                                     std::pow(J[i][j], -1.0);
-                h_AdJpB_w[j][i][2] = std::pow(B[i][j], -2.0) *
-                                     (Bny[i][j] * (B_py[i][j] * gcovxy[i][j] + (-1.0) * B_px[i][j] * gcovyy[i][j]) +
-                                      B[i][j] * ((-1.0) * Bny_py[i][j] * gcovxy[i][j] + Bny_px[i][j] * gcovyy[i][j] +
-                                                 Bny[i][j] * ((-1.0) * gcovxy_py[i][j] + gcovyy_px[i][j]))) *
-                                     std::pow(J[i][j], -1.0);
-                h_AdJpB_w[j][i][3] =
-                    (-1.0) * std::pow(B[i][j], -1.0) * Bny[i][j] * gcovyz[i][j] * std::pow(J[i][j], -1.0);
-                h_AdJpB_w[j][i][4] = std::pow(B[i][j], -1.0) * Bny[i][j] * gcovyy[i][j] * std::pow(J[i][j], -1.0);
-                h_AdJpB_w[j][i][5] = std::pow(B[i][j], -1.0) * Bny[i][j] * gcovyz[i][j] * std::pow(J[i][j], -1.0);
-                h_AdJpB_w[j][i][6] =
-                    (-1.0) * std::pow(B[i][j], -1.0) * Bny[i][j] * gcovxy[i][j] * std::pow(J[i][j], -1.0);
-                h_AdJpB_w[j][i][7] =
-                    (-1.0) * std::pow(B[i][j], -1.0) * Bny[i][j] * gcovyy[i][j] * std::pow(J[i][j], -1.0);
-                h_AdJpB_w[j][i][8] = std::pow(B[i][j], -1.0) * Bny[i][j] * gcovxy[i][j] * std::pow(J[i][j], -1.0);
+                    h_AdJpB_w[j][i][0 * 9 + 0] =
+                        std::pow(B[i][j][0], -2.0) *
+                        (B[i][j][0] * Bny_py[i][j][0] * gcovyz[i][j][0] +
+                         Bny[i][j][0] * ((-1.0) * B_py[i][j][0] * gcovyz[i][j][0] + B[i][j][0] * gcovyz_py[i][j][0])) *
+                        std::pow(J[i][j][0], -1.0);
+                    h_AdJpB_w[j][i][0 * 9 + 1] =
+                        std::pow(B[i][j][0], -2.0) *
+                        (Bny[i][j][0] * B_px[i][j][0] * gcovyz[i][j][0] +
+                         (-1.0) * B[i][j][0] *
+                             (Bny_px[i][j][0] * gcovyz[i][j][0] + Bny[i][j][0] * gcovyz_px[i][j][0])) *
+                        std::pow(J[i][j][0], -1.0);
+                    h_AdJpB_w[j][i][0 * 9 + 2] =
+                        std::pow(B[i][j][0], -2.0) *
+                        (Bny[i][j][0] * (B_py[i][j][0] * gcovxy[i][j][0] + (-1.0) * B_px[i][j][0] * gcovyy[i][j][0]) +
+                         B[i][j][0] * ((-1.0) * Bny_py[i][j][0] * gcovxy[i][j][0] + Bny_px[i][j][0] * gcovyy[i][j][0] +
+                                       Bny[i][j][0] * ((-1.0) * gcovxy_py[i][j][0] + gcovyy_px[i][j][0]))) *
+                        std::pow(J[i][j][0], -1.0);
+                    h_AdJpB_w[j][i][0 * 9 + 3] = (-1.0) * std::pow(B[i][j][0], -1.0) * Bny[i][j][0] * gcovyz[i][j][0] *
+                                                 std::pow(J[i][j][0], -1.0);
+                    h_AdJpB_w[j][i][0 * 9 + 4] =
+                        std::pow(B[i][j][0], -1.0) * Bny[i][j][0] * gcovyy[i][j][0] * std::pow(J[i][j][0], -1.0);
+                    h_AdJpB_w[j][i][0 * 9 + 5] =
+                        std::pow(B[i][j][0], -1.0) * Bny[i][j][0] * gcovyz[i][j][0] * std::pow(J[i][j][0], -1.0);
+                    h_AdJpB_w[j][i][0 * 9 + 6] = (-1.0) * std::pow(B[i][j][0], -1.0) * Bny[i][j][0] * gcovxy[i][j][0] *
+                                                 std::pow(J[i][j][0], -1.0);
+                    h_AdJpB_w[j][i][0 * 9 + 7] = (-1.0) * std::pow(B[i][j][0], -1.0) * Bny[i][j][0] * gcovyy[i][j][0] *
+                                                 std::pow(J[i][j][0], -1.0);
+                    h_AdJpB_w[j][i][0 * 9 + 8] =
+                        std::pow(B[i][j][0], -1.0) * Bny[i][j][0] * gcovxy[i][j][0] * std::pow(J[i][j][0], -1.0);
 
-                // Perturbed Parallel Vector Potential
+                    // Perturbed Parallel Vector Potential
 
-                h_PhiA_A[j][i][0] = std::pow(B[i][j], -3.0) *
-                                    (Bny[i][j] * B_py[i][j] * gcovyz[i][j] +
-                                     (-1.0) * B[i][j] * (Bny_py[i][j] * gcovyz[i][j] + Bny[i][j] * gcovyz_py[i][j])) *
-                                    std::pow(J[i][j], -1.0);
-                h_PhiA_A[j][i][1] =
-                    (-1.0) * std::pow(B[i][j], -2.0) * Bny[i][j] * gcovyz[i][j] * std::pow(J[i][j], -1.0);
-                h_PhiA_A[j][i][2] = std::pow(B[i][j], -2.0) * Bny[i][j] * gcovyy[i][j] * std::pow(J[i][j], -1.0);
-                h_PhiA_A[j][i][3] = std::pow(B[i][j], -3.0) *
-                                    (B[i][j] * Bny_px[i][j] * gcovyz[i][j] +
-                                     Bny[i][j] * ((-1.0) * B_px[i][j] * gcovyz[i][j] + B[i][j] * gcovyz_px[i][j])) *
-                                    std::pow(J[i][j], -1.0);
-                h_PhiA_A[j][i][4] = std::pow(B[i][j], -2.0) * Bny[i][j] * gcovyz[i][j] * std::pow(J[i][j], -1.0);
-                h_PhiA_A[j][i][5] =
-                    (-1.0) * std::pow(B[i][j], -2.0) * Bny[i][j] * gcovxy[i][j] * std::pow(J[i][j], -1.0);
-                h_PhiA_A[j][i][6] = std::pow(B[i][j], -3.0) *
-                                    (Bny[i][j] * ((-1.0) * B_py[i][j] * gcovxy[i][j] + B_px[i][j] * gcovyy[i][j]) +
-                                     B[i][j] * (Bny_py[i][j] * gcovxy[i][j] + (-1.0) * Bny_px[i][j] * gcovyy[i][j] +
-                                                Bny[i][j] * (gcovxy_py[i][j] + (-1.0) * gcovyy_px[i][j]))) *
-                                    std::pow(J[i][j], -1.0);
-                h_PhiA_A[j][i][7] =
-                    (-1.0) * std::pow(B[i][j], -2.0) * Bny[i][j] * gcovyy[i][j] * std::pow(J[i][j], -1.0);
-                h_PhiA_A[j][i][8] = std::pow(B[i][j], -2.0) * Bny[i][j] * gcovxy[i][j] * std::pow(J[i][j], -1.0);
+                    h_PhiA_A[j][i][0 * 9 + 0] =
+                        std::pow(B[i][j][0], -3.0) *
+                        (Bny[i][j][0] * B_py[i][j][0] * gcovyz[i][j][0] +
+                         (-1.0) * B[i][j][0] *
+                             (Bny_py[i][j][0] * gcovyz[i][j][0] + Bny[i][j][0] * gcovyz_py[i][j][0])) *
+                        std::pow(J[i][j][0], -1.0);
+                    h_PhiA_A[j][i][0 * 9 + 1] = (-1.0) * std::pow(B[i][j][0], -2.0) * Bny[i][j][0] * gcovyz[i][j][0] *
+                                                std::pow(J[i][j][0], -1.0);
+                    h_PhiA_A[j][i][0 * 9 + 2] =
+                        std::pow(B[i][j][0], -2.0) * Bny[i][j][0] * gcovyy[i][j][0] * std::pow(J[i][j][0], -1.0);
+                    h_PhiA_A[j][i][0 * 9 + 3] =
+                        std::pow(B[i][j][0], -3.0) *
+                        (B[i][j][0] * Bny_px[i][j][0] * gcovyz[i][j][0] +
+                         Bny[i][j][0] * ((-1.0) * B_px[i][j][0] * gcovyz[i][j][0] + B[i][j][0] * gcovyz_px[i][j][0])) *
+                        std::pow(J[i][j][0], -1.0);
+                    h_PhiA_A[j][i][0 * 9 + 4] =
+                        std::pow(B[i][j][0], -2.0) * Bny[i][j][0] * gcovyz[i][j][0] * std::pow(J[i][j][0], -1.0);
+                    h_PhiA_A[j][i][0 * 9 + 5] = (-1.0) * std::pow(B[i][j][0], -2.0) * Bny[i][j][0] * gcovxy[i][j][0] *
+                                                std::pow(J[i][j][0], -1.0);
+                    h_PhiA_A[j][i][0 * 9 + 6] =
+                        std::pow(B[i][j][0], -3.0) *
+                        (Bny[i][j][0] * ((-1.0) * B_py[i][j][0] * gcovxy[i][j][0] + B_px[i][j][0] * gcovyy[i][j][0]) +
+                         B[i][j][0] * (Bny_py[i][j][0] * gcovxy[i][j][0] + (-1.0) * Bny_px[i][j][0] * gcovyy[i][j][0] +
+                                       Bny[i][j][0] * (gcovxy_py[i][j][0] + (-1.0) * gcovyy_px[i][j][0]))) *
+                        std::pow(J[i][j][0], -1.0);
+                    h_PhiA_A[j][i][0 * 9 + 7] = (-1.0) * std::pow(B[i][j][0], -2.0) * Bny[i][j][0] * gcovyy[i][j][0] *
+                                                std::pow(J[i][j][0], -1.0);
+                    h_PhiA_A[j][i][0 * 9 + 8] =
+                        std::pow(B[i][j][0], -2.0) * Bny[i][j][0] * gcovxy[i][j][0] * std::pow(J[i][j][0], -1.0);
 
-                h_NeA_A[j][i][0] = (1.0 / 2.0) * std::pow(B[i][j], -3.0) *
-                                   (B[i][j] * Bny_py[i][j] * gcovyz[i][j] +
-                                    Bny[i][j] * ((-1.0) * B_py[i][j] * gcovyz[i][j] + B[i][j] * gcovyz_py[i][j])) *
-                                   std::pow(J[i][j], -1.0) * std::pow(NormQE, -1.0) * std::pow(Ne[i][j], -1.0) *
-                                   Te[i][j];
-                h_NeA_A[j][i][1] = (1.0 / 2.0) * std::pow(B[i][j], -2.0) * Bny[i][j] * gcovyz[i][j] *
-                                   std::pow(J[i][j], -1.0) * std::pow(NormQE, -1.0) * std::pow(Ne[i][j], -1.0) *
-                                   Te[i][j];
-                h_NeA_A[j][i][2] = (-1.0 / 2.0) * std::pow(B[i][j], -2.0) * Bny[i][j] * gcovyy[i][j] *
-                                   std::pow(J[i][j], -1.0) * std::pow(NormQE, -1.0) * std::pow(Ne[i][j], -1.0) *
-                                   Te[i][j];
-                h_NeA_A[j][i][3] = (1.0 / 2.0) * std::pow(B[i][j], -3.0) *
-                                   (Bny[i][j] * B_px[i][j] * gcovyz[i][j] +
-                                    (-1.0) * B[i][j] * (Bny_px[i][j] * gcovyz[i][j] + Bny[i][j] * gcovyz_px[i][j])) *
-                                   std::pow(J[i][j], -1.0) * std::pow(NormQE, -1.0) * std::pow(Ne[i][j], -1.0) *
-                                   Te[i][j];
-                h_NeA_A[j][i][4] = (-1.0 / 2.0) * std::pow(B[i][j], -2.0) * Bny[i][j] * gcovyz[i][j] *
-                                   std::pow(J[i][j], -1.0) * std::pow(NormQE, -1.0) * std::pow(Ne[i][j], -1.0) *
-                                   Te[i][j];
-                h_NeA_A[j][i][5] = (1.0 / 2.0) * std::pow(B[i][j], -2.0) * Bny[i][j] * gcovxy[i][j] *
-                                   std::pow(J[i][j], -1.0) * std::pow(NormQE, -1.0) * std::pow(Ne[i][j], -1.0) *
-                                   Te[i][j];
-                h_NeA_A[j][i][6] = (1.0 / 2.0) * std::pow(B[i][j], -3.0) *
-                                   (Bny[i][j] * (B_py[i][j] * gcovxy[i][j] + (-1.0) * B_px[i][j] * gcovyy[i][j]) +
-                                    B[i][j] * ((-1.0) * Bny_py[i][j] * gcovxy[i][j] + Bny_px[i][j] * gcovyy[i][j] +
-                                               Bny[i][j] * ((-1.0) * gcovxy_py[i][j] + gcovyy_px[i][j]))) *
-                                   std::pow(J[i][j], -1.0) * std::pow(NormQE, -1.0) * std::pow(Ne[i][j], -1.0) *
-                                   Te[i][j];
-                h_NeA_A[j][i][7] = (1.0 / 2.0) * std::pow(B[i][j], -2.0) * Bny[i][j] * gcovyy[i][j] *
-                                   std::pow(J[i][j], -1.0) * std::pow(NormQE, -1.0) * std::pow(Ne[i][j], -1.0) *
-                                   Te[i][j];
-                h_NeA_A[j][i][8] = (-1.0 / 2.0) * std::pow(B[i][j], -2.0) * Bny[i][j] * gcovxy[i][j] *
-                                   std::pow(J[i][j], -1.0) * std::pow(NormQE, -1.0) * std::pow(Ne[i][j], -1.0) *
-                                   Te[i][j];
+                    h_NeA_A[j][i][0 * 9 + 0] =
+                        (1.0 / 2.0) * std::pow(B[i][j][0], -3.0) *
+                        (B[i][j][0] * Bny_py[i][j][0] * gcovyz[i][j][0] +
+                         Bny[i][j][0] * ((-1.0) * B_py[i][j][0] * gcovyz[i][j][0] + B[i][j][0] * gcovyz_py[i][j][0])) *
+                        std::pow(J[i][j][0], -1.0) * std::pow(NormQE, -1.0) * std::pow(Ne[i][j][0], -1.0) * Te[i][j][0];
+                    h_NeA_A[j][i][0 * 9 + 1] = (1.0 / 2.0) * std::pow(B[i][j][0], -2.0) * Bny[i][j][0] *
+                                               gcovyz[i][j][0] * std::pow(J[i][j][0], -1.0) * std::pow(NormQE, -1.0) *
+                                               std::pow(Ne[i][j][0], -1.0) * Te[i][j][0];
+                    h_NeA_A[j][i][0 * 9 + 2] = (-1.0 / 2.0) * std::pow(B[i][j][0], -2.0) * Bny[i][j][0] *
+                                               gcovyy[i][j][0] * std::pow(J[i][j][0], -1.0) * std::pow(NormQE, -1.0) *
+                                               std::pow(Ne[i][j][0], -1.0) * Te[i][j][0];
+                    h_NeA_A[j][i][0 * 9 + 3] =
+                        (1.0 / 2.0) * std::pow(B[i][j][0], -3.0) *
+                        (Bny[i][j][0] * B_px[i][j][0] * gcovyz[i][j][0] +
+                         (-1.0) * B[i][j][0] *
+                             (Bny_px[i][j][0] * gcovyz[i][j][0] + Bny[i][j][0] * gcovyz_px[i][j][0])) *
+                        std::pow(J[i][j][0], -1.0) * std::pow(NormQE, -1.0) * std::pow(Ne[i][j][0], -1.0) * Te[i][j][0];
+                    h_NeA_A[j][i][0 * 9 + 4] = (-1.0 / 2.0) * std::pow(B[i][j][0], -2.0) * Bny[i][j][0] *
+                                               gcovyz[i][j][0] * std::pow(J[i][j][0], -1.0) * std::pow(NormQE, -1.0) *
+                                               std::pow(Ne[i][j][0], -1.0) * Te[i][j][0];
+                    h_NeA_A[j][i][0 * 9 + 5] = (1.0 / 2.0) * std::pow(B[i][j][0], -2.0) * Bny[i][j][0] *
+                                               gcovxy[i][j][0] * std::pow(J[i][j][0], -1.0) * std::pow(NormQE, -1.0) *
+                                               std::pow(Ne[i][j][0], -1.0) * Te[i][j][0];
+                    h_NeA_A[j][i][0 * 9 + 6] =
+                        (1.0 / 2.0) * std::pow(B[i][j][0], -3.0) *
+                        (Bny[i][j][0] * (B_py[i][j][0] * gcovxy[i][j][0] + (-1.0) * B_px[i][j][0] * gcovyy[i][j][0]) +
+                         B[i][j][0] * ((-1.0) * Bny_py[i][j][0] * gcovxy[i][j][0] + Bny_px[i][j][0] * gcovyy[i][j][0] +
+                                       Bny[i][j][0] * ((-1.0) * gcovxy_py[i][j][0] + gcovyy_px[i][j][0]))) *
+                        std::pow(J[i][j][0], -1.0) * std::pow(NormQE, -1.0) * std::pow(Ne[i][j][0], -1.0) * Te[i][j][0];
+                    h_NeA_A[j][i][0 * 9 + 7] = (1.0 / 2.0) * std::pow(B[i][j][0], -2.0) * Bny[i][j][0] *
+                                               gcovyy[i][j][0] * std::pow(J[i][j][0], -1.0) * std::pow(NormQE, -1.0) *
+                                               std::pow(Ne[i][j][0], -1.0) * Te[i][j][0];
+                    h_NeA_A[j][i][0 * 9 + 8] = (-1.0 / 2.0) * std::pow(B[i][j][0], -2.0) * Bny[i][j][0] *
+                                               gcovxy[i][j][0] * std::pow(J[i][j][0], -1.0) * std::pow(NormQE, -1.0) *
+                                               std::pow(Ne[i][j][0], -1.0) * Te[i][j][0];
 
-                // Perturbed Density
+                    // Perturbed Density
 
-                h_AdJpB_dNe[j][i][0] = std::pow(B[i][j], -2.0) *
-                                       (B[i][j] * Bny_py[i][j] * gcovyz[i][j] +
-                                        Bny[i][j] * ((-1.0) * B_py[i][j] * gcovyz[i][j] + B[i][j] * gcovyz_py[i][j])) *
-                                       std::pow(J[i][j], -1.0) * std::pow(NormQE, -1.0);
-                h_AdJpB_dNe[j][i][1] =
-                    std::pow(B[i][j], -2.0) *
-                    (Bny[i][j] * B_px[i][j] * gcovyz[i][j] +
-                     (-1.0) * B[i][j] * (Bny_px[i][j] * gcovyz[i][j] + Bny[i][j] * gcovyz_px[i][j])) *
-                    std::pow(J[i][j], -1.0) * std::pow(NormQE, -1.0);
-                h_AdJpB_dNe[j][i][2] = std::pow(B[i][j], -2.0) *
-                                       (Bny[i][j] * (B_py[i][j] * gcovxy[i][j] + (-1.0) * B_px[i][j] * gcovyy[i][j]) +
-                                        B[i][j] * ((-1.0) * Bny_py[i][j] * gcovxy[i][j] + Bny_px[i][j] * gcovyy[i][j] +
-                                                   Bny[i][j] * ((-1.0) * gcovxy_py[i][j] + gcovyy_px[i][j]))) *
-                                       std::pow(J[i][j], -1.0) * std::pow(NormQE, -1.0);
-                h_AdJpB_dNe[j][i][3] = (-1.0) * std::pow(B[i][j], -1.0) * Bny[i][j] * gcovyz[i][j] *
-                                       std::pow(J[i][j], -1.0) * std::pow(NormQE, -1.0);
-                h_AdJpB_dNe[j][i][4] = std::pow(B[i][j], -1.0) * Bny[i][j] * gcovyy[i][j] * std::pow(J[i][j], -1.0) *
-                                       std::pow(NormQE, -1.0);
-                h_AdJpB_dNe[j][i][5] = std::pow(B[i][j], -1.0) * Bny[i][j] * gcovyz[i][j] * std::pow(J[i][j], -1.0) *
-                                       std::pow(NormQE, -1.0);
-                h_AdJpB_dNe[j][i][6] = (-1.0) * std::pow(B[i][j], -1.0) * Bny[i][j] * gcovxy[i][j] *
-                                       std::pow(J[i][j], -1.0) * std::pow(NormQE, -1.0);
-                h_AdJpB_dNe[j][i][7] = (-1.0) * std::pow(B[i][j], -1.0) * Bny[i][j] * gcovyy[i][j] *
-                                       std::pow(J[i][j], -1.0) * std::pow(NormQE, -1.0);
-                h_AdJpB_dNe[j][i][8] = std::pow(B[i][j], -1.0) * Bny[i][j] * gcovxy[i][j] * std::pow(J[i][j], -1.0) *
-                                       std::pow(NormQE, -1.0);
+                    h_AdJpB_dNe[j][i][0 * 9 + 0] =
+                        std::pow(B[i][j][0], -2.0) *
+                        (B[i][j][0] * Bny_py[i][j][0] * gcovyz[i][j][0] +
+                         Bny[i][j][0] * ((-1.0) * B_py[i][j][0] * gcovyz[i][j][0] + B[i][j][0] * gcovyz_py[i][j][0])) *
+                        std::pow(J[i][j][0], -1.0) * std::pow(NormQE, -1.0);
+                    h_AdJpB_dNe[j][i][0 * 9 + 1] =
+                        std::pow(B[i][j][0], -2.0) *
+                        (Bny[i][j][0] * B_px[i][j][0] * gcovyz[i][j][0] +
+                         (-1.0) * B[i][j][0] *
+                             (Bny_px[i][j][0] * gcovyz[i][j][0] + Bny[i][j][0] * gcovyz_px[i][j][0])) *
+                        std::pow(J[i][j][0], -1.0) * std::pow(NormQE, -1.0);
+                    h_AdJpB_dNe[j][i][0 * 9 + 2] =
+                        std::pow(B[i][j][0], -2.0) *
+                        (Bny[i][j][0] * (B_py[i][j][0] * gcovxy[i][j][0] + (-1.0) * B_px[i][j][0] * gcovyy[i][j][0]) +
+                         B[i][j][0] * ((-1.0) * Bny_py[i][j][0] * gcovxy[i][j][0] + Bny_px[i][j][0] * gcovyy[i][j][0] +
+                                       Bny[i][j][0] * ((-1.0) * gcovxy_py[i][j][0] + gcovyy_px[i][j][0]))) *
+                        std::pow(J[i][j][0], -1.0) * std::pow(NormQE, -1.0);
+                    h_AdJpB_dNe[j][i][0 * 9 + 3] = (-1.0) * std::pow(B[i][j][0], -1.0) * Bny[i][j][0] *
+                                                   gcovyz[i][j][0] * std::pow(J[i][j][0], -1.0) *
+                                                   std::pow(NormQE, -1.0);
+                    h_AdJpB_dNe[j][i][0 * 9 + 4] = std::pow(B[i][j][0], -1.0) * Bny[i][j][0] * gcovyy[i][j][0] *
+                                                   std::pow(J[i][j][0], -1.0) * std::pow(NormQE, -1.0);
+                    h_AdJpB_dNe[j][i][0 * 9 + 5] = std::pow(B[i][j][0], -1.0) * Bny[i][j][0] * gcovyz[i][j][0] *
+                                                   std::pow(J[i][j][0], -1.0) * std::pow(NormQE, -1.0);
+                    h_AdJpB_dNe[j][i][0 * 9 + 6] = (-1.0) * std::pow(B[i][j][0], -1.0) * Bny[i][j][0] *
+                                                   gcovxy[i][j][0] * std::pow(J[i][j][0], -1.0) *
+                                                   std::pow(NormQE, -1.0);
+                    h_AdJpB_dNe[j][i][0 * 9 + 7] = (-1.0) * std::pow(B[i][j][0], -1.0) * Bny[i][j][0] *
+                                                   gcovyy[i][j][0] * std::pow(J[i][j][0], -1.0) *
+                                                   std::pow(NormQE, -1.0);
+                    h_AdJpB_dNe[j][i][0 * 9 + 8] = std::pow(B[i][j][0], -1.0) * Bny[i][j][0] * gcovxy[i][j][0] *
+                                                   std::pow(J[i][j][0], -1.0) * std::pow(NormQE, -1.0);
 
-                h_dNePhi_dNe[j][i][0] =
-                    std::pow(B[i][j], -3.0) *
-                    ((-1.0) * B[i][j] * Bny_py[i][j] * gcovyz[i][j] +
-                     Bny[i][j] * (2.0 * B_py[i][j] * gcovyz[i][j] + (-1.0) * B[i][j] * gcovyz_py[i][j])) *
-                    std::pow(J[i][j], -1.0);
-                h_dNePhi_dNe[j][i][1] = std::pow(B[i][j], -3.0) *
-                                        (B[i][j] * Bny_px[i][j] * gcovyz[i][j] +
-                                         Bny[i][j] * ((-2.0) * B_px[i][j] * gcovyz[i][j] + B[i][j] * gcovyz_px[i][j])) *
-                                        std::pow(J[i][j], -1.0);
-                h_dNePhi_dNe[j][i][2] =
-                    std::pow(B[i][j], -3.0) *
-                    (B[i][j] * (Bny_py[i][j] * gcovxy[i][j] + (-1.0) * Bny_px[i][j] * gcovyy[i][j]) +
-                     Bny[i][j] * ((-2.0) * B_py[i][j] * gcovxy[i][j] + 2.0 * B_px[i][j] * gcovyy[i][j] +
-                                  B[i][j] * (gcovxy_py[i][j] + (-1.0) * gcovyy_px[i][j]))) *
-                    std::pow(J[i][j], -1.0);
-                h_dNePhi_dNe[j][i][3] = std::pow(B[i][j], -2.0) * Bny[i][j] * gcovyz[i][j] * std::pow(J[i][j], -1.0);
-                h_dNePhi_dNe[j][i][4] =
-                    (-1.0) * std::pow(B[i][j], -2.0) * Bny[i][j] * gcovyy[i][j] * std::pow(J[i][j], -1.0);
-                h_dNePhi_dNe[j][i][5] =
-                    (-1.0) * std::pow(B[i][j], -2.0) * Bny[i][j] * gcovyz[i][j] * std::pow(J[i][j], -1.0);
-                h_dNePhi_dNe[j][i][6] = std::pow(B[i][j], -2.0) * Bny[i][j] * gcovxy[i][j] * std::pow(J[i][j], -1.0);
-                h_dNePhi_dNe[j][i][7] = std::pow(B[i][j], -2.0) * Bny[i][j] * gcovyy[i][j] * std::pow(J[i][j], -1.0);
-                h_dNePhi_dNe[j][i][8] =
-                    (-1.0) * std::pow(B[i][j], -2.0) * Bny[i][j] * gcovxy[i][j] * std::pow(J[i][j], -1.0);
+                    h_dNePhi_dNe[j][i][0 * 9 + 0] = std::pow(B[i][j][0], -3.0) *
+                                                    ((-1.0) * B[i][j][0] * Bny_py[i][j][0] * gcovyz[i][j][0] +
+                                                     Bny[i][j][0] * (2.0 * B_py[i][j][0] * gcovyz[i][j][0] +
+                                                                     (-1.0) * B[i][j][0] * gcovyz_py[i][j][0])) *
+                                                    std::pow(J[i][j][0], -1.0);
+                    h_dNePhi_dNe[j][i][0 * 9 + 1] =
+                        std::pow(B[i][j][0], -3.0) *
+                        (B[i][j][0] * Bny_px[i][j][0] * gcovyz[i][j][0] +
+                         Bny[i][j][0] * ((-2.0) * B_px[i][j][0] * gcovyz[i][j][0] + B[i][j][0] * gcovyz_px[i][j][0])) *
+                        std::pow(J[i][j][0], -1.0);
+                    h_dNePhi_dNe[j][i][0 * 9 + 2] =
+                        std::pow(B[i][j][0], -3.0) *
+                        (B[i][j][0] * (Bny_py[i][j][0] * gcovxy[i][j][0] + (-1.0) * Bny_px[i][j][0] * gcovyy[i][j][0]) +
+                         Bny[i][j][0] *
+                             ((-2.0) * B_py[i][j][0] * gcovxy[i][j][0] + 2.0 * B_px[i][j][0] * gcovyy[i][j][0] +
+                              B[i][j][0] * (gcovxy_py[i][j][0] + (-1.0) * gcovyy_px[i][j][0]))) *
+                        std::pow(J[i][j][0], -1.0);
+                    h_dNePhi_dNe[j][i][0 * 9 + 3] =
+                        std::pow(B[i][j][0], -2.0) * Bny[i][j][0] * gcovyz[i][j][0] * std::pow(J[i][j][0], -1.0);
+                    h_dNePhi_dNe[j][i][0 * 9 + 4] = (-1.0) * std::pow(B[i][j][0], -2.0) * Bny[i][j][0] *
+                                                    gcovyy[i][j][0] * std::pow(J[i][j][0], -1.0);
+                    h_dNePhi_dNe[j][i][0 * 9 + 5] = (-1.0) * std::pow(B[i][j][0], -2.0) * Bny[i][j][0] *
+                                                    gcovyz[i][j][0] * std::pow(J[i][j][0], -1.0);
+                    h_dNePhi_dNe[j][i][0 * 9 + 6] =
+                        std::pow(B[i][j][0], -2.0) * Bny[i][j][0] * gcovxy[i][j][0] * std::pow(J[i][j][0], -1.0);
+                    h_dNePhi_dNe[j][i][0 * 9 + 7] =
+                        std::pow(B[i][j][0], -2.0) * Bny[i][j][0] * gcovyy[i][j][0] * std::pow(J[i][j][0], -1.0);
+                    h_dNePhi_dNe[j][i][0 * 9 + 8] = (-1.0) * std::pow(B[i][j][0], -2.0) * Bny[i][j][0] *
+                                                    gcovxy[i][j][0] * std::pow(J[i][j][0], -1.0);
 
-                // Perturbed Temperature
+                    // Perturbed Temperature
 
-                h_PhiTe_dTe[j][i][0] =
-                    (-1.0) * std::pow(B[i][j], -2.0) * Bny[i][j] * gcovyz[i][j] * std::pow(J[i][j], -1.0);
-                h_PhiTe_dTe[j][i][1] = std::pow(B[i][j], -2.0) * Bny[i][j] * gcovyy[i][j] * std::pow(J[i][j], -1.0);
-                h_PhiTe_dTe[j][i][2] = std::pow(B[i][j], -2.0) * Bny[i][j] * gcovyz[i][j] * std::pow(J[i][j], -1.0);
-                h_PhiTe_dTe[j][i][3] =
-                    (-1.0) * std::pow(B[i][j], -2.0) * Bny[i][j] * gcovxy[i][j] * std::pow(J[i][j], -1.0);
-                h_PhiTe_dTe[j][i][4] =
-                    (-1.0) * std::pow(B[i][j], -2.0) * Bny[i][j] * gcovyy[i][j] * std::pow(J[i][j], -1.0);
-                h_PhiTe_dTe[j][i][5] = std::pow(B[i][j], -2.0) * Bny[i][j] * gcovxy[i][j] * std::pow(J[i][j], -1.0);
+                    h_PhiTe_dTe[j][i][0 * 6 + 0] = (-1.0) * std::pow(B[i][j][0], -2.0) * Bny[i][j][0] *
+                                                   gcovyz[i][j][0] * std::pow(J[i][j][0], -1.0);
+                    h_PhiTe_dTe[j][i][0 * 6 + 1] =
+                        std::pow(B[i][j][0], -2.0) * Bny[i][j][0] * gcovyy[i][j][0] * std::pow(J[i][j][0], -1.0);
+                    h_PhiTe_dTe[j][i][0 * 6 + 2] =
+                        std::pow(B[i][j][0], -2.0) * Bny[i][j][0] * gcovyz[i][j][0] * std::pow(J[i][j][0], -1.0);
+                    h_PhiTe_dTe[j][i][0 * 6 + 3] = (-1.0) * std::pow(B[i][j][0], -2.0) * Bny[i][j][0] *
+                                                   gcovxy[i][j][0] * std::pow(J[i][j][0], -1.0);
+                    h_PhiTe_dTe[j][i][0 * 6 + 4] = (-1.0) * std::pow(B[i][j][0], -2.0) * Bny[i][j][0] *
+                                                   gcovyy[i][j][0] * std::pow(J[i][j][0], -1.0);
+                    h_PhiTe_dTe[j][i][0 * 6 + 5] =
+                        std::pow(B[i][j][0], -2.0) * Bny[i][j][0] * gcovxy[i][j][0] * std::pow(J[i][j][0], -1.0);
 
-                h_PhiTeA_dTe[j][i][0] =
-                    std::pow(B[i][j], -4.0) *
-                    (gcovyz[i][j] * (B[i][j] * Bny_px[i][j] * gcovyz[i][j] +
-                                     Bny[i][j] * ((-1.0) * B_px[i][j] * gcovyz[i][j] + B[i][j] * gcovyz_px[i][j])) +
-                     gcovxz[i][j] * (Bny[i][j] * B_py[i][j] * gcovyz[i][j] +
-                                     (-1.0) * B[i][j] * (Bny_py[i][j] * gcovyz[i][j] + Bny[i][j] * gcovyz_py[i][j])) +
-                     (Bny[i][j] * ((-1.0) * B_py[i][j] * gcovxy[i][j] + B_px[i][j] * gcovyy[i][j]) +
-                      B[i][j] * (Bny_py[i][j] * gcovxy[i][j] + (-1.0) * Bny_px[i][j] * gcovyy[i][j] +
-                                 Bny[i][j] * (gcovxy_py[i][j] + (-1.0) * gcovyy_px[i][j]))) *
-                         gcovzz[i][j]) *
-                    std::pow(J[i][j], -2.0);
-                h_PhiTeA_dTe[j][i][1] = std::pow(B[i][j], -3.0) * Bny[i][j] *
-                                        (std::pow(gcovyz[i][j], 2.0) + (-1.0) * gcovyy[i][j] * gcovzz[i][j]) *
-                                        std::pow(J[i][j], -2.0);
-                h_PhiTeA_dTe[j][i][2] = std::pow(B[i][j], -3.0) * Bny[i][j] *
-                                        ((-1.0) * gcovxz[i][j] * gcovyz[i][j] + gcovxy[i][j] * gcovzz[i][j]) *
-                                        std::pow(J[i][j], -2.0);
-                h_PhiTeA_dTe[j][i][3] = std::pow(B[i][j], -3.0) * Bny[i][j] *
-                                        (gcovxz[i][j] * gcovyy[i][j] + (-1.0) * gcovxy[i][j] * gcovyz[i][j]) *
-                                        std::pow(J[i][j], -2.0);
-                h_PhiTeA_dTe[j][i][4] = std::pow(B[i][j], -3.0) * Bny[i][j] *
-                                        (((-1.0) * gcovxy_py[i][j] + gcovyy_px[i][j]) * gcovyz[i][j] +
-                                         (-1.0) * gcovyy[i][j] * gcovyz_px[i][j] + gcovxy[i][j] * gcovyz_py[i][j]) *
-                                        std::pow(J[i][j], -2.0);
-                h_PhiTeA_dTe[j][i][5] =
-                    std::pow(B[i][j], -4.0) *
-                    (Bny[i][j] *
-                         (B_px[i][j] * std::pow(gcovyz[i][j], 2.0) + (-1.0) * B[i][j] * gcovyz[i][j] * gcovyz_px[i][j] +
-                          gcovxz[i][j] * ((-1.0) * B_py[i][j] * gcovyz[i][j] + B[i][j] * gcovyz_py[i][j]) +
-                          B_py[i][j] * gcovxy[i][j] * gcovzz[i][j] + (-1.0) * B[i][j] * gcovxy_py[i][j] * gcovzz[i][j] +
-                          (-1.0) * B_px[i][j] * gcovyy[i][j] * gcovzz[i][j] +
-                          B[i][j] * gcovyy_px[i][j] * gcovzz[i][j]) +
-                     B[i][j] * (Bny_py[i][j] * gcovxz[i][j] * gcovyz[i][j] +
-                                (-1.0) * Bny_py[i][j] * gcovxy[i][j] * gcovzz[i][j] +
-                                Bny_px[i][j] * ((-1.0) * std::pow(gcovyz[i][j], 2.0) + gcovyy[i][j] * gcovzz[i][j]))) *
-                    std::pow(J[i][j], -2.0);
-                h_PhiTeA_dTe[j][i][6] = std::pow(B[i][j], -3.0) * Bny[i][j] *
-                                        ((-1.0) * std::pow(gcovyz[i][j], 2.0) + gcovyy[i][j] * gcovzz[i][j]) *
-                                        std::pow(J[i][j], -2.0);
-                h_PhiTeA_dTe[j][i][7] = std::pow(B[i][j], -3.0) * Bny[i][j] *
-                                        (gcovxz[i][j] * gcovyz[i][j] + (-1.0) * gcovxy[i][j] * gcovzz[i][j]) *
-                                        std::pow(J[i][j], -2.0);
-                h_PhiTeA_dTe[j][i][8] = std::pow(B[i][j], -3.0) * Bny[i][j] *
-                                        ((-1.0) * gcovxz[i][j] * gcovyy[i][j] + gcovxy[i][j] * gcovyz[i][j]) *
-                                        std::pow(J[i][j], -2.0);
-                h_PhiTeA_dTe[j][i][9] =
-                    std::pow(B[i][j], -4.0) *
-                    (B[i][j] * ((-1.0) * Bny_px[i][j] * gcovxz[i][j] * gcovyy[i][j] +
-                                (-1.0) * Bny_py[i][j] * gcovxx[i][j] * gcovyz[i][j] +
-                                gcovxy[i][j] * (Bny_py[i][j] * gcovxz[i][j] + Bny_px[i][j] * gcovyz[i][j])) +
-                     Bny[i][j] * (gcovxz[i][j] * (B_px[i][j] * gcovyy[i][j] +
-                                                  B[i][j] * (gcovxy_py[i][j] + (-1.0) * gcovyy_px[i][j])) +
-                                  (-1.0) * gcovxy[i][j] *
-                                      (B_py[i][j] * gcovxz[i][j] + B_px[i][j] * gcovyz[i][j] +
-                                       (-1.0) * B[i][j] * gcovyz_px[i][j]) +
-                                  gcovxx[i][j] * (B_py[i][j] * gcovyz[i][j] + (-1.0) * B[i][j] * gcovyz_py[i][j]))) *
-                    std::pow(J[i][j], -2.0);
-                h_PhiTeA_dTe[j][i][10] = std::pow(B[i][j], -3.0) * Bny[i][j] *
-                                         ((-1.0) * gcovxz[i][j] * gcovyy[i][j] + gcovxy[i][j] * gcovyz[i][j]) *
-                                         std::pow(J[i][j], -2.0);
-                h_PhiTeA_dTe[j][i][11] = std::pow(B[i][j], -3.0) * Bny[i][j] *
-                                         (gcovxy[i][j] * gcovxz[i][j] + (-1.0) * gcovxx[i][j] * gcovyz[i][j]) *
-                                         std::pow(J[i][j], -2.0);
-                h_PhiTeA_dTe[j][i][12] = std::pow(B[i][j], -3.0) * Bny[i][j] *
-                                         ((-1.0) * std::pow(gcovxy[i][j], 2.0) + gcovxx[i][j] * gcovyy[i][j]) *
-                                         std::pow(J[i][j], -2.0);
-                h_PhiTeA_dTe[j][i][13] = std::pow(B[i][j], -3.0) * Bny[i][j] *
-                                         ((gcovxy_py[i][j] + (-1.0) * gcovyy_px[i][j]) * gcovyz[i][j] +
-                                          gcovyy[i][j] * gcovyz_px[i][j] + (-1.0) * gcovxy[i][j] * gcovyz_py[i][j]) *
-                                         std::pow(J[i][j], -2.0);
-                h_PhiTeA_dTe[j][i][14] =
-                    std::pow(B[i][j], -4.0) *
-                    (B[i][j] *
-                         (Bny_px[i][j] * gcovxz[i][j] * gcovyy[i][j] + Bny_py[i][j] * gcovxx[i][j] * gcovyz[i][j] +
-                          (-1.0) * gcovxy[i][j] * (Bny_py[i][j] * gcovxz[i][j] + Bny_px[i][j] * gcovyz[i][j])) +
-                     Bny[i][j] *
-                         ((-1.0) * gcovxz[i][j] *
-                              (B_px[i][j] * gcovyy[i][j] + B[i][j] * (gcovxy_py[i][j] + (-1.0) * gcovyy_px[i][j])) +
-                          gcovxy[i][j] * (B_py[i][j] * gcovxz[i][j] + B_px[i][j] * gcovyz[i][j] +
-                                          (-1.0) * B[i][j] * gcovyz_px[i][j]) +
-                          gcovxx[i][j] * ((-1.0) * B_py[i][j] * gcovyz[i][j] + B[i][j] * gcovyz_py[i][j]))) *
-                    std::pow(J[i][j], -2.0);
-                h_PhiTeA_dTe[j][i][15] = std::pow(B[i][j], -3.0) * Bny[i][j] *
-                                         (gcovxz[i][j] * gcovyy[i][j] + (-1.0) * gcovxy[i][j] * gcovyz[i][j]) *
-                                         std::pow(J[i][j], -2.0);
-                h_PhiTeA_dTe[j][i][16] = std::pow(B[i][j], -3.0) * Bny[i][j] *
-                                         ((-1.0) * gcovxy[i][j] * gcovxz[i][j] + gcovxx[i][j] * gcovyz[i][j]) *
-                                         std::pow(J[i][j], -2.0);
-                h_PhiTeA_dTe[j][i][17] = std::pow(B[i][j], -3.0) * Bny[i][j] *
-                                         (std::pow(gcovxy[i][j], 2.0) + (-1.0) * gcovxx[i][j] * gcovyy[i][j]) *
-                                         std::pow(J[i][j], -2.0);
+                    h_PhiTeA_dTe[j][i][0 * 18 + 0] =
+                        std::pow(B[i][j][0], -4.0) *
+                        (gcovyz[i][j][0] * (B[i][j][0] * Bny_px[i][j][0] * gcovyz[i][j][0] +
+                                            Bny[i][j][0] * ((-1.0) * B_px[i][j][0] * gcovyz[i][j][0] +
+                                                            B[i][j][0] * gcovyz_px[i][j][0])) +
+                         gcovxz[i][j][0] *
+                             (Bny[i][j][0] * B_py[i][j][0] * gcovyz[i][j][0] +
+                              (-1.0) * B[i][j][0] *
+                                  (Bny_py[i][j][0] * gcovyz[i][j][0] + Bny[i][j][0] * gcovyz_py[i][j][0])) +
+                         (Bny[i][j][0] * ((-1.0) * B_py[i][j][0] * gcovxy[i][j][0] + B_px[i][j][0] * gcovyy[i][j][0]) +
+                          B[i][j][0] * (Bny_py[i][j][0] * gcovxy[i][j][0] + (-1.0) * Bny_px[i][j][0] * gcovyy[i][j][0] +
+                                        Bny[i][j][0] * (gcovxy_py[i][j][0] + (-1.0) * gcovyy_px[i][j][0]))) *
+                             gcovzz[i][j][0]) *
+                        std::pow(J[i][j][0], -2.0);
+                    h_PhiTeA_dTe[j][i][0 * 18 + 1] =
+                        std::pow(B[i][j][0], -3.0) * Bny[i][j][0] *
+                        (std::pow(gcovyz[i][j][0], 2.0) + (-1.0) * gcovyy[i][j][0] * gcovzz[i][j][0]) *
+                        std::pow(J[i][j][0], -2.0);
+                    h_PhiTeA_dTe[j][i][0 * 18 + 2] =
+                        std::pow(B[i][j][0], -3.0) * Bny[i][j][0] *
+                        ((-1.0) * gcovxz[i][j][0] * gcovyz[i][j][0] + gcovxy[i][j][0] * gcovzz[i][j][0]) *
+                        std::pow(J[i][j][0], -2.0);
+                    h_PhiTeA_dTe[j][i][0 * 18 + 3] =
+                        std::pow(B[i][j][0], -3.0) * Bny[i][j][0] *
+                        (gcovxz[i][j][0] * gcovyy[i][j][0] + (-1.0) * gcovxy[i][j][0] * gcovyz[i][j][0]) *
+                        std::pow(J[i][j][0], -2.0);
+                    h_PhiTeA_dTe[j][i][0 * 18 + 4] =
+                        std::pow(B[i][j][0], -3.0) * Bny[i][j][0] *
+                        (((-1.0) * gcovxy_py[i][j][0] + gcovyy_px[i][j][0]) * gcovyz[i][j][0] +
+                         (-1.0) * gcovyy[i][j][0] * gcovyz_px[i][j][0] + gcovxy[i][j][0] * gcovyz_py[i][j][0]) *
+                        std::pow(J[i][j][0], -2.0);
+                    h_PhiTeA_dTe[j][i][0 * 18 + 5] =
+                        std::pow(B[i][j][0], -4.0) *
+                        (Bny[i][j][0] * (B_px[i][j][0] * std::pow(gcovyz[i][j][0], 2.0) +
+                                         (-1.0) * B[i][j][0] * gcovyz[i][j][0] * gcovyz_px[i][j][0] +
+                                         gcovxz[i][j][0] * ((-1.0) * B_py[i][j][0] * gcovyz[i][j][0] +
+                                                            B[i][j][0] * gcovyz_py[i][j][0]) +
+                                         B_py[i][j][0] * gcovxy[i][j][0] * gcovzz[i][j][0] +
+                                         (-1.0) * B[i][j][0] * gcovxy_py[i][j][0] * gcovzz[i][j][0] +
+                                         (-1.0) * B_px[i][j][0] * gcovyy[i][j][0] * gcovzz[i][j][0] +
+                                         B[i][j][0] * gcovyy_px[i][j][0] * gcovzz[i][j][0]) +
+                         B[i][j][0] * (Bny_py[i][j][0] * gcovxz[i][j][0] * gcovyz[i][j][0] +
+                                       (-1.0) * Bny_py[i][j][0] * gcovxy[i][j][0] * gcovzz[i][j][0] +
+                                       Bny_px[i][j][0] * ((-1.0) * std::pow(gcovyz[i][j][0], 2.0) +
+                                                          gcovyy[i][j][0] * gcovzz[i][j][0]))) *
+                        std::pow(J[i][j][0], -2.0);
+                    h_PhiTeA_dTe[j][i][0 * 18 + 6] =
+                        std::pow(B[i][j][0], -3.0) * Bny[i][j][0] *
+                        ((-1.0) * std::pow(gcovyz[i][j][0], 2.0) + gcovyy[i][j][0] * gcovzz[i][j][0]) *
+                        std::pow(J[i][j][0], -2.0);
+                    h_PhiTeA_dTe[j][i][0 * 18 + 7] =
+                        std::pow(B[i][j][0], -3.0) * Bny[i][j][0] *
+                        (gcovxz[i][j][0] * gcovyz[i][j][0] + (-1.0) * gcovxy[i][j][0] * gcovzz[i][j][0]) *
+                        std::pow(J[i][j][0], -2.0);
+                    h_PhiTeA_dTe[j][i][0 * 18 + 8] =
+                        std::pow(B[i][j][0], -3.0) * Bny[i][j][0] *
+                        ((-1.0) * gcovxz[i][j][0] * gcovyy[i][j][0] + gcovxy[i][j][0] * gcovyz[i][j][0]) *
+                        std::pow(J[i][j][0], -2.0);
+                    h_PhiTeA_dTe[j][i][0 * 18 + 9] =
+                        std::pow(B[i][j][0], -4.0) *
+                        (B[i][j][0] * ((-1.0) * Bny_px[i][j][0] * gcovxz[i][j][0] * gcovyy[i][j][0] +
+                                       (-1.0) * Bny_py[i][j][0] * gcovxx[i][j][0] * gcovyz[i][j][0] +
+                                       gcovxy[i][j][0] *
+                                           (Bny_py[i][j][0] * gcovxz[i][j][0] + Bny_px[i][j][0] * gcovyz[i][j][0])) +
+                         Bny[i][j][0] *
+                             (gcovxz[i][j][0] * (B_px[i][j][0] * gcovyy[i][j][0] +
+                                                 B[i][j][0] * (gcovxy_py[i][j][0] + (-1.0) * gcovyy_px[i][j][0])) +
+                              (-1.0) * gcovxy[i][j][0] *
+                                  (B_py[i][j][0] * gcovxz[i][j][0] + B_px[i][j][0] * gcovyz[i][j][0] +
+                                   (-1.0) * B[i][j][0] * gcovyz_px[i][j][0]) +
+                              gcovxx[i][j][0] *
+                                  (B_py[i][j][0] * gcovyz[i][j][0] + (-1.0) * B[i][j][0] * gcovyz_py[i][j][0]))) *
+                        std::pow(J[i][j][0], -2.0);
+                    h_PhiTeA_dTe[j][i][0 * 18 + 10] =
+                        std::pow(B[i][j][0], -3.0) * Bny[i][j][0] *
+                        ((-1.0) * gcovxz[i][j][0] * gcovyy[i][j][0] + gcovxy[i][j][0] * gcovyz[i][j][0]) *
+                        std::pow(J[i][j][0], -2.0);
+                    h_PhiTeA_dTe[j][i][0 * 18 + 11] =
+                        std::pow(B[i][j][0], -3.0) * Bny[i][j][0] *
+                        (gcovxy[i][j][0] * gcovxz[i][j][0] + (-1.0) * gcovxx[i][j][0] * gcovyz[i][j][0]) *
+                        std::pow(J[i][j][0], -2.0);
+                    h_PhiTeA_dTe[j][i][0 * 18 + 12] =
+                        std::pow(B[i][j][0], -3.0) * Bny[i][j][0] *
+                        ((-1.0) * std::pow(gcovxy[i][j][0], 2.0) + gcovxx[i][j][0] * gcovyy[i][j][0]) *
+                        std::pow(J[i][j][0], -2.0);
+                    h_PhiTeA_dTe[j][i][0 * 18 + 13] =
+                        std::pow(B[i][j][0], -3.0) * Bny[i][j][0] *
+                        ((gcovxy_py[i][j][0] + (-1.0) * gcovyy_px[i][j][0]) * gcovyz[i][j][0] +
+                         gcovyy[i][j][0] * gcovyz_px[i][j][0] + (-1.0) * gcovxy[i][j][0] * gcovyz_py[i][j][0]) *
+                        std::pow(J[i][j][0], -2.0);
+                    h_PhiTeA_dTe[j][i][0 * 18 + 14] =
+                        std::pow(B[i][j][0], -4.0) *
+                        (B[i][j][0] * (Bny_px[i][j][0] * gcovxz[i][j][0] * gcovyy[i][j][0] +
+                                       Bny_py[i][j][0] * gcovxx[i][j][0] * gcovyz[i][j][0] +
+                                       (-1.0) * gcovxy[i][j][0] *
+                                           (Bny_py[i][j][0] * gcovxz[i][j][0] + Bny_px[i][j][0] * gcovyz[i][j][0])) +
+                         Bny[i][j][0] *
+                             ((-1.0) * gcovxz[i][j][0] *
+                                  (B_px[i][j][0] * gcovyy[i][j][0] +
+                                   B[i][j][0] * (gcovxy_py[i][j][0] + (-1.0) * gcovyy_px[i][j][0])) +
+                              gcovxy[i][j][0] * (B_py[i][j][0] * gcovxz[i][j][0] + B_px[i][j][0] * gcovyz[i][j][0] +
+                                                 (-1.0) * B[i][j][0] * gcovyz_px[i][j][0]) +
+                              gcovxx[i][j][0] *
+                                  ((-1.0) * B_py[i][j][0] * gcovyz[i][j][0] + B[i][j][0] * gcovyz_py[i][j][0]))) *
+                        std::pow(J[i][j][0], -2.0);
+                    h_PhiTeA_dTe[j][i][0 * 18 + 15] =
+                        std::pow(B[i][j][0], -3.0) * Bny[i][j][0] *
+                        (gcovxz[i][j][0] * gcovyy[i][j][0] + (-1.0) * gcovxy[i][j][0] * gcovyz[i][j][0]) *
+                        std::pow(J[i][j][0], -2.0);
+                    h_PhiTeA_dTe[j][i][0 * 18 + 16] =
+                        std::pow(B[i][j][0], -3.0) * Bny[i][j][0] *
+                        ((-1.0) * gcovxy[i][j][0] * gcovxz[i][j][0] + gcovxx[i][j][0] * gcovyz[i][j][0]) *
+                        std::pow(J[i][j][0], -2.0);
+                    h_PhiTeA_dTe[j][i][0 * 18 + 17] =
+                        std::pow(B[i][j][0], -3.0) * Bny[i][j][0] *
+                        (std::pow(gcovxy[i][j][0], 2.0) + (-1.0) * gcovxx[i][j][0] * gcovyy[i][j][0]) *
+                        std::pow(J[i][j][0], -2.0);
+                }
+            }
+
+        } else {
+
+            /*---------------------------Linear---------------------------*/
+
+            for (int i = 0; i < gridNx; i++) {
+                for (int j = 0; j < gridNy; j++) {
+                    for (int k = 0; k < gridNz; k++) {
+
+                        // Vorticity
+
+                        h_A_w[j][i][k] =
+                            std::pow(B[i][j][k], -2.0) * std::pow(J[i][j][k], -1.0) *
+                            (B[i][j][k] * (gcovyz[i][j][k] * (Bny_py[i][j][k] * JpB_px[i][j][k] +
+                                                              (-1.0) * Bny_px[i][j][k] * JpB_py[i][j][k]) +
+                                           gcovyy[i][j][k] * ((-1.0) * Bny_pz[i][j][k] * JpB_px[i][j][k] +
+                                                              Bny_px[i][j][k] * JpB_pz[i][j][k]) +
+                                           gcovxy[i][j][k] * (Bny_pz[i][j][k] * JpB_py[i][j][k] +
+                                                              (-1.0) * Bny_py[i][j][k] * JpB_pz[i][j][k])) +
+                             Bny[i][j][k] *
+                                 (B_pz[i][j][k] * gcovyy[i][j][k] * JpB_px[i][j][k] +
+                                  (-1.0) * B_py[i][j][k] * gcovyz[i][j][k] * JpB_px[i][j][k] +
+                                  B_px[i][j][k] * gcovyz[i][j][k] * JpB_py[i][j][k] +
+                                  (-1.0) * B_px[i][j][k] * gcovyy[i][j][k] * JpB_pz[i][j][k] +
+                                  gcovxy[i][j][k] *
+                                      ((-1.0) * B_pz[i][j][k] * JpB_py[i][j][k] + B_py[i][j][k] * JpB_pz[i][j][k]) +
+                                  B[i][j][k] *
+                                      ((-1.0) * gcovyy_pz[i][j][k] * JpB_px[i][j][k] +
+                                       gcovyz_py[i][j][k] * JpB_px[i][j][k] + gcovxy_pz[i][j][k] * JpB_py[i][j][k] +
+                                       (-1.0) * gcovyz_px[i][j][k] * JpB_py[i][j][k] +
+                                       ((-1.0) * gcovxy_py[i][j][k] + gcovyy_px[i][j][k]) * JpB_pz[i][j][k])));
+                        h_A_px_w[j][i][k] =
+                            std::pow(B[i][j][k], -1.0) * Bny[i][j][k] * std::pow(J[i][j][k], -1.0) *
+                            ((-1.0) * gcovyz[i][j][k] * JpB_py[i][j][k] + gcovyy[i][j][k] * JpB_pz[i][j][k]);
+                        h_A_py_w[j][i][k] =
+                            std::pow(B[i][j][k], -1.0) * Bny[i][j][k] * std::pow(J[i][j][k], -1.0) *
+                            (gcovyz[i][j][k] * JpB_px[i][j][k] + (-1.0) * gcovxy[i][j][k] * JpB_pz[i][j][k]);
+                        h_A_pz_w[j][i][k] =
+                            std::pow(B[i][j][k], -1.0) * Bny[i][j][k] * std::pow(J[i][j][k], -1.0) *
+                            ((-1.0) * gcovyy[i][j][k] * JpB_px[i][j][k] + gcovxy[i][j][k] * JpB_py[i][j][k]);
+
+                        h_dJpB_w[j][i][k] = 0.0;
+                        h_dJpB_px_w[j][i][k] = 0.0;
+                        h_dJpB_py_w[j][i][k] = Bny[i][j][k];
+                        h_dJpB_pz_w[j][i][k] = 0.0;
+
+                        h_dP_w[j][i][k] = 0.0;
+                        h_dP_px_w[j][i][k] =
+                            std::pow(B[i][j][k], -3.0) *
+                            (B[i][j][k] *
+                                 ((-1.0) * Bny_pz[i][j][k] * gcovyy[i][j][k] + Bny_py[i][j][k] * gcovyz[i][j][k]) +
+                             Bny[i][j][k] *
+                                 (B_pz[i][j][k] * gcovyy[i][j][k] + (-1.0) * B_py[i][j][k] * gcovyz[i][j][k] +
+                                  B[i][j][k] * ((-1.0) * gcovyy_pz[i][j][k] + gcovyz_py[i][j][k]))) *
+                            std::pow(J[i][j][k], -1.0);
+                        h_dP_py_w[j][i][k] =
+                            std::pow(B[i][j][k], -4.0) *
+                            (B[i][j][k] * Bny[i][j][k] *
+                                 ((-1.0) * B_pz[i][j][k] * gcovxy[i][j][k] + B_px[i][j][k] * gcovyz[i][j][k]) +
+                             std::pow(B[i][j][k], 2.0) *
+                                 (Bny_pz[i][j][k] * gcovxy[i][j][k] + (-1.0) * Bny_px[i][j][k] * gcovyz[i][j][k] +
+                                  Bny[i][j][k] * (gcovxy_pz[i][j][k] + (-1.0) * gcovyz_px[i][j][k])) +
+                             std::pow(Bny[i][j][k], 3.0) *
+                                 ((gcovxy_py[i][j][k] + (-1.0) * gcovyy_px[i][j][k]) * gcovyz[i][j][k] +
+                                  gcovyy[i][j][k] * ((-1.0) * gcovxy_pz[i][j][k] + gcovyz_px[i][j][k]) +
+                                  gcovxy[i][j][k] * (gcovyy_pz[i][j][k] + (-1.0) * gcovyz_py[i][j][k]))) *
+                            std::pow(J[i][j][k], -1.0);
+                        h_dP_pz_w[j][i][k] =
+                            std::pow(B[i][j][k], -3.0) *
+                            (B[i][j][k] *
+                                 ((-1.0) * Bny_py[i][j][k] * gcovxy[i][j][k] + Bny_px[i][j][k] * gcovyy[i][j][k]) +
+                             Bny[i][j][k] *
+                                 (B_py[i][j][k] * gcovxy[i][j][k] + (-1.0) * B_px[i][j][k] * gcovyy[i][j][k] +
+                                  B[i][j][k] * ((-1.0) * gcovxy_py[i][j][k] + gcovyy_px[i][j][k]))) *
+                            std::pow(J[i][j][k], -1.0);
+
+                        h_w_py_w[j][i][k] = (-1.0) / 2.0 * std::pow(B[i][j][k], -2.0) * Bny[i][j][k] * gcovyz[i][j][k] *
+                                            std::pow(J[i][j][k], -1.0) * std::pow(Ni[i][j][k], -1.0) * Pi_px[i][j][k] *
+                                            std::pow(NormQE, -1.0);
+                        h_w_pz_w[j][i][k] = 1.0 / 2.0 * std::pow(B[i][j][k], -2.0) * Bny[i][j][k] * gcovyy[i][j][k] *
+                                            std::pow(J[i][j][k], -1.0) * std::pow(Ni[i][j][k], -1.0) * Pi_px[i][j][k] *
+                                            std::pow(NormQE, -1.0);
+                        h_w_Phi[j][i][k] = (-1.0) * std::pow(Rho[i][j][k], 2.0) * std::pow(Va[i][j][k], 2.0);
+
+                        h_wdPAdJpB2w[j][i][k * 10 + 0] = h_w_py_w[j][i][k];
+                        h_wdPAdJpB2w[j][i][k * 10 + 1] = h_w_pz_w[j][i][k];
+                        h_wdPAdJpB2w[j][i][k * 10 + 2] = h_dP_px_w[j][i][k];
+                        h_wdPAdJpB2w[j][i][k * 10 + 3] = h_dP_py_w[j][i][k];
+                        h_wdPAdJpB2w[j][i][k * 10 + 4] = h_dP_pz_w[j][i][k];
+                        h_wdPAdJpB2w[j][i][k * 10 + 5] = h_A_w[j][i][k];
+                        h_wdPAdJpB2w[j][i][k * 10 + 6] = h_A_px_w[j][i][k];
+                        h_wdPAdJpB2w[j][i][k * 10 + 7] = h_A_py_w[j][i][k];
+                        h_wdPAdJpB2w[j][i][k * 10 + 8] = h_A_pz_w[j][i][k];
+                        h_wdPAdJpB2w[j][i][k * 10 + 9] = h_dJpB_py_w[j][i][k];
+
+                        // Poisson Equation
+
+                        h_Phi_w[j][i][k] = 0.0;
+                        h_Phi_px_w[j][i][k] =
+                            std::pow(Va[i][j][k], -3.0) *
+                            (std::pow(J[i][j][k], -1.0) *
+                                 ((gconxx_px[i][j][k] + gconxy_py[i][j][k] + gconxz_pz[i][j][k]) * J[i][j][k] +
+                                  gconxx[i][j][k] * J_px[i][j][k] + gconxy[i][j][k] * J_py[i][j][k] +
+                                  gconxz[i][j][k] * J_pz[i][j][k]) *
+                                 Va[i][j][k] +
+                             (-2.0) * (gconxx[i][j][k] * Va_px[i][j][k] + gconxy[i][j][k] * Va_py[i][j][k] +
+                                       gconxz[i][j][k] * Va_pz[i][j][k]));
+                        h_Phi_pz_w[j][i][k] =
+                            std::pow(Va[i][j][k], -3.0) *
+                            (std::pow(J[i][j][k], -1.0) *
+                                 ((gconxz_px[i][j][k] + gconyz_py[i][j][k] + gconzz_pz[i][j][k]) * J[i][j][k] +
+                                  gconxz[i][j][k] * J_px[i][j][k] + gconyz[i][j][k] * J_py[i][j][k] +
+                                  gconzz[i][j][k] * J_pz[i][j][k]) *
+                                 Va[i][j][k] +
+                             (-2.0) * (gconxz[i][j][k] * Va_px[i][j][k] + gconyz[i][j][k] * Va_py[i][j][k] +
+                                       gconzz[i][j][k] * Va_pz[i][j][k]));
+                        h_Phi_px2_w[j][i][k] = gconxx[i][j][k] * std::pow(Va[i][j][k], -2.0);
+                        h_Phi_pxz_w[j][i][k] = 2.0 * gconxz[i][j][k] * std::pow(Va[i][j][k], -2.0);
+                        h_Phi_pz2_w[j][i][k] = gconzz[i][j][k] * std::pow(Va[i][j][k], -2.0);
+                        h_Phi2w[j][i][k * 5 + 0] = h_Phi_px_w[j][i][k];
+                        h_Phi2w[j][i][k * 5 + 1] = h_Phi_pz_w[j][i][k];
+                        h_Phi2w[j][i][k * 5 + 2] = h_Phi_px2_w[j][i][k];
+                        h_Phi2w[j][i][k * 5 + 3] = h_Phi_pxz_w[j][i][k];
+                        h_Phi2w[j][i][k * 5 + 4] = h_Phi_pz2_w[j][i][k];
+
+                        // Perturbed Parallel Current
+
+                        h_A_dJpB[j][i][k] =
+                            std::pow(B[i][j][k], -3.0) *
+                            (2.0 * B_py[i][j][k] * (B_px[i][j][k] * gconxy[i][j][k] + B_pz[i][j][k] * gconyz[i][j][k]) +
+                             B[i][j][k] * std::pow(J[i][j][k], -1.0) *
+                                 ((B_px2[i][j][k] * gconxx[i][j][k] + 2.0 * B_pxz[i][j][k] * gconxz[i][j][k] +
+                                   B_pz[i][j][k] * gconxz_px[i][j][k] +
+                                   B_px[i][j][k] * (gconxx_px[i][j][k] + gconxy_py[i][j][k] + gconxz_pz[i][j][k]) +
+                                   B_pz[i][j][k] * gconyz_py[i][j][k] + B_pz2[i][j][k] * gconzz[i][j][k] +
+                                   B_pz[i][j][k] * gconzz_pz[i][j][k]) *
+                                      J[i][j][k] +
+                                  B_px[i][j][k] * gconxx[i][j][k] * J_px[i][j][k] +
+                                  B_pz[i][j][k] * gconxz[i][j][k] * J_px[i][j][k] +
+                                  B_px[i][j][k] * gconxy[i][j][k] * J_py[i][j][k] +
+                                  B_pz[i][j][k] * gconyz[i][j][k] * J_py[i][j][k] +
+                                  B_px[i][j][k] * gconxz[i][j][k] * J_pz[i][j][k] +
+                                  B_pz[i][j][k] * gconzz[i][j][k] * J_pz[i][j][k]));
+                        h_A_px_dJpB[j][i][k] =
+                            (-1.0) * std::pow(B[i][j][k], -2.0) *
+                            (2.0 * B_py[i][j][k] * gconxy[i][j][k] +
+                             B[i][j][k] * std::pow(J[i][j][k], -1.0) *
+                                 ((gconxx_px[i][j][k] + gconxy_py[i][j][k] + gconxz_pz[i][j][k]) * J[i][j][k] +
+                                  gconxx[i][j][k] * J_px[i][j][k] + gconxy[i][j][k] * J_py[i][j][k] +
+                                  gconxz[i][j][k] * J_pz[i][j][k]));
+                        h_A_pz_dJpB[j][i][k] =
+                            (-1.0) * std::pow(B[i][j][k], -2.0) *
+                            (2.0 * B_py[i][j][k] * gconyz[i][j][k] +
+                             B[i][j][k] * std::pow(J[i][j][k], -1.0) *
+                                 ((gconxz_px[i][j][k] + gconyz_py[i][j][k] + gconzz_pz[i][j][k]) * J[i][j][k] +
+                                  gconxz[i][j][k] * J_px[i][j][k] + gconyz[i][j][k] * J_py[i][j][k] +
+                                  gconzz[i][j][k] * J_pz[i][j][k]));
+                        h_A_px2_dJpB[j][i][k] = (-1.0) * std::pow(B[i][j][k], -1.0) * gconxx[i][j][k];
+                        h_A_pxz_dJpB[j][i][k] = (-2.0) * std::pow(B[i][j][k], -1.0) * gconxz[i][j][k];
+                        h_A_pz2_dJpB[j][i][k] = (-1.0) * std::pow(B[i][j][k], -1.0) * gconzz[i][j][k];
+                        h_A2dJpB[j][i][k * 6 + 0] = h_A_dJpB[j][i][k];
+                        h_A2dJpB[j][i][k * 6 + 1] = h_A_px_dJpB[j][i][k];
+                        h_A2dJpB[j][i][k * 6 + 2] = h_A_pz_dJpB[j][i][k];
+                        h_A2dJpB[j][i][k * 6 + 3] = h_A_px2_dJpB[j][i][k];
+                        h_A2dJpB[j][i][k * 6 + 4] = h_A_pxz_dJpB[j][i][k];
+                        h_A2dJpB[j][i][k * 6 + 5] = h_A_pz2_dJpB[j][i][k];
+
+                        // Parallel Resistive
+
+                        h_A_resistive[j][i][k] = h_A_dJpB[j][i][k] * B[i][j][k] * dt * nablaPerp2A.coef + 1.0;
+                        h_A_px_resistive[j][i][k] = h_A_px_dJpB[j][i][k] * B[i][j][k] * dt * nablaPerp2A.coef;
+                        h_A_pz_resistive[j][i][k] = h_A_pz_dJpB[j][i][k] * B[i][j][k] * dt * nablaPerp2A.coef;
+                        h_A_px2_resistive[j][i][k] = h_A_px2_dJpB[j][i][k] * B[i][j][k] * dt * nablaPerp2A.coef;
+                        h_A_pxz_resistive[j][i][k] = h_A_pxz_dJpB[j][i][k] * B[i][j][k] * dt * nablaPerp2A.coef;
+                        h_A_pz2_resistive[j][i][k] = h_A_pz2_dJpB[j][i][k] * B[i][j][k] * dt * nablaPerp2A.coef;
+
+                        // Perpendicular Dissipation
+
+                        h_F_perp2[j][i][k] = 1.0;
+                        h_F_px_perp2[j][i][k] =
+                            std::pow(J[i][j][k], -1.0) *
+                            ((gconxx_px[i][j][k] + gconxy_py[i][j][k] + gconxz_pz[i][j][k]) * J[i][j][k] +
+                             gconxx[i][j][k] * J_px[i][j][k] + gconxy[i][j][k] * J_py[i][j][k] +
+                             gconxz[i][j][k] * J_pz[i][j][k]);
+                        h_F_pz_perp2[j][i][k] =
+                            std::pow(J[i][j][k], -1.0) *
+                            ((gconxz_px[i][j][k] + gconyz_py[i][j][k] + gconzz_pz[i][j][k]) * J[i][j][k] +
+                             gconxz[i][j][k] * J_px[i][j][k] + gconyz[i][j][k] * J_py[i][j][k] +
+                             gconzz[i][j][k] * J_pz[i][j][k]);
+                        h_F_px2_perp2[j][i][k] = gconxx[i][j][k];
+                        h_F_pxz_perp2[j][i][k] = 2.0 * gconxz[i][j][k];
+                        h_F_pz2_perp2[j][i][k] = gconzz[i][j][k];
+                        h_F2perp2[j][i][k * 5 + 0] = h_F_px_perp2[j][i][k];
+                        h_F2perp2[j][i][k * 5 + 1] = h_F_pz_perp2[j][i][k];
+                        h_F2perp2[j][i][k * 5 + 2] = h_F_px2_perp2[j][i][k];
+                        h_F2perp2[j][i][k * 5 + 3] = h_F_pxz_perp2[j][i][k];
+                        h_F2perp2[j][i][k * 5 + 4] = h_F_pz2_perp2[j][i][k];
+
+                        // Perturbed Parallel Vector Potential
+
+                        h_Phi_A[j][i][k] = 0.0;
+                        h_Phi_px_A[j][i][k] = 0.0;
+                        h_Phi_py_A[j][i][k] = (-1.0) * std::pow(B[i][j][k], -1.0) * Bny[i][j][k];
+                        h_Phi_pz_A[j][i][k] = 0.0;
+
+                        h_dNe_A[j][i][k] = 0.0;
+                        h_dNe_px_A[j][i][k] = 0.0;
+                        h_dNe_py_A[j][i][k] = 1.0 / 2.0 * std::pow(B[i][j][k], -1.0) * Bny[i][j][k] *
+                                              std::pow(Ne[i][j][k], -1.0) * Te[i][j][k] * std::pow(NormQE, -1.0);
+                        h_dNe_pz_A[j][i][k] = 0.0;
+
+                        h_A_A[j][i][k] =
+                            1.0 / 2.0 * std::pow(B[i][j][k], -3.0) *
+                            (B[i][j][k] *
+                                 ((-1.0) * Bny_pz[i][j][k] * gcovyy[i][j][k] + Bny_py[i][j][k] * gcovyz[i][j][k]) +
+                             Bny[i][j][k] *
+                                 (B_pz[i][j][k] * gcovyy[i][j][k] + (-1.0) * B_py[i][j][k] * gcovyz[i][j][k] +
+                                  B[i][j][k] * ((-1.0) * gcovyy_pz[i][j][k] + gcovyz_py[i][j][k]))) *
+                            std::pow(J[i][j][k], -1.0) * std::pow(Ne[i][j][k], -1.0) * Ne_px[i][j][k] * Te[i][j][k] *
+                            std::pow(NormQE, -1.0);
+                        h_A_px_A[j][i][k] = 0.0;
+                        h_A_py_A[j][i][k] = 1.0 / 2.0 * std::pow(B[i][j][k], -2.0) * Bny[i][j][k] * gcovyz[i][j][k] *
+                                            std::pow(J[i][j][k], -1.0) * std::pow(Ne[i][j][k], -1.0) * Ne_px[i][j][k] *
+                                            Te[i][j][k] * std::pow(NormQE, -1.0);
+                        h_A_pz_A[j][i][k] = (-1.0) / 2.0 * std::pow(B[i][j][k], -2.0) * Bny[i][j][k] * gcovyy[i][j][k] *
+                                            std::pow(J[i][j][k], -1.0) * std::pow(Ne[i][j][k], -1.0) * Ne_px[i][j][k] *
+                                            Te[i][j][k] * std::pow(NormQE, -1.0);
+
+                        h_APhidNe2A[j][i][k * 5 + 0] = h_A_A[j][i][k];
+                        h_APhidNe2A[j][i][k * 5 + 1] = h_A_py_A[j][i][k];
+                        h_APhidNe2A[j][i][k * 5 + 2] = h_A_pz_A[j][i][k];
+                        h_APhidNe2A[j][i][k * 5 + 3] = h_Phi_py_A[j][i][k];
+                        h_APhidNe2A[j][i][k * 5 + 4] = h_dNe_py_A[j][i][k];
+
+                        // Perturbed Density
+
+                        h_Phi_dNe[j][i][k] = 0.0;
+                        h_Phi_px_dNe[j][i][k] =
+                            std::pow(B[i][j][k], -3.0) *
+                            (B[i][j][k] *
+                                 (Bny_pz[i][j][k] * gcovyy[i][j][k] + (-1.0) * Bny_py[i][j][k] * gcovyz[i][j][k]) +
+                             Bny[i][j][k] *
+                                 ((-2.0) * B_pz[i][j][k] * gcovyy[i][j][k] + 2.0 * B_py[i][j][k] * gcovyz[i][j][k] +
+                                  B[i][j][k] * (gcovyy_pz[i][j][k] + (-1.0) * gcovyz_py[i][j][k]))) *
+                            std::pow(J[i][j][k], -1.0) * Ne[i][j][k];
+                        h_Phi_py_dNe[j][i][k] =
+                            std::pow(B[i][j][k], -3.0) * std::pow(J[i][j][k], -1.0) *
+                            (B[i][j][k] *
+                                 ((-1.0) * Bny_pz[i][j][k] * gcovxy[i][j][k] + Bny_px[i][j][k] * gcovyz[i][j][k]) *
+                                 Ne[i][j][k] +
+                             Bny[i][j][k] *
+                                 (2.0 * B_pz[i][j][k] * gcovxy[i][j][k] * Ne[i][j][k] +
+                                  (-2.0) * B_px[i][j][k] * gcovyz[i][j][k] * Ne[i][j][k] +
+                                  B[i][j][k] * (((-1.0) * gcovxy_pz[i][j][k] + gcovyz_px[i][j][k]) * Ne[i][j][k] +
+                                                gcovyz[i][j][k] * Ne_px[i][j][k])));
+                        h_Phi_pz_dNe[j][i][k] =
+                            std::pow(B[i][j][k], -3.0) * std::pow(J[i][j][k], -1.0) *
+                            (B[i][j][k] *
+                                 (Bny_py[i][j][k] * gcovxy[i][j][k] + (-1.0) * Bny_px[i][j][k] * gcovyy[i][j][k]) *
+                                 Ne[i][j][k] +
+                             (-1.0) * Bny[i][j][k] *
+                                 (2.0 * B_py[i][j][k] * gcovxy[i][j][k] * Ne[i][j][k] +
+                                  (-2.0) * B_px[i][j][k] * gcovyy[i][j][k] * Ne[i][j][k] +
+                                  B[i][j][k] * (((-1.0) * gcovxy_py[i][j][k] + gcovyy_px[i][j][k]) * Ne[i][j][k] +
+                                                gcovyy[i][j][k] * Ne_px[i][j][k])));
+
+                        h_dPe_dNe[j][i][k] = 0.0;
+                        h_dPe_px_dNe[j][i][k] =
+                            1.0 / 2.0 * std::pow(B[i][j][k], -3.0) *
+                            (B[i][j][k] *
+                                 ((-1.0) * Bny_pz[i][j][k] * gcovyy[i][j][k] + Bny_py[i][j][k] * gcovyz[i][j][k]) +
+                             Bny[i][j][k] *
+                                 (2.0 * B_pz[i][j][k] * gcovyy[i][j][k] + (-2.0) * B_py[i][j][k] * gcovyz[i][j][k] +
+                                  B[i][j][k] * ((-1.0) * gcovyy_pz[i][j][k] + gcovyz_py[i][j][k]))) *
+                            std::pow(J[i][j][k], -1.0) * std::pow(NormQE, -1.0);
+                        h_dPe_py_dNe[j][i][k] =
+                            1.0 / 2.0 * std::pow(B[i][j][k], -3.0) *
+                            (B[i][j][k] *
+                                 (Bny_pz[i][j][k] * gcovxy[i][j][k] + (-1.0) * Bny_px[i][j][k] * gcovyz[i][j][k]) +
+                             Bny[i][j][k] *
+                                 ((-2.0) * B_pz[i][j][k] * gcovxy[i][j][k] + 2.0 * B_px[i][j][k] * gcovyz[i][j][k] +
+                                  B[i][j][k] * (gcovxy_pz[i][j][k] + (-1.0) * gcovyz_px[i][j][k]))) *
+                            std::pow(J[i][j][k], -1.0) * std::pow(NormQE, -1.0);
+                        h_dPe_pz_dNe[j][i][k] =
+                            1.0 / 2.0 * std::pow(B[i][j][k], -3.0) *
+                            (B[i][j][k] *
+                                 ((-1.0) * Bny_py[i][j][k] * gcovxy[i][j][k] + Bny_px[i][j][k] * gcovyy[i][j][k]) +
+                             Bny[i][j][k] *
+                                 (2.0 * B_py[i][j][k] * gcovxy[i][j][k] + (-2.0) * B_px[i][j][k] * gcovyy[i][j][k] +
+                                  B[i][j][k] * ((-1.0) * gcovxy_py[i][j][k] + gcovyy_px[i][j][k]))) *
+                            std::pow(J[i][j][k], -1.0) * std::pow(NormQE, -1.0);
+
+                        h_dJpB_dNe[j][i][k] = 0.0;
+                        h_dJpB_px_dNe[j][i][k] = 0.0;
+                        h_dJpB_py_dNe[j][i][k] = Bny[i][j][k] * std::pow(NormQE, -1.0);
+                        h_dJpB_pz_dNe[j][i][k] = 0.0;
+
+                        h_A_dNe[j][i][k] =
+                            std::pow(B[i][j][k], -2.0) * std::pow(J[i][j][k], -1.0) *
+                            (B[i][j][k] * (gcovyz[i][j][k] * (Bny_py[i][j][k] * JpB_px[i][j][k] +
+                                                              (-1.0) * Bny_px[i][j][k] * JpB_py[i][j][k]) +
+                                           gcovyy[i][j][k] * ((-1.0) * Bny_pz[i][j][k] * JpB_px[i][j][k] +
+                                                              Bny_px[i][j][k] * JpB_pz[i][j][k]) +
+                                           gcovxy[i][j][k] * (Bny_pz[i][j][k] * JpB_py[i][j][k] +
+                                                              (-1.0) * Bny_py[i][j][k] * JpB_pz[i][j][k])) +
+                             Bny[i][j][k] *
+                                 (B_pz[i][j][k] * gcovyy[i][j][k] * JpB_px[i][j][k] +
+                                  (-1.0) * B_py[i][j][k] * gcovyz[i][j][k] * JpB_px[i][j][k] +
+                                  B_px[i][j][k] * gcovyz[i][j][k] * JpB_py[i][j][k] +
+                                  (-1.0) * B_px[i][j][k] * gcovyy[i][j][k] * JpB_pz[i][j][k] +
+                                  gcovxy[i][j][k] *
+                                      ((-1.0) * B_pz[i][j][k] * JpB_py[i][j][k] + B_py[i][j][k] * JpB_pz[i][j][k]) +
+                                  B[i][j][k] *
+                                      ((-1.0) * gcovyy_pz[i][j][k] * JpB_px[i][j][k] +
+                                       gcovyz_py[i][j][k] * JpB_px[i][j][k] + gcovxy_pz[i][j][k] * JpB_py[i][j][k] +
+                                       (-1.0) * gcovyz_px[i][j][k] * JpB_py[i][j][k] +
+                                       ((-1.0) * gcovxy_py[i][j][k] + gcovyy_px[i][j][k]) * JpB_pz[i][j][k]))) *
+                            std::pow(NormQE, -1.0);
+                        h_A_px_dNe[j][i][k] =
+                            std::pow(B[i][j][k], -1.0) * Bny[i][j][k] * std::pow(J[i][j][k], -1.0) *
+                            ((-1.0) * gcovyz[i][j][k] * JpB_py[i][j][k] + gcovyy[i][j][k] * JpB_pz[i][j][k]) *
+                            std::pow(NormQE, -1.0);
+                        h_A_py_dNe[j][i][k] =
+                            std::pow(B[i][j][k], -1.0) * Bny[i][j][k] * std::pow(J[i][j][k], -1.0) *
+                            (gcovyz[i][j][k] * JpB_px[i][j][k] + (-1.0) * gcovxy[i][j][k] * JpB_pz[i][j][k]) *
+                            std::pow(NormQE, -1.0);
+                        h_A_pz_dNe[j][i][k] =
+                            std::pow(B[i][j][k], -1.0) * Bny[i][j][k] * std::pow(J[i][j][k], -1.0) *
+                            ((-1.0) * gcovyy[i][j][k] * JpB_px[i][j][k] + gcovxy[i][j][k] * JpB_py[i][j][k]) *
+                            std::pow(NormQE, -1.0);
+
+                        h_dPePhiAdJpB2dNe[j][i][k * 11 + 0] = h_dPe_px_dNe[j][i][k];
+                        h_dPePhiAdJpB2dNe[j][i][k * 11 + 1] = h_dPe_py_dNe[j][i][k];
+                        h_dPePhiAdJpB2dNe[j][i][k * 11 + 2] = h_dPe_pz_dNe[j][i][k];
+                        h_dPePhiAdJpB2dNe[j][i][k * 11 + 3] = h_Phi_px_dNe[j][i][k];
+                        h_dPePhiAdJpB2dNe[j][i][k * 11 + 4] = h_Phi_py_dNe[j][i][k];
+                        h_dPePhiAdJpB2dNe[j][i][k * 11 + 5] = h_Phi_pz_dNe[j][i][k];
+                        h_dPePhiAdJpB2dNe[j][i][k * 11 + 6] = h_A_dNe[j][i][k];
+                        h_dPePhiAdJpB2dNe[j][i][k * 11 + 7] = h_A_px_dNe[j][i][k];
+                        h_dPePhiAdJpB2dNe[j][i][k * 11 + 8] = h_A_py_dNe[j][i][k];
+                        h_dPePhiAdJpB2dNe[j][i][k * 11 + 9] = h_A_pz_dNe[j][i][k];
+                        h_dPePhiAdJpB2dNe[j][i][k * 11 + 10] = h_dJpB_py_dNe[j][i][k];
+
+                        // Perturbed Temperature
+
+                        h_Phi_dTe[j][i][k] = 0.0;
+                        h_Phi_px_dTe[j][i][k] = 0.0;
+                        h_Phi_py_dTe[j][i][k] = std::pow(B[i][j][k], -2.0) * Bny[i][j][k] * gcovyz[i][j][k] *
+                                                std::pow(J[i][j][k], -1.0) * Te_px[i][j][k];
+                        h_Phi_pz_dTe[j][i][k] = (-1.0) * std::pow(B[i][j][k], -2.0) * Bny[i][j][k] * gcovyy[i][j][k] *
+                                                std::pow(J[i][j][k], -1.0) * Te_px[i][j][k];
+
+                        h_dTe_dTe[j][i][k] = 0.0;
+                        h_dTe_px_dTe[j][i][k] = 0.0;
+                        h_dTe_py_dTe[j][i][k] = 1.0 / 2.0 * std::pow(B[i][j][k], -2.0) * Bny[i][j][k] *
+                                                gcovyz[i][j][k] * std::pow(J[i][j][k], -1.0) *
+                                                std::pow(Ne[i][j][k], -1.0) * Ne_px[i][j][k] * Te[i][j][k] *
+                                                std::pow(NormQE, -1.0);
+                        h_dTe_pz_dTe[j][i][k] = (-1.0) / 2.0 * std::pow(B[i][j][k], -2.0) * Bny[i][j][k] *
+                                                gcovyy[i][j][k] * std::pow(J[i][j][k], -1.0) *
+                                                std::pow(Ne[i][j][k], -1.0) * Ne_px[i][j][k] * Te[i][j][k] *
+                                                std::pow(NormQE, -1.0);
+
+                        h_dNe_dTe[j][i][k] = 0.0;
+                        h_dNe_px_dTe[j][i][k] = 0.0;
+                        h_dNe_py_dTe[j][i][k] = (-1.0) / 2.0 * std::pow(B[i][j][k], -2.0) * Bny[i][j][k] *
+                                                gcovyz[i][j][k] * std::pow(J[i][j][k], -1.0) *
+                                                std::pow(Ne[i][j][k], -1.0) * Te[i][j][k] * Te_px[i][j][k] *
+                                                std::pow(NormQE, -1.0);
+                        h_dNe_pz_dTe[j][i][k] = 1.0 / 2.0 * std::pow(B[i][j][k], -2.0) * Bny[i][j][k] *
+                                                gcovyy[i][j][k] * std::pow(J[i][j][k], -1.0) *
+                                                std::pow(Ne[i][j][k], -1.0) * Te[i][j][k] * Te_px[i][j][k] *
+                                                std::pow(NormQE, -1.0);
+
+                        h_PhidTedNe2dTe[j][i][k * 6 + 0] = h_Phi_py_dTe[j][i][k];
+                        h_PhidTedNe2dTe[j][i][k * 6 + 1] = h_Phi_pz_dTe[j][i][k];
+                        h_PhidTedNe2dTe[j][i][k * 6 + 2] = h_dTe_py_dTe[j][i][k];
+                        h_PhidTedNe2dTe[j][i][k * 6 + 3] = h_dTe_pz_dTe[j][i][k];
+                        h_PhidTedNe2dTe[j][i][k * 6 + 4] = h_dNe_py_dTe[j][i][k];
+                        h_PhidTedNe2dTe[j][i][k * 6 + 5] = h_dNe_pz_dTe[j][i][k];
+
+                        // Equilibrium Density and Temperature
+
+                        h_Ne0[j][i][k] = Ne[i][j][k];
+                        h_Te0[j][i][k] = Te[i][j][k];
+                        h_Ne0_px[j][i][k] = Ne_px[i][j][k];
+                        h_Te0_px[j][i][k] = Te_px[i][j][k];
+                    }
+                }
+            }
+
+            /*-------------------------Nonlinear--------------------------*/
+
+            for (int i = 0; i < gridNx; i++) {
+                for (int j = 0; j < gridNy; j++) {
+                    for (int k = 0; k < gridNz; k++) {
+
+                        // Vorticity
+
+                        h_wPhi_w[j][i][k * 6 + 0] =
+                            std::pow(B[i][j][k], -2.0) * Bny[i][j][k] * gcovyz[i][j][k] * std::pow(J[i][j][k], -1.0);
+                        h_wPhi_w[j][i][k * 6 + 1] = (-1.0) * std::pow(B[i][j][k], -2.0) * Bny[i][j][k] *
+                                                    gcovyy[i][j][k] * std::pow(J[i][j][k], -1.0);
+                        h_wPhi_w[j][i][k * 6 + 2] = (-1.0) * std::pow(B[i][j][k], -2.0) * Bny[i][j][k] *
+                                                    gcovyz[i][j][k] * std::pow(J[i][j][k], -1.0);
+                        h_wPhi_w[j][i][k * 6 + 3] =
+                            std::pow(B[i][j][k], -2.0) * Bny[i][j][k] * gcovxy[i][j][k] * std::pow(J[i][j][k], -1.0);
+                        h_wPhi_w[j][i][k * 6 + 4] =
+                            std::pow(B[i][j][k], -2.0) * Bny[i][j][k] * gcovyy[i][j][k] * std::pow(J[i][j][k], -1.0);
+                        h_wPhi_w[j][i][k * 6 + 5] = (-1.0) * std::pow(B[i][j][k], -2.0) * Bny[i][j][k] *
+                                                    gcovxy[i][j][k] * std::pow(J[i][j][k], -1.0);
+
+                        h_AdJpB_w[j][i][k * 9 + 0] =
+                            std::pow(B[i][j][k], -2.0) *
+                            (Bny[i][j][k] *
+                                 (B_pz[i][j][k] * gcovyy[i][j][k] + (-1.0) * B_py[i][j][k] * gcovyz[i][j][k]) +
+                             B[i][j][k] *
+                                 ((-1.0) * Bny_pz[i][j][k] * gcovyy[i][j][k] + Bny_py[i][j][k] * gcovyz[i][j][k] +
+                                  Bny[i][j][k] * ((-1.0) * gcovyy_pz[i][j][k] + gcovyz_py[i][j][k]))) *
+                            std::pow(J[i][j][k], -1.0);
+                        h_AdJpB_w[j][i][k * 9 + 1] =
+                            std::pow(B[i][j][k], -2.0) *
+                            (Bny[i][j][k] *
+                                 ((-1.0) * B_pz[i][j][k] * gcovxy[i][j][k] + B_px[i][j][k] * gcovyz[i][j][k]) +
+                             B[i][j][k] *
+                                 (Bny_pz[i][j][k] * gcovxy[i][j][k] + (-1.0) * Bny_px[i][j][k] * gcovyz[i][j][k] +
+                                  Bny[i][j][k] * (gcovxy_pz[i][j][k] + (-1.0) * gcovyz_px[i][j][k]))) *
+                            std::pow(J[i][j][k], -1.0);
+                        h_AdJpB_w[j][i][k * 9 + 2] =
+                            std::pow(B[i][j][k], -2.0) *
+                            (Bny[i][j][k] *
+                                 (B_py[i][j][k] * gcovxy[i][j][k] + (-1.0) * B_px[i][j][k] * gcovyy[i][j][k]) +
+                             B[i][j][k] *
+                                 ((-1.0) * Bny_py[i][j][k] * gcovxy[i][j][k] + Bny_px[i][j][k] * gcovyy[i][j][k] +
+                                  Bny[i][j][k] * ((-1.0) * gcovxy_py[i][j][k] + gcovyy_px[i][j][k]))) *
+                            std::pow(J[i][j][k], -1.0);
+                        h_AdJpB_w[j][i][k * 9 + 3] = (-1.0) * std::pow(B[i][j][k], -1.0) * Bny[i][j][k] *
+                                                     gcovyz[i][j][k] * std::pow(J[i][j][k], -1.0);
+                        h_AdJpB_w[j][i][k * 9 + 4] =
+                            std::pow(B[i][j][k], -1.0) * Bny[i][j][k] * gcovyy[i][j][k] * std::pow(J[i][j][k], -1.0);
+                        h_AdJpB_w[j][i][k * 9 + 5] =
+                            std::pow(B[i][j][k], -1.0) * Bny[i][j][k] * gcovyz[i][j][k] * std::pow(J[i][j][k], -1.0);
+                        h_AdJpB_w[j][i][k * 9 + 6] = (-1.0) * std::pow(B[i][j][k], -1.0) * Bny[i][j][k] *
+                                                     gcovxy[i][j][k] * std::pow(J[i][j][k], -1.0);
+                        h_AdJpB_w[j][i][k * 9 + 7] = (-1.0) * std::pow(B[i][j][k], -1.0) * Bny[i][j][k] *
+                                                     gcovyy[i][j][k] * std::pow(J[i][j][k], -1.0);
+                        h_AdJpB_w[j][i][k * 9 + 8] =
+                            std::pow(B[i][j][k], -1.0) * Bny[i][j][k] * gcovxy[i][j][k] * std::pow(J[i][j][k], -1.0);
+
+                        // Perturbed Parallel Vector Potential
+
+                        h_PhiA_A[j][i][k * 9 + 0] =
+                            std::pow(B[i][j][k], -3.0) *
+                            (Bny[i][j][k] *
+                                 ((-1.0) * B_pz[i][j][k] * gcovyy[i][j][k] + B_py[i][j][k] * gcovyz[i][j][k]) +
+                             B[i][j][k] *
+                                 (Bny_pz[i][j][k] * gcovyy[i][j][k] + (-1.0) * Bny_py[i][j][k] * gcovyz[i][j][k] +
+                                  Bny[i][j][k] * (gcovyy_pz[i][j][k] + (-1.0) * gcovyz_py[i][j][k]))) *
+                            std::pow(J[i][j][k], -1.0);
+                        h_PhiA_A[j][i][k * 9 + 1] = (-1.0) * std::pow(B[i][j][k], -2.0) * Bny[i][j][k] *
+                                                    gcovyz[i][j][k] * std::pow(J[i][j][k], -1.0);
+                        h_PhiA_A[j][i][k * 9 + 2] =
+                            std::pow(B[i][j][k], -2.0) * Bny[i][j][k] * gcovyy[i][j][k] * std::pow(J[i][j][k], -1.0);
+                        h_PhiA_A[j][i][k * 9 + 3] =
+                            std::pow(B[i][j][k], -3.0) *
+                            (Bny[i][j][k] *
+                                 (B_pz[i][j][k] * gcovxy[i][j][k] + (-1.0) * B_px[i][j][k] * gcovyz[i][j][k]) +
+                             B[i][j][k] *
+                                 ((-1.0) * Bny_pz[i][j][k] * gcovxy[i][j][k] + Bny_px[i][j][k] * gcovyz[i][j][k] +
+                                  Bny[i][j][k] * ((-1.0) * gcovxy_pz[i][j][k] + gcovyz_px[i][j][k]))) *
+                            std::pow(J[i][j][k], -1.0);
+                        h_PhiA_A[j][i][k * 9 + 4] =
+                            std::pow(B[i][j][k], -2.0) * Bny[i][j][k] * gcovyz[i][j][k] * std::pow(J[i][j][k], -1.0);
+                        h_PhiA_A[j][i][k * 9 + 5] = (-1.0) * std::pow(B[i][j][k], -2.0) * Bny[i][j][k] *
+                                                    gcovxy[i][j][k] * std::pow(J[i][j][k], -1.0);
+                        h_PhiA_A[j][i][k * 9 + 6] =
+                            std::pow(B[i][j][k], -3.0) *
+                            (Bny[i][j][k] *
+                                 ((-1.0) * B_py[i][j][k] * gcovxy[i][j][k] + B_px[i][j][k] * gcovyy[i][j][k]) +
+                             B[i][j][k] *
+                                 (Bny_py[i][j][k] * gcovxy[i][j][k] + (-1.0) * Bny_px[i][j][k] * gcovyy[i][j][k] +
+                                  Bny[i][j][k] * (gcovxy_py[i][j][k] + (-1.0) * gcovyy_px[i][j][k]))) *
+                            std::pow(J[i][j][k], -1.0);
+                        h_PhiA_A[j][i][k * 9 + 7] = (-1.0) * std::pow(B[i][j][k], -2.0) * Bny[i][j][k] *
+                                                    gcovyy[i][j][k] * std::pow(J[i][j][k], -1.0);
+                        h_PhiA_A[j][i][k * 9 + 8] =
+                            std::pow(B[i][j][k], -2.0) * Bny[i][j][k] * gcovxy[i][j][k] * std::pow(J[i][j][k], -1.0);
+
+                        h_NeA_A[j][i][k * 9 + 0] =
+                            1.0 / 2.0 * std::pow(B[i][j][k], -3.0) *
+                            (B[i][j][k] *
+                                 ((-1.0) * Bny_pz[i][j][k] * gcovyy[i][j][k] + Bny_py[i][j][k] * gcovyz[i][j][k]) +
+                             Bny[i][j][k] *
+                                 (B_pz[i][j][k] * gcovyy[i][j][k] + (-1.0) * B_py[i][j][k] * gcovyz[i][j][k] +
+                                  B[i][j][k] * ((-1.0) * gcovyy_pz[i][j][k] + gcovyz_py[i][j][k]))) *
+                            std::pow(J[i][j][k], -1.0) * std::pow(Ne[i][j][k], -1.0) * Te[i][j][k] *
+                            std::pow(NormQE, -1.0);
+                        h_NeA_A[j][i][k * 9 + 1] = 1.0 / 2.0 * std::pow(B[i][j][k], -2.0) * Bny[i][j][k] *
+                                                   gcovyz[i][j][k] * std::pow(J[i][j][k], -1.0) *
+                                                   std::pow(Ne[i][j][k], -1.0) * Te[i][j][k] * std::pow(NormQE, -1.0);
+                        h_NeA_A[j][i][k * 9 + 2] = (-1.0) / 2.0 * std::pow(B[i][j][k], -2.0) * Bny[i][j][k] *
+                                                   gcovyy[i][j][k] * std::pow(J[i][j][k], -1.0) *
+                                                   std::pow(Ne[i][j][k], -1.0) * Te[i][j][k] * std::pow(NormQE, -1.0);
+                        h_NeA_A[j][i][k * 9 + 3] =
+                            1.0 / 2.0 * std::pow(B[i][j][k], -3.0) *
+                            (B[i][j][k] *
+                                 (Bny_pz[i][j][k] * gcovxy[i][j][k] + (-1.0) * Bny_px[i][j][k] * gcovyz[i][j][k]) +
+                             Bny[i][j][k] *
+                                 ((-1.0) * B_pz[i][j][k] * gcovxy[i][j][k] + B_px[i][j][k] * gcovyz[i][j][k] +
+                                  B[i][j][k] * (gcovxy_pz[i][j][k] + (-1.0) * gcovyz_px[i][j][k]))) *
+                            std::pow(J[i][j][k], -1.0) * std::pow(Ne[i][j][k], -1.0) * Te[i][j][k] *
+                            std::pow(NormQE, -1.0);
+                        h_NeA_A[j][i][k * 9 + 4] = (-1.0) / 2.0 * std::pow(B[i][j][k], -2.0) * Bny[i][j][k] *
+                                                   gcovyz[i][j][k] * std::pow(J[i][j][k], -1.0) *
+                                                   std::pow(Ne[i][j][k], -1.0) * Te[i][j][k] * std::pow(NormQE, -1.0);
+                        h_NeA_A[j][i][k * 9 + 5] = 1.0 / 2.0 * std::pow(B[i][j][k], -2.0) * Bny[i][j][k] *
+                                                   gcovxy[i][j][k] * std::pow(J[i][j][k], -1.0) *
+                                                   std::pow(Ne[i][j][k], -1.0) * Te[i][j][k] * std::pow(NormQE, -1.0);
+                        h_NeA_A[j][i][k * 9 + 6] =
+                            1.0 / 2.0 * std::pow(B[i][j][k], -3.0) *
+                            (B[i][j][k] *
+                                 ((-1.0) * Bny_py[i][j][k] * gcovxy[i][j][k] + Bny_px[i][j][k] * gcovyy[i][j][k]) +
+                             Bny[i][j][k] *
+                                 (B_py[i][j][k] * gcovxy[i][j][k] + (-1.0) * B_px[i][j][k] * gcovyy[i][j][k] +
+                                  B[i][j][k] * ((-1.0) * gcovxy_py[i][j][k] + gcovyy_px[i][j][k]))) *
+                            std::pow(J[i][j][k], -1.0) * std::pow(Ne[i][j][k], -1.0) * Te[i][j][k] *
+                            std::pow(NormQE, -1.0);
+                        h_NeA_A[j][i][k * 9 + 7] = 1.0 / 2.0 * std::pow(B[i][j][k], -2.0) * Bny[i][j][k] *
+                                                   gcovyy[i][j][k] * std::pow(J[i][j][k], -1.0) *
+                                                   std::pow(Ne[i][j][k], -1.0) * Te[i][j][k] * std::pow(NormQE, -1.0);
+                        h_NeA_A[j][i][k * 9 + 8] = (-1.0) / 2.0 * std::pow(B[i][j][k], -2.0) * Bny[i][j][k] *
+                                                   gcovxy[i][j][k] * std::pow(J[i][j][k], -1.0) *
+                                                   std::pow(Ne[i][j][k], -1.0) * Te[i][j][k] * std::pow(NormQE, -1.0);
+
+                        // Perturbed Density
+
+                        h_AdJpB_dNe[j][i][k * 9 + 0] =
+                            std::pow(B[i][j][k], -2.0) *
+                            (Bny[i][j][k] *
+                                 (B_pz[i][j][k] * gcovyy[i][j][k] + (-1.0) * B_py[i][j][k] * gcovyz[i][j][k]) +
+                             B[i][j][k] *
+                                 ((-1.0) * Bny_pz[i][j][k] * gcovyy[i][j][k] + Bny_py[i][j][k] * gcovyz[i][j][k] +
+                                  Bny[i][j][k] * ((-1.0) * gcovyy_pz[i][j][k] + gcovyz_py[i][j][k]))) *
+                            std::pow(J[i][j][k], -1.0) * std::pow(NormQE, -1.0);
+                        h_AdJpB_dNe[j][i][k * 9 + 1] =
+                            std::pow(B[i][j][k], -2.0) *
+                            (Bny[i][j][k] *
+                                 ((-1.0) * B_pz[i][j][k] * gcovxy[i][j][k] + B_px[i][j][k] * gcovyz[i][j][k]) +
+                             B[i][j][k] *
+                                 (Bny_pz[i][j][k] * gcovxy[i][j][k] + (-1.0) * Bny_px[i][j][k] * gcovyz[i][j][k] +
+                                  Bny[i][j][k] * (gcovxy_pz[i][j][k] + (-1.0) * gcovyz_px[i][j][k]))) *
+                            std::pow(J[i][j][k], -1.0) * std::pow(NormQE, -1.0);
+                        h_AdJpB_dNe[j][i][k * 9 + 2] =
+                            std::pow(B[i][j][k], -2.0) *
+                            (Bny[i][j][k] *
+                                 (B_py[i][j][k] * gcovxy[i][j][k] + (-1.0) * B_px[i][j][k] * gcovyy[i][j][k]) +
+                             B[i][j][k] *
+                                 ((-1.0) * Bny_py[i][j][k] * gcovxy[i][j][k] + Bny_px[i][j][k] * gcovyy[i][j][k] +
+                                  Bny[i][j][k] * ((-1.0) * gcovxy_py[i][j][k] + gcovyy_px[i][j][k]))) *
+                            std::pow(J[i][j][k], -1.0) * std::pow(NormQE, -1.0);
+                        h_AdJpB_dNe[j][i][k * 9 + 3] = (-1.0) * std::pow(B[i][j][k], -1.0) * Bny[i][j][k] *
+                                                       gcovyz[i][j][k] * std::pow(J[i][j][k], -1.0) *
+                                                       std::pow(NormQE, -1.0);
+                        h_AdJpB_dNe[j][i][k * 9 + 4] = std::pow(B[i][j][k], -1.0) * Bny[i][j][k] * gcovyy[i][j][k] *
+                                                       std::pow(J[i][j][k], -1.0) * std::pow(NormQE, -1.0);
+                        h_AdJpB_dNe[j][i][k * 9 + 5] = std::pow(B[i][j][k], -1.0) * Bny[i][j][k] * gcovyz[i][j][k] *
+                                                       std::pow(J[i][j][k], -1.0) * std::pow(NormQE, -1.0);
+                        h_AdJpB_dNe[j][i][k * 9 + 6] = (-1.0) * std::pow(B[i][j][k], -1.0) * Bny[i][j][k] *
+                                                       gcovxy[i][j][k] * std::pow(J[i][j][k], -1.0) *
+                                                       std::pow(NormQE, -1.0);
+                        h_AdJpB_dNe[j][i][k * 9 + 7] = (-1.0) * std::pow(B[i][j][k], -1.0) * Bny[i][j][k] *
+                                                       gcovyy[i][j][k] * std::pow(J[i][j][k], -1.0) *
+                                                       std::pow(NormQE, -1.0);
+                        h_AdJpB_dNe[j][i][k * 9 + 8] = std::pow(B[i][j][k], -1.0) * Bny[i][j][k] * gcovxy[i][j][k] *
+                                                       std::pow(J[i][j][k], -1.0) * std::pow(NormQE, -1.0);
+
+                        h_dNePhi_dNe[j][i][k * 9 + 0] =
+                            std::pow(B[i][j][k], -3.0) *
+                            (B[i][j][k] *
+                                 (Bny_pz[i][j][k] * gcovyy[i][j][k] + (-1.0) * Bny_py[i][j][k] * gcovyz[i][j][k]) +
+                             Bny[i][j][k] *
+                                 ((-2.0) * B_pz[i][j][k] * gcovyy[i][j][k] + 2.0 * B_py[i][j][k] * gcovyz[i][j][k] +
+                                  B[i][j][k] * (gcovyy_pz[i][j][k] + (-1.0) * gcovyz_py[i][j][k]))) *
+                            std::pow(J[i][j][k], -1.0);
+                        h_dNePhi_dNe[j][i][k * 9 + 1] =
+                            std::pow(B[i][j][k], -3.0) *
+                            (B[i][j][k] *
+                                 ((-1.0) * Bny_pz[i][j][k] * gcovxy[i][j][k] + Bny_px[i][j][k] * gcovyz[i][j][k]) +
+                             Bny[i][j][k] *
+                                 (2.0 * B_pz[i][j][k] * gcovxy[i][j][k] + (-2.0) * B_px[i][j][k] * gcovyz[i][j][k] +
+                                  B[i][j][k] * ((-1.0) * gcovxy_pz[i][j][k] + gcovyz_px[i][j][k]))) *
+                            std::pow(J[i][j][k], -1.0);
+                        h_dNePhi_dNe[j][i][k * 9 + 2] =
+                            std::pow(B[i][j][k], -3.0) *
+                            (B[i][j][k] *
+                                 (Bny_py[i][j][k] * gcovxy[i][j][k] + (-1.0) * Bny_px[i][j][k] * gcovyy[i][j][k]) +
+                             Bny[i][j][k] *
+                                 ((-2.0) * B_py[i][j][k] * gcovxy[i][j][k] + 2.0 * B_px[i][j][k] * gcovyy[i][j][k] +
+                                  B[i][j][k] * (gcovxy_py[i][j][k] + (-1.0) * gcovyy_px[i][j][k]))) *
+                            std::pow(J[i][j][k], -1.0);
+                        h_dNePhi_dNe[j][i][k * 9 + 3] =
+                            std::pow(B[i][j][k], -2.0) * Bny[i][j][k] * gcovyz[i][j][k] * std::pow(J[i][j][k], -1.0);
+                        h_dNePhi_dNe[j][i][k * 9 + 4] = (-1.0) * std::pow(B[i][j][k], -2.0) * Bny[i][j][k] *
+                                                        gcovyy[i][j][k] * std::pow(J[i][j][k], -1.0);
+                        h_dNePhi_dNe[j][i][k * 9 + 5] = (-1.0) * std::pow(B[i][j][k], -2.0) * Bny[i][j][k] *
+                                                        gcovyz[i][j][k] * std::pow(J[i][j][k], -1.0);
+                        h_dNePhi_dNe[j][i][k * 9 + 6] =
+                            std::pow(B[i][j][k], -2.0) * Bny[i][j][k] * gcovxy[i][j][k] * std::pow(J[i][j][k], -1.0);
+                        h_dNePhi_dNe[j][i][k * 9 + 7] =
+                            std::pow(B[i][j][k], -2.0) * Bny[i][j][k] * gcovyy[i][j][k] * std::pow(J[i][j][k], -1.0);
+                        h_dNePhi_dNe[j][i][k * 9 + 8] = (-1.0) * std::pow(B[i][j][k], -2.0) * Bny[i][j][k] *
+                                                        gcovxy[i][j][k] * std::pow(J[i][j][k], -1.0);
+
+                        // Perturbed Temperature
+
+                        h_PhiTe_dTe[j][i][k * 6 + 0] = (-1.0) * std::pow(B[i][j][k], -2.0) * Bny[i][j][k] *
+                                                       gcovyz[i][j][k] * std::pow(J[i][j][k], -1.0);
+                        h_PhiTe_dTe[j][i][k * 6 + 1] =
+                            std::pow(B[i][j][k], -2.0) * Bny[i][j][k] * gcovyy[i][j][k] * std::pow(J[i][j][k], -1.0);
+                        h_PhiTe_dTe[j][i][k * 6 + 2] =
+                            std::pow(B[i][j][k], -2.0) * Bny[i][j][k] * gcovyz[i][j][k] * std::pow(J[i][j][k], -1.0);
+                        h_PhiTe_dTe[j][i][k * 6 + 3] = (-1.0) * std::pow(B[i][j][k], -2.0) * Bny[i][j][k] *
+                                                       gcovxy[i][j][k] * std::pow(J[i][j][k], -1.0);
+                        h_PhiTe_dTe[j][i][k * 6 + 4] = (-1.0) * std::pow(B[i][j][k], -2.0) * Bny[i][j][k] *
+                                                       gcovyy[i][j][k] * std::pow(J[i][j][k], -1.0);
+                        h_PhiTe_dTe[j][i][k * 6 + 5] =
+                            std::pow(B[i][j][k], -2.0) * Bny[i][j][k] * gcovxy[i][j][k] * std::pow(J[i][j][k], -1.0);
+
+                        h_PhiTeA_dTe[j][i][k * 18 + 0] =
+                            std::pow(B[i][j][k], -4.0) *
+                            (gcovyz[i][j][k] *
+                                 (Bny[i][j][k] *
+                                      (B_pz[i][j][k] * gcovxy[i][j][k] + (-1.0) * B_px[i][j][k] * gcovyz[i][j][k]) +
+                                  B[i][j][k] *
+                                      ((-1.0) * Bny_pz[i][j][k] * gcovxy[i][j][k] + Bny_px[i][j][k] * gcovyz[i][j][k] +
+                                       Bny[i][j][k] * ((-1.0) * gcovxy_pz[i][j][k] + gcovyz_px[i][j][k]))) +
+                             gcovxz[i][j][k] *
+                                 (Bny[i][j][k] *
+                                      ((-1.0) * B_pz[i][j][k] * gcovyy[i][j][k] + B_py[i][j][k] * gcovyz[i][j][k]) +
+                                  B[i][j][k] *
+                                      (Bny_pz[i][j][k] * gcovyy[i][j][k] + (-1.0) * Bny_py[i][j][k] * gcovyz[i][j][k] +
+                                       Bny[i][j][k] * (gcovyy_pz[i][j][k] + (-1.0) * gcovyz_py[i][j][k]))) +
+                             (Bny[i][j][k] *
+                                  ((-1.0) * B_py[i][j][k] * gcovxy[i][j][k] + B_px[i][j][k] * gcovyy[i][j][k]) +
+                              B[i][j][k] *
+                                  (Bny_py[i][j][k] * gcovxy[i][j][k] + (-1.0) * Bny_px[i][j][k] * gcovyy[i][j][k] +
+                                   Bny[i][j][k] * (gcovxy_py[i][j][k] + (-1.0) * gcovyy_px[i][j][k]))) *
+                                 gcovzz[i][j][k]) *
+                            std::pow(J[i][j][k], -2.0);
+                        h_PhiTeA_dTe[j][i][k * 18 + 1] =
+                            std::pow(B[i][j][k], -3.0) * Bny[i][j][k] *
+                            (std::pow(gcovyz[i][j][k], 2.0) + (-1.0) * gcovyy[i][j][k] * gcovzz[i][j][k]) *
+                            std::pow(J[i][j][k], -2.0);
+                        h_PhiTeA_dTe[j][i][k * 18 + 2] =
+                            std::pow(B[i][j][k], -3.0) * Bny[i][j][k] *
+                            ((-1.0) * gcovxz[i][j][k] * gcovyz[i][j][k] + gcovxy[i][j][k] * gcovzz[i][j][k]) *
+                            std::pow(J[i][j][k], -2.0);
+                        h_PhiTeA_dTe[j][i][k * 18 + 3] =
+                            std::pow(B[i][j][k], -3.0) * Bny[i][j][k] *
+                            (gcovxz[i][j][k] * gcovyy[i][j][k] + (-1.0) * gcovxy[i][j][k] * gcovyz[i][j][k]) *
+                            std::pow(J[i][j][k], -2.0);
+                        h_PhiTeA_dTe[j][i][k * 18 + 4] =
+                            std::pow(B[i][j][k], -3.0) * Bny[i][j][k] *
+                            (((-1.0) * gcovxy_py[i][j][k] + gcovyy_px[i][j][k]) * gcovyz[i][j][k] +
+                             gcovyy[i][j][k] * (gcovxy_pz[i][j][k] + (-1.0) * gcovyz_px[i][j][k]) +
+                             gcovxy[i][j][k] * ((-1.0) * gcovyy_pz[i][j][k] + gcovyz_py[i][j][k])) *
+                            std::pow(J[i][j][k], -2.0);
+                        h_PhiTeA_dTe[j][i][k * 18 + 5] =
+                            (-1.0) * std::pow(B[i][j][k], -4.0) *
+                            (gcovyz[i][j][k] *
+                                 (Bny[i][j][k] *
+                                      (B_pz[i][j][k] * gcovxy[i][j][k] + (-1.0) * B_px[i][j][k] * gcovyz[i][j][k]) +
+                                  B[i][j][k] *
+                                      ((-1.0) * Bny_pz[i][j][k] * gcovxy[i][j][k] + Bny_px[i][j][k] * gcovyz[i][j][k] +
+                                       Bny[i][j][k] * ((-1.0) * gcovxy_pz[i][j][k] + gcovyz_px[i][j][k]))) +
+                             gcovxz[i][j][k] *
+                                 (Bny[i][j][k] *
+                                      ((-1.0) * B_pz[i][j][k] * gcovyy[i][j][k] + B_py[i][j][k] * gcovyz[i][j][k]) +
+                                  B[i][j][k] *
+                                      (Bny_pz[i][j][k] * gcovyy[i][j][k] + (-1.0) * Bny_py[i][j][k] * gcovyz[i][j][k] +
+                                       Bny[i][j][k] * (gcovyy_pz[i][j][k] + (-1.0) * gcovyz_py[i][j][k]))) +
+                             (Bny[i][j][k] *
+                                  ((-1.0) * B_py[i][j][k] * gcovxy[i][j][k] + B_px[i][j][k] * gcovyy[i][j][k]) +
+                              B[i][j][k] *
+                                  (Bny_py[i][j][k] * gcovxy[i][j][k] + (-1.0) * Bny_px[i][j][k] * gcovyy[i][j][k] +
+                                   Bny[i][j][k] * (gcovxy_py[i][j][k] + (-1.0) * gcovyy_px[i][j][k]))) *
+                                 gcovzz[i][j][k]) *
+                            std::pow(J[i][j][k], -2.0);
+                        h_PhiTeA_dTe[j][i][k * 18 + 6] =
+                            std::pow(B[i][j][k], -3.0) * Bny[i][j][k] *
+                            ((-1.0) * std::pow(gcovyz[i][j][k], 2.0) + gcovyy[i][j][k] * gcovzz[i][j][k]) *
+                            std::pow(J[i][j][k], -2.0);
+                        h_PhiTeA_dTe[j][i][k * 18 + 7] =
+                            std::pow(B[i][j][k], -3.0) * Bny[i][j][k] *
+                            (gcovxz[i][j][k] * gcovyz[i][j][k] + (-1.0) * gcovxy[i][j][k] * gcovzz[i][j][k]) *
+                            std::pow(J[i][j][k], -2.0);
+                        h_PhiTeA_dTe[j][i][k * 18 + 8] =
+                            std::pow(B[i][j][k], -3.0) * Bny[i][j][k] *
+                            ((-1.0) * gcovxz[i][j][k] * gcovyy[i][j][k] + gcovxy[i][j][k] * gcovyz[i][j][k]) *
+                            std::pow(J[i][j][k], -2.0);
+                        h_PhiTeA_dTe[j][i][k * 18 + 9] =
+                            std::pow(B[i][j][k], -4.0) *
+                            (B[i][j][k] * ((-1.0) * Bny_pz[i][j][k] * std::pow(gcovxy[i][j][k], 2.0) +
+                                           (-1.0) * Bny_px[i][j][k] * gcovxz[i][j][k] * gcovyy[i][j][k] +
+                                           gcovxy[i][j][k] *
+                                               (Bny_py[i][j][k] * gcovxz[i][j][k] + Bny_px[i][j][k] * gcovyz[i][j][k]) +
+                                           gcovxx[i][j][k] * (Bny_pz[i][j][k] * gcovyy[i][j][k] +
+                                                              (-1.0) * Bny_py[i][j][k] * gcovyz[i][j][k])) +
+                             Bny[i][j][k] *
+                                 (B_pz[i][j][k] * std::pow(gcovxy[i][j][k], 2.0) +
+                                  gcovxz[i][j][k] * (B_px[i][j][k] * gcovyy[i][j][k] +
+                                                     B[i][j][k] * (gcovxy_py[i][j][k] + (-1.0) * gcovyy_px[i][j][k])) +
+                                  (-1.0) * gcovxy[i][j][k] *
+                                      (B_py[i][j][k] * gcovxz[i][j][k] + B_px[i][j][k] * gcovyz[i][j][k] +
+                                       B[i][j][k] * (gcovxy_pz[i][j][k] + (-1.0) * gcovyz_px[i][j][k])) +
+                                  gcovxx[i][j][k] *
+                                      ((-1.0) * B_pz[i][j][k] * gcovyy[i][j][k] + B_py[i][j][k] * gcovyz[i][j][k] +
+                                       B[i][j][k] * (gcovyy_pz[i][j][k] + (-1.0) * gcovyz_py[i][j][k])))) *
+                            std::pow(J[i][j][k], -2.0);
+                        h_PhiTeA_dTe[j][i][k * 18 + 10] =
+                            std::pow(B[i][j][k], -3.0) * Bny[i][j][k] *
+                            ((-1.0) * gcovxz[i][j][k] * gcovyy[i][j][k] + gcovxy[i][j][k] * gcovyz[i][j][k]) *
+                            std::pow(J[i][j][k], -2.0);
+                        h_PhiTeA_dTe[j][i][k * 18 + 11] =
+                            std::pow(B[i][j][k], -3.0) * Bny[i][j][k] *
+                            (gcovxy[i][j][k] * gcovxz[i][j][k] + (-1.0) * gcovxx[i][j][k] * gcovyz[i][j][k]) *
+                            std::pow(J[i][j][k], -2.0);
+                        h_PhiTeA_dTe[j][i][k * 18 + 12] =
+                            std::pow(B[i][j][k], -3.0) * Bny[i][j][k] *
+                            ((-1.0) * std::pow(gcovxy[i][j][k], 2.0) + gcovxx[i][j][k] * gcovyy[i][j][k]) *
+                            std::pow(J[i][j][k], -2.0);
+                        h_PhiTeA_dTe[j][i][k * 18 + 13] =
+                            std::pow(B[i][j][k], -3.0) * Bny[i][j][k] *
+                            ((gcovxy_py[i][j][k] + (-1.0) * gcovyy_px[i][j][k]) * gcovyz[i][j][k] +
+                             gcovyy[i][j][k] * ((-1.0) * gcovxy_pz[i][j][k] + gcovyz_px[i][j][k]) +
+                             gcovxy[i][j][k] * (gcovyy_pz[i][j][k] + (-1.0) * gcovyz_py[i][j][k])) *
+                            std::pow(J[i][j][k], -2.0);
+                        h_PhiTeA_dTe[j][i][k * 18 + 14] =
+                            std::pow(B[i][j][k], -4.0) *
+                            (B[i][j][k] * (Bny_pz[i][j][k] * std::pow(gcovxy[i][j][k], 2.0) +
+                                           Bny_px[i][j][k] * gcovxz[i][j][k] * gcovyy[i][j][k] +
+                                           (-1.0) * gcovxy[i][j][k] *
+                                               (Bny_py[i][j][k] * gcovxz[i][j][k] + Bny_px[i][j][k] * gcovyz[i][j][k]) +
+                                           gcovxx[i][j][k] * ((-1.0) * Bny_pz[i][j][k] * gcovyy[i][j][k] +
+                                                              Bny_py[i][j][k] * gcovyz[i][j][k])) +
+                             Bny[i][j][k] *
+                                 ((-1.0) * B_pz[i][j][k] * std::pow(gcovxy[i][j][k], 2.0) +
+                                  (-1.0) * gcovxz[i][j][k] *
+                                      (B_px[i][j][k] * gcovyy[i][j][k] +
+                                       B[i][j][k] * (gcovxy_py[i][j][k] + (-1.0) * gcovyy_px[i][j][k])) +
+                                  gcovxy[i][j][k] * (B_py[i][j][k] * gcovxz[i][j][k] + B_px[i][j][k] * gcovyz[i][j][k] +
+                                                     B[i][j][k] * (gcovxy_pz[i][j][k] + (-1.0) * gcovyz_px[i][j][k])) +
+                                  gcovxx[i][j][k] *
+                                      (B_pz[i][j][k] * gcovyy[i][j][k] + (-1.0) * B_py[i][j][k] * gcovyz[i][j][k] +
+                                       B[i][j][k] * ((-1.0) * gcovyy_pz[i][j][k] + gcovyz_py[i][j][k])))) *
+                            std::pow(J[i][j][k], -2.0);
+                        h_PhiTeA_dTe[j][i][k * 18 + 15] =
+                            std::pow(B[i][j][k], -3.0) * Bny[i][j][k] *
+                            (gcovxz[i][j][k] * gcovyy[i][j][k] + (-1.0) * gcovxy[i][j][k] * gcovyz[i][j][k]) *
+                            std::pow(J[i][j][k], -2.0);
+                        h_PhiTeA_dTe[j][i][k * 18 + 16] =
+                            std::pow(B[i][j][k], -3.0) * Bny[i][j][k] *
+                            ((-1.0) * gcovxy[i][j][k] * gcovxz[i][j][k] + gcovxx[i][j][k] * gcovyz[i][j][k]) *
+                            std::pow(J[i][j][k], -2.0);
+                        h_PhiTeA_dTe[j][i][k * 18 + 17] =
+                            std::pow(B[i][j][k], -3.0) * Bny[i][j][k] *
+                            (std::pow(gcovxy[i][j][k], 2.0) + (-1.0) * gcovxx[i][j][k] * gcovyy[i][j][k]) *
+                            std::pow(J[i][j][k], -2.0);
+                    }
+                }
             }
         }
 
@@ -3324,13 +4282,18 @@ class HybridModel {
             double cc, cx, cz, cx2, cxz, cz2;
         };
 
-        auto loadCoefs = [&](int j, int i) -> Coef {
+        auto loadCoefs = [&](int j, int i, int k) -> Coef {
+            k = (NFP == 1) ? 0 : k;
             if constexpr (matrixType == 0) {
-                return {
-                    0.0, h_Phi_px_w[j][i], h_Phi_pz_w[j][i], h_Phi_px2_w[j][i], h_Phi_pxz_w[j][i], h_Phi_pz2_w[j][i]};
+                return {0.0,
+                        h_Phi_px_w[j][i][k],
+                        h_Phi_pz_w[j][i][k],
+                        h_Phi_px2_w[j][i][k],
+                        h_Phi_pxz_w[j][i][k],
+                        h_Phi_pz2_w[j][i][k]};
             } else if constexpr (matrixType == 1) {
-                return {h_A_resistive[j][i],     h_A_px_resistive[j][i],  h_A_pz_resistive[j][i],
-                        h_A_px2_resistive[j][i], h_A_pxz_resistive[j][i], h_A_pz2_resistive[j][i]};
+                return {h_A_resistive[j][i][k],     h_A_px_resistive[j][i][k],  h_A_pz_resistive[j][i][k],
+                        h_A_px2_resistive[j][i][k], h_A_pxz_resistive[j][i][k], h_A_pz2_resistive[j][i][k]};
             } else {
                 double coef;
                 if constexpr (matrixType == 2)
@@ -3341,12 +4304,12 @@ class HybridModel {
                     coef = nablaPerp2dTe.coef;
                 else
                     coef = nablaPerp2dP.coef;
-                return {h_F_perp2[j][i],
-                        -h_F_px_perp2[j][i] * dt * coef,
-                        -h_F_pz_perp2[j][i] * dt * coef,
-                        -h_F_px2_perp2[j][i] * dt * coef,
-                        -h_F_pxz_perp2[j][i] * dt * coef,
-                        -h_F_pz2_perp2[j][i] * dt * coef};
+                return {h_F_perp2[j][i][k],
+                        -h_F_px_perp2[j][i][k] * dt * coef,
+                        -h_F_pz_perp2[j][i][k] * dt * coef,
+                        -h_F_px2_perp2[j][i][k] * dt * coef,
+                        -h_F_pxz_perp2[j][i][k] * dt * coef,
+                        -h_F_pz2_perp2[j][i][k] * dt * coef};
             }
         };
 
@@ -3408,7 +4371,7 @@ class HybridModel {
 
                     } else if (i == 1) {
 
-                        auto [cc, cx, cz, cx2, cxz, cz2] = loadCoefs(j, i);
+                        auto [cc, cx, cz, cx2, cxz, cz2] = loadCoefs(j, i, k);
                         double coes[25];
 
                         coes[0] = (-1.0 / 48.0) * cxz / gridDx / gridDz;
@@ -3455,7 +4418,7 @@ class HybridModel {
 
                     } else if (i == gridNx - 2) {
 
-                        auto [cc, cx, cz, cx2, cxz, cz2] = loadCoefs(j, i);
+                        auto [cc, cx, cz, cx2, cxz, cz2] = loadCoefs(j, i, k);
                         double coes[25];
 
                         coes[0] = (-1.0 / 144.0) * cxz / gridDx / gridDz;
@@ -3503,7 +4466,7 @@ class HybridModel {
 
                     } else {
 
-                        auto [cc, cx, cz, cx2, cxz, cz2] = loadCoefs(j, i);
+                        auto [cc, cx, cz, cx2, cxz, cz2] = loadCoefs(j, i, k);
                         double coes[25];
 
                         coes[0] = (1.0 / 144.0) * cxz / gridDx / gridDz;
@@ -3756,10 +4719,12 @@ class HybridModel {
         std::vector<RandNormal> vparand(devNums);
         std::vector<Rand01> vperand(devNums);
 
-        std::vector<std::vector<double>> tempJ(gridNx, std::vector<double>(gridNy + 2));
-        std::vector<std::vector<double>> tempB(gridNx, std::vector<double>(gridNy + 2));
-        std::vector<std::vector<double>> tempN(gridNx, std::vector<double>(gridNy + 2));
-        std::vector<std::vector<double>> tempT(gridNx, std::vector<double>(gridNy + 2));
+        using tempField = std::vector<std::vector<std::vector<double>>>;
+
+        tempField tempJ(gridNx, std::vector<std::vector<double>>(gridNy + 2, std::vector<double>(gridNz + 2)));
+        tempField tempB(gridNx, std::vector<std::vector<double>>(gridNy + 2, std::vector<double>(gridNz + 2)));
+        tempField tempN(gridNx, std::vector<std::vector<double>>(gridNy + 2, std::vector<double>(gridNz + 2)));
+        tempField tempT(gridNx, std::vector<std::vector<double>>(gridNy + 2, std::vector<double>(gridNz + 2)));
 
         if constexpr (picType == 0) {
 
@@ -3811,73 +4776,93 @@ class HybridModel {
 
         for (int i = 0; i < gridNx; i++) {
             for (int j = 0; j < gridNy; j++) {
+                for (int k = 0; k < gridNz; k++) {
 
-                tempJ[i][j + 1] = J[i][j];
-                tempB[i][j + 1] = B[i][j];
+                    const int equilK = (NFP == 1) ? 0 : k;
 
-                if constexpr (picType == 0) {
-                    tempN[i][j + 1] = Ni[i][j] * 1.0e-19;
-                    tempT[i][j + 1] = Ti[i][j];
-                } else if constexpr (picType == 1) {
-                    tempN[i][j + 1] = Na[i][j] * 1.0e-19;
-                    tempT[i][j + 1] = Ta[i][j];
-                } else if constexpr (picType == 2) {
-                    tempN[i][j + 1] = Nb[i][j] * 1.0e-19;
-                    tempT[i][j + 1] = Tb[i][j];
-                }
+                    tempJ[i][j + 1][k + 1] = J[i][j][equilK];
+                    tempB[i][j + 1][k + 1] = B[i][j][equilK];
 
-                if constexpr (spaceType == 0) {
-                    if (tempJ[i][j + 1] * tempN[i][j + 1] > Jmax)
-                        Jmax = tempJ[i][j + 1] * tempN[i][j + 1];
-                } else if constexpr (spaceType == 1) {
-                    if (tempJ[i][j + 1] > Jmax)
-                        Jmax = tempJ[i][j + 1];
+                    if constexpr (picType == 0) {
+                        tempN[i][j + 1][k + 1] = Ni[i][j][equilK] * 1.0e-19;
+                        tempT[i][j + 1][k + 1] = Ti[i][j][equilK];
+                    } else if constexpr (picType == 1) {
+                        tempN[i][j + 1][k + 1] = Na[i][j][equilK] * 1.0e-19;
+                        tempT[i][j + 1][k + 1] = Ta[i][j][equilK];
+                    } else if constexpr (picType == 2) {
+                        tempN[i][j + 1][k + 1] = Nb[i][j][equilK] * 1.0e-19;
+                        tempT[i][j + 1][k + 1] = Tb[i][j][equilK];
+                    }
+
+                    if constexpr (spaceType == 0) {
+                        if (tempJ[i][j + 1][k + 1] * tempN[i][j + 1][k + 1] > Jmax)
+                            Jmax = tempJ[i][j + 1][k + 1] * tempN[i][j + 1][k + 1];
+                    } else if constexpr (spaceType == 1) {
+                        if (tempJ[i][j + 1][k + 1] > Jmax)
+                            Jmax = tempJ[i][j + 1][k + 1];
+                    }
                 }
             }
-
-            tempJ[i][0] = tempJ[i][gridNy];
-            tempJ[i][gridNy + 1] = tempJ[i][1];
-
-            tempB[i][0] = tempB[i][gridNy];
-            tempB[i][gridNy + 1] = tempB[i][1];
-
-            tempN[i][0] = tempN[i][gridNy];
-            tempN[i][gridNy + 1] = tempN[i][1];
-
-            tempT[i][0] = tempT[i][gridNy];
-            tempT[i][gridNy + 1] = tempT[i][1];
         }
 
-        auto interp2d = [&](std::vector<std::vector<double>>& field, double x, double y) {
+        auto fillTempGhost = [&](tempField& field) {
+            for (int i = 0; i < gridNx; i++) {
+                for (int k = 1; k <= gridNz; k++) {
+                    field[i][0][k] = field[i][gridNy][k];
+                    field[i][gridNy + 1][k] = field[i][1][k];
+                }
+
+                for (int j = 0; j < gridNy + 2; j++) {
+                    field[i][j][0] = field[i][j][gridNz];
+                    field[i][j][gridNz + 1] = field[i][j][1];
+                }
+            }
+        };
+
+        fillTempGhost(tempJ);
+        fillTempGhost(tempB);
+        fillTempGhost(tempN);
+        fillTempGhost(tempT);
+
+        auto interp3d = [&](const tempField& field, double x, double y, double z) {
             double li = (x - x0) / gridDx;
             double lj = (y - y0 + 0.5 * gridDy) / gridDy;
+            double lk = (z - z0 + 0.5 * gridDz) / gridDz;
             int i = std::floor(li);
             int j = std::floor(lj);
+            int k = std::floor(lk);
             double dx = li - i;
             double dy = lj - j;
+            double dz = lk - k;
 
-            double coes[4] = {};
-            double cx[4] = {1.0, 1.0, 0.0, 0.0};
-            double sx[4] = {-1.0, -1.0, 1.0, 1.0};
-            double cy[4] = {1.0, 0.0, 1.0, 0.0};
-            double sy[4] = {-1.0, 1.0, -1.0, 1.0};
+            double coes[8] = {};
+            double cx[8] = {1.0, 1.0, 0.0, 0.0, 1.0, 1.0, 0.0, 0.0};
+            double sx[8] = {-1.0, -1.0, 1.0, 1.0, -1.0, -1.0, 1.0, 1.0};
+            double cy[8] = {1.0, 0.0, 1.0, 0.0, 1.0, 0.0, 1.0, 0.0};
+            double sy[8] = {-1.0, 1.0, -1.0, 1.0, -1.0, 1.0, -1.0, 1.0};
+            double cz[8] = {1.0, 1.0, 1.0, 1.0, 0.0, 0.0, 0.0, 0.0};
+            double sz[8] = {-1.0, -1.0, -1.0, -1.0, 1.0, 1.0, 1.0, 1.0};
 
             double result = 0.0;
 
-            coes[0] = (cx[0] + sx[0] * dx) * (cy[0] + sy[0] * dy);
-            coes[1] = (cx[1] + sx[1] * dx) * (cy[1] + sy[1] * dy);
-            coes[2] = (cx[2] + sx[2] * dx) * (cy[2] + sy[2] * dy);
-            coes[3] = (cx[3] + sx[3] * dx) * (cy[3] + sy[3] * dy);
+            for (int index = 0; index < 8; index++)
+                coes[index] =
+                    (cx[index] + sx[index] * dx) * (cy[index] + sy[index] * dy) * (cz[index] + sz[index] * dz);
 
-            result = field[i][j] * coes[0] + field[i][j + 1] * coes[1] + field[i + 1][j] * coes[2] +
-                     field[i + 1][j + 1] * coes[3];
+            result = field[i][j][k] * coes[0] + field[i][j + 1][k] * coes[1] + field[i + 1][j][k] * coes[2] +
+                     field[i + 1][j + 1][k] * coes[3] + field[i][j][k + 1] * coes[4] +
+                     field[i][j + 1][k + 1] * coes[5] + field[i + 1][j][k + 1] * coes[6] +
+                     field[i + 1][j + 1][k + 1] * coes[7];
 
             return result;
         };
 
+        const int repeatNz = (NFP == 1) ? gridNz : 1;
+        const int picLoad = picDev / repeatNz;
+
 #pragma omp parallel for num_threads(devNums)
         for (int devId = 0; devId < devNums; devId++) {
-            for (int picId = 0; picId < picDev / gridNz; picId++) {
+            for (int picId = 0; picId < picLoad; picId++) {
 
                 int i, j, k;
                 double li, lj, lk;
@@ -3888,22 +4873,22 @@ class HybridModel {
                     do {
                         x = x0 + (x1 - x0) * xrand[devId]();
                         y = y0 + (y1 - y0) * yrand[devId]();
-                        z = z0 + gridDz * zrand[devId]();
-                        N = interp2d(tempN, x, y);
-                        J = interp2d(tempJ, x, y);
+                        z = z0 + ((NFP == 1) ? gridDz : (z1 - z0)) * zrand[devId]();
+                        N = interp3d(tempN, x, y, z);
+                        J = interp3d(tempJ, x, y, z);
                     } while (Jrand[devId]() >= N * J / Jmax);
                 } else if constexpr (spaceType == 1) {
                     do {
                         x = x0 + (x1 - x0) * xrand[devId]();
                         y = y0 + (y1 - y0) * yrand[devId]();
-                        z = z0 + gridDz * zrand[devId]();
-                        J = interp2d(tempJ, x, y);
+                        z = z0 + ((NFP == 1) ? gridDz : (z1 - z0)) * zrand[devId]();
+                        J = interp3d(tempJ, x, y, z);
                     } while (Jrand[devId]() >= J / Jmax);
                 }
 
-                B = interp2d(tempB, x, y);
-                N = interp2d(tempN, x, y);
-                T = interp2d(tempT, x, y);
+                B = interp3d(tempB, x, y, z);
+                N = interp3d(tempN, x, y, z);
+                T = interp3d(tempT, x, y, z);
 
                 if constexpr (velocityType == 0) {
 
@@ -4053,17 +5038,21 @@ class HybridModel {
                 j = std::floor(lj);
                 k = std::floor(lk);
 
-                for (int repeatId = 0; repeatId < gridNz; repeatId++) {
+                for (int repeatId = 0; repeatId < repeatNz; repeatId++) {
 
-                    picKeys[devId][picId + picDev / gridNz * repeatId] = j * cellNxz + i * cellNz + k + repeatId;
+                    const int picIndex = picId + picLoad * repeatId;
+                    const int kIndex = k + repeatId;
+                    const double zValue = z + repeatId * gridDz;
 
-                    picValues[devId][picId + picDev / gridNz * repeatId + 0 * picDev] = 0.999999 * x;
-                    picValues[devId][picId + picDev / gridNz * repeatId + 1 * picDev] = y;
-                    picValues[devId][picId + picDev / gridNz * repeatId + 2 * picDev] = z + repeatId * gridDz;
-                    picValues[devId][picId + picDev / gridNz * repeatId + 3 * picDev] = vp;
-                    picValues[devId][picId + picDev / gridNz * repeatId + 4 * picDev] = 0.0;
-                    picValues[devId][picId + picDev / gridNz * repeatId + 5 * picDev] = pw;
-                    picValues[devId][picId + picDev / gridNz * repeatId + 6 * picDev] = mu;
+                    picKeys[devId][picIndex] = j * cellNxz + i * cellNz + kIndex;
+
+                    picValues[devId][picIndex + 0 * picDev] = 0.999999 * x;
+                    picValues[devId][picIndex + 1 * picDev] = y;
+                    picValues[devId][picIndex + 2 * picDev] = zValue;
+                    picValues[devId][picIndex + 3 * picDev] = vp;
+                    picValues[devId][picIndex + 4 * picDev] = 0.0;
+                    picValues[devId][picIndex + 5 * picDev] = pw;
+                    picValues[devId][picIndex + 6 * picDev] = mu;
                 }
             }
         }
@@ -4150,27 +5139,51 @@ class HybridModel {
         double minE = 0.5 * Mass * std::pow(Vmin, 2.0);
         double maxE = 0.5 * Mass * std::pow(Vmax, 2.0);
 
-        double minPphi = 20251106.0;
-        double maxPphi = -20251106.0;
+        double minPphi = std::numeric_limits<double>::infinity();
+        double maxPphi = -std::numeric_limits<double>::infinity();
         double minLambda = 0.0;
         double maxLambda = 0.0;
 
+        double minVpara = -Vmax;
+        double maxVpara = Vmax;
+
         for (int i = 0; i < gridNx; i++) {
             for (int j = 0; j < gridNy; j++) {
+                for (int k = 0; k < equilNz; k++) {
 
-                double tempLambda = 1.0 / B[i][j];
-                if (tempLambda > maxLambda)
-                    maxLambda = tempLambda;
+                    double tempPphi, tempLambda;
+                    double tempQ, tempPsip, tempJ, tempB, tempSFAcov;
 
-                double base = cm * Mass * Vmax * 2 * psitmax * drho * (RHO0 + i * gridDx * drho) *
-                              SFAcovyz[i][j + gridGhost] / (q[i][j] * J[i][j] * B[i][j]);
+                    tempQ = q[i][j][k];
+                    tempPsip = psip[i][j][k];
+                    tempJ = J[i][j][k];
+                    tempB = B[i][j][k];
 
-                double PphiPlus = base - Char * psip[i][j];
-                double PphiMinus = -base - Char * psip[i][j];
-                if (PphiPlus > maxPphi)
-                    maxPphi = PphiPlus;
-                if (PphiMinus < minPphi)
-                    minPphi = PphiMinus;
+                    tempLambda = 1.0 / tempB;
+                    if (tempLambda > maxLambda)
+                        maxLambda = tempLambda;
+
+                    if (NFP == 1)
+                        tempSFAcov = SFAcovyz[i][j + gridGhost][k];
+                    else
+                        tempSFAcov = SFAcovyz[i][j + gridGhost][k] + tempQ * SFAcovzz[i][j + gridGhost][k];
+
+                    tempPphi = cm * Mass * minVpara * 2 * psitmax * drho * (RHO0 + i * gridDx * drho) * tempSFAcov /
+                                   (tempQ * tempJ * tempB) -
+                               Char * tempPsip;
+                    if (tempPphi < minPphi)
+                        minPphi = tempPphi;
+                    if (tempPphi > maxPphi)
+                        maxPphi = tempPphi;
+
+                    tempPphi = cm * Mass * maxVpara * 2 * psitmax * drho * (RHO0 + i * gridDx * drho) * tempSFAcov /
+                                   (tempQ * tempJ * tempB) -
+                               Char * tempPsip;
+                    if (tempPphi < minPphi)
+                        minPphi = tempPphi;
+                    if (tempPphi > maxPphi)
+                        maxPphi = tempPphi;
+                }
             }
         }
 
@@ -4272,8 +5285,6 @@ class HybridModel {
                 pw = picValues[devId][picId + 5 * picDev];
                 mu = picValues[devId][picId + 6 * picDev];
 
-                tileId = cellId / cellNz;
-
                 li = (x - x0PlusGhost) / gridDx;
                 lj = (y - y0PlusGhost) / gridDy;
                 lk = (z - z0PlusGhost) / gridDz;
@@ -4286,28 +5297,30 @@ class HybridModel {
                 dy = lj - j;
                 dz = lk - k;
 
-                coes[0] = (cx[0] + sx[0] * dx) * (cy[0] + sy[0] * dy);
-                coes[1] = (cx[1] + sx[1] * dx) * (cy[1] + sy[1] * dy);
-                coes[2] = (cx[2] + sx[2] * dx) * (cy[2] + sy[2] * dy);
-                coes[3] = (cx[3] + sx[3] * dx) * (cy[3] + sy[3] * dy);
+                for (int index = 0; index < 8; index++)
+                    coes[index] =
+                        (cx[index] + sx[index] * dx) * (cy[index] + sy[index] * dy) * (cz[index] + sz[index] * dz);
 
-                J = h_pic2d[tileId][0] * coes[0] + h_pic2d[tileId][1] * coes[1] + h_pic2d[tileId][2] * coes[2] +
-                    h_pic2d[tileId][3] * coes[3];
-                B = h_pic2d[tileId][4] * coes[0] + h_pic2d[tileId][5] * coes[1] + h_pic2d[tileId][6] * coes[2] +
-                    h_pic2d[tileId][7] * coes[3];
+                if (NFP == 1) {
 
-                coes[4] = coes[0];
-                coes[5] = coes[1];
-                coes[6] = coes[2];
-                coes[7] = coes[3];
-                coes[0] *= (cz[0] + sz[0] * dz);
-                coes[1] *= (cz[1] + sz[1] * dz);
-                coes[2] *= (cz[2] + sz[2] * dz);
-                coes[3] *= (cz[3] + sz[3] * dz);
-                coes[4] *= (cz[4] + sz[4] * dz);
-                coes[5] *= (cz[5] + sz[5] * dz);
-                coes[6] *= (cz[6] + sz[6] * dz);
-                coes[7] *= (cz[7] + sz[7] * dz);
+                    tileId = cellId / cellNz;
+
+                    J = h_pic2d[tileId][0] * (coes[0] + coes[4]) + h_pic2d[tileId][1] * (coes[1] + coes[5]) +
+                        h_pic2d[tileId][2] * (coes[2] + coes[6]) + h_pic2d[tileId][3] * (coes[3] + coes[7]);
+                    B = h_pic2d[tileId][4] * (coes[0] + coes[4]) + h_pic2d[tileId][5] * (coes[1] + coes[5]) +
+                        h_pic2d[tileId][6] * (coes[2] + coes[6]) + h_pic2d[tileId][7] * (coes[3] + coes[7]);
+
+                } else {
+
+                    tileId = cellId;
+
+                    J = h_pic2d[tileId][0] * coes[0] + h_pic2d[tileId][1] * coes[1] + h_pic2d[tileId][2] * coes[2] +
+                        h_pic2d[tileId][3] * coes[3] + h_pic2d[tileId][4] * coes[4] + h_pic2d[tileId][5] * coes[5] +
+                        h_pic2d[tileId][6] * coes[6] + h_pic2d[tileId][7] * coes[7];
+                    B = h_pic2d[tileId][8] * coes[0] + h_pic2d[tileId][9] * coes[1] + h_pic2d[tileId][10] * coes[2] +
+                        h_pic2d[tileId][11] * coes[3] + h_pic2d[tileId][12] * coes[4] + h_pic2d[tileId][13] * coes[5] +
+                        h_pic2d[tileId][14] * coes[6] + h_pic2d[tileId][15] * coes[7];
+                }
 
                 N = pw / J * B0 * B0 / 2 / MU0 / (MP * VA0 * VA0);
 
@@ -4488,6 +5501,7 @@ class HybridModel {
         double minPphi, maxPphi, dPphi;
         double minLambda, maxLambda, dLambda;
         double Mass, Char, Vmin, Vmax, Vb, DeltaV, Lambda0, DeltaLambda2, partConst;
+        picReal* range;
 
         double drho = RHO1 - RHO0;
         double psitmax = PSITMAX / (B0 * L0 * L0);
@@ -4495,6 +5509,7 @@ class HybridModel {
 
         if constexpr (picType == 0) {
 
+            range = IonEPphiLambda;
             Mass = IonMass;
             Char = IonChar;
             Vmin = IonVmin;
@@ -4507,6 +5522,7 @@ class HybridModel {
 
         } else if constexpr (picType == 1) {
 
+            range = AlphaEPphiLambda;
             Mass = AlphaMass;
             Char = AlphaChar;
             Vmin = AlphaVmin;
@@ -4519,6 +5535,7 @@ class HybridModel {
 
         } else if constexpr (picType == 2) {
 
+            range = BeamEPphiLambda;
             Mass = BeamMass;
             Char = BeamChar;
             Vmin = BeamVmin;
@@ -4530,37 +5547,12 @@ class HybridModel {
             partConst = BeamConst;
         }
 
-        minE = 0.5 * Mass * std::pow(Vmin, 2.0);
-        maxE = 0.5 * Mass * std::pow(Vmax, 2.0);
-
-        minPphi = 20251106;
-        maxPphi = -20251106;
-
-        minLambda = 0.0;
-        maxLambda = 0.0;
-
-        for (int i = 0; i < gridNx; i++) {
-            for (int j = 0; j < gridNy; j++) {
-
-                double tempPphi, tempLambda;
-
-                tempLambda = 1.0 / B[i][j];
-                if (tempLambda > maxLambda)
-                    maxLambda = tempLambda;
-
-                tempPphi = cm * Mass * Vmax * 2 * psitmax * drho * (RHO0 + i * gridDx * drho) *
-                               SFAcovyz[i][j + gridGhost] / (q[i][j] * J[i][j] * B[i][j]) -
-                           Char * psip[i][j];
-                if (tempPphi > maxPphi)
-                    maxPphi = tempPphi;
-
-                tempPphi = -cm * Mass * Vmax * 2 * psitmax * drho * (RHO0 + i * gridDx * drho) *
-                               SFAcovyz[i][j + gridGhost] / (q[i][j] * J[i][j] * B[i][j]) -
-                           Char * psip[i][j];
-                if (tempPphi < minPphi)
-                    minPphi = tempPphi;
-            }
-        }
+        minE = range[0];
+        maxE = range[1];
+        minPphi = range[2];
+        maxPphi = range[3];
+        minLambda = range[4];
+        maxLambda = range[5];
 
         dE = (maxE - minE) / (gridE - 1);
         dPphi = (maxPphi - minPphi) / (gridPphi - 1);
@@ -4579,96 +5571,128 @@ class HybridModel {
         Jmax = 0.0;
         Jvmax = std::pow(Vmax, 2.0);
 
-        std::vector<std::vector<double>> tempq(gridNx, std::vector<double>(gridNy + 2));
-        std::vector<std::vector<double>> temppsip(gridNx, std::vector<double>(gridNy + 2));
-        std::vector<std::vector<double>> tempJ(gridNx, std::vector<double>(gridNy + 2));
-        std::vector<std::vector<double>> tempB(gridNx, std::vector<double>(gridNy + 2));
-        std::vector<std::vector<double>> tempN(gridNx, std::vector<double>(gridNy + 2));
-        std::vector<std::vector<double>> tempT(gridNx, std::vector<double>(gridNy + 2));
-        std::vector<std::vector<double>> tempSFAcovyz(gridNx, std::vector<double>(gridNy + 2));
+        using tempField = std::vector<std::vector<std::vector<double>>>;
+
+        tempField tempQ(gridNx, std::vector<std::vector<double>>(gridNy + 2, std::vector<double>(gridNz + 2)));
+        tempField tempPsip(gridNx, std::vector<std::vector<double>>(gridNy + 2, std::vector<double>(gridNz + 2)));
+        tempField tempJ(gridNx, std::vector<std::vector<double>>(gridNy + 2, std::vector<double>(gridNz + 2)));
+        tempField tempB(gridNx, std::vector<std::vector<double>>(gridNy + 2, std::vector<double>(gridNz + 2)));
+        tempField tempN(gridNx, std::vector<std::vector<double>>(gridNy + 2, std::vector<double>(gridNz + 2)));
+        tempField tempT(gridNx, std::vector<std::vector<double>>(gridNy + 2, std::vector<double>(gridNz + 2)));
+        tempField tempSFAcovyz(gridNx, std::vector<std::vector<double>>(gridNy + 2, std::vector<double>(gridNz + 2)));
+        tempField tempSFAcovzz(gridNx, std::vector<std::vector<double>>(gridNy + 2, std::vector<double>(gridNz + 2)));
 
         for (int i = 0; i < gridNx; i++) {
             for (int j = 0; j < gridNy; j++) {
+                for (int k = 0; k < gridNz; k++) {
 
-                tempq[i][j + 1] = q[i][j];
-                temppsip[i][j + 1] = psip[i][j];
-                tempJ[i][j + 1] = J[i][j];
-                tempB[i][j + 1] = B[i][j];
+                    const int equilK = (NFP == 1) ? 0 : k;
 
-                if constexpr (picType == 0) {
-                    tempN[i][j + 1] = Ni[i][j] * 1.0e-19;
-                    tempT[i][j + 1] = Ti[i][j];
-                } else if constexpr (picType == 1) {
-                    tempN[i][j + 1] = Na[i][j] * 1.0e-19;
-                    tempT[i][j + 1] = Ta[i][j];
-                } else if constexpr (picType == 2) {
-                    tempN[i][j + 1] = Nb[i][j] * 1.0e-19;
-                    tempT[i][j + 1] = Tb[i][j];
-                }
+                    tempQ[i][j + 1][k + 1] = q[i][j][equilK];
+                    tempPsip[i][j + 1][k + 1] = psip[i][j][equilK];
+                    tempJ[i][j + 1][k + 1] = J[i][j][equilK];
+                    tempB[i][j + 1][k + 1] = B[i][j][equilK];
 
-                if constexpr (spaceType == 0) {
-                    if (tempJ[i][j + 1] * tempN[i][j + 1] > Jmax)
-                        Jmax = tempJ[i][j + 1] * tempN[i][j + 1];
-                } else if constexpr (spaceType == 1) {
-                    if (tempJ[i][j + 1] > Jmax)
-                        Jmax = tempJ[i][j + 1];
+                    if constexpr (picType == 0) {
+                        tempN[i][j + 1][k + 1] = Ni[i][j][equilK] * 1.0e-19;
+                        tempT[i][j + 1][k + 1] = Ti[i][j][equilK];
+                    } else if constexpr (picType == 1) {
+                        tempN[i][j + 1][k + 1] = Na[i][j][equilK] * 1.0e-19;
+                        tempT[i][j + 1][k + 1] = Ta[i][j][equilK];
+                    } else if constexpr (picType == 2) {
+                        tempN[i][j + 1][k + 1] = Nb[i][j][equilK] * 1.0e-19;
+                        tempT[i][j + 1][k + 1] = Tb[i][j][equilK];
+                    }
+
+                    if constexpr (spaceType == 0) {
+                        if (tempJ[i][j + 1][k + 1] * tempN[i][j + 1][k + 1] > Jmax)
+                            Jmax = tempJ[i][j + 1][k + 1] * tempN[i][j + 1][k + 1];
+                    } else if constexpr (spaceType == 1) {
+                        if (tempJ[i][j + 1][k + 1] > Jmax)
+                            Jmax = tempJ[i][j + 1][k + 1];
+                    }
                 }
             }
+        }
 
-            tempq[i][0] = tempq[i][gridNy];
-            tempq[i][gridNy + 1] = tempq[i][1];
+        auto fillTempGhost = [&](tempField& field) {
+            for (int i = 0; i < gridNx; i++) {
+                for (int k = 1; k <= gridNz; k++) {
+                    field[i][0][k] = field[i][gridNy][k];
+                    field[i][gridNy + 1][k] = field[i][1][k];
+                }
 
-            temppsip[i][0] = temppsip[i][gridNy];
-            temppsip[i][gridNy + 1] = temppsip[i][1];
+                for (int j = 0; j < gridNy + 2; j++) {
+                    field[i][j][0] = field[i][j][gridNz];
+                    field[i][j][gridNz + 1] = field[i][j][1];
+                }
+            }
+        };
 
-            tempJ[i][0] = tempJ[i][gridNy];
-            tempJ[i][gridNy + 1] = tempJ[i][1];
+        fillTempGhost(tempQ);
+        fillTempGhost(tempPsip);
+        fillTempGhost(tempJ);
+        fillTempGhost(tempB);
+        fillTempGhost(tempN);
+        fillTempGhost(tempT);
 
-            tempB[i][0] = tempB[i][gridNy];
-            tempB[i][gridNy + 1] = tempB[i][1];
+        for (int i = 0; i < gridNx; i++) {
+            for (int j = 0; j < gridNy + 2; j++) {
+                for (int k = 0; k < gridNz; k++) {
 
-            tempN[i][0] = tempN[i][gridNy];
-            tempN[i][gridNy + 1] = tempN[i][1];
+                    const int equilK = (NFP == 1) ? 0 : k;
 
-            tempT[i][0] = tempT[i][gridNy];
-            tempT[i][gridNy + 1] = tempT[i][1];
+                    tempSFAcovyz[i][j][k + 1] = SFAcovyz[i][j + gridGhost - 1][equilK];
+                    tempSFAcovzz[i][j][k + 1] = SFAcovzz[i][j + gridGhost - 1][equilK];
+                }
+            }
         }
 
         for (int i = 0; i < gridNx; i++) {
             for (int j = 0; j < gridNy + 2; j++) {
-                tempSFAcovyz[i][j] = SFAcovyz[i][j + gridGhost - 1];
+                tempSFAcovyz[i][j][0] = tempSFAcovyz[i][j][gridNz];
+                tempSFAcovyz[i][j][gridNz + 1] = tempSFAcovyz[i][j][1];
+                tempSFAcovzz[i][j][0] = tempSFAcovzz[i][j][gridNz];
+                tempSFAcovzz[i][j][gridNz + 1] = tempSFAcovzz[i][j][1];
             }
         }
 
-        auto interp2d = [&](std::vector<std::vector<double>>& field, double x, double y) {
+        auto interp3d = [&](const tempField& field, double x, double y, double z) {
             double li = (x - x0) / gridDx;
             double lj = (y - y0 + 0.5 * gridDy) / gridDy;
+            double lk = (z - z0 + 0.5 * gridDz) / gridDz;
             int i = std::floor(li);
             int j = std::floor(lj);
+            int k = std::floor(lk);
             double dx = li - i;
             double dy = lj - j;
+            double dz = lk - k;
 
-            double coes[4] = {};
-            double cx[4] = {1.0, 1.0, 0.0, 0.0};
-            double sx[4] = {-1.0, -1.0, 1.0, 1.0};
-            double cy[4] = {1.0, 0.0, 1.0, 0.0};
-            double sy[4] = {-1.0, 1.0, -1.0, 1.0};
+            double coes[8] = {};
+            double cx[8] = {1.0, 1.0, 0.0, 0.0, 1.0, 1.0, 0.0, 0.0};
+            double sx[8] = {-1.0, -1.0, 1.0, 1.0, -1.0, -1.0, 1.0, 1.0};
+            double cy[8] = {1.0, 0.0, 1.0, 0.0, 1.0, 0.0, 1.0, 0.0};
+            double sy[8] = {-1.0, 1.0, -1.0, 1.0, -1.0, 1.0, -1.0, 1.0};
+            double cz[8] = {1.0, 1.0, 1.0, 1.0, 0.0, 0.0, 0.0, 0.0};
+            double sz[8] = {-1.0, -1.0, -1.0, -1.0, 1.0, 1.0, 1.0, 1.0};
 
             double result = 0.0;
 
-            coes[0] = (cx[0] + sx[0] * dx) * (cy[0] + sy[0] * dy);
-            coes[1] = (cx[1] + sx[1] * dx) * (cy[1] + sy[1] * dy);
-            coes[2] = (cx[2] + sx[2] * dx) * (cy[2] + sy[2] * dy);
-            coes[3] = (cx[3] + sx[3] * dx) * (cy[3] + sy[3] * dy);
+            for (int index = 0; index < 8; index++)
+                coes[index] =
+                    (cx[index] + sx[index] * dx) * (cy[index] + sy[index] * dy) * (cz[index] + sz[index] * dz);
 
-            result = field[i][j] * coes[0] + field[i][j + 1] * coes[1] + field[i + 1][j] * coes[2] +
-                     field[i + 1][j + 1] * coes[3];
+            result = field[i][j][k] * coes[0] + field[i][j + 1][k] * coes[1] + field[i + 1][j][k] * coes[2] +
+                     field[i + 1][j + 1][k] * coes[3] + field[i][j][k + 1] * coes[4] +
+                     field[i][j + 1][k + 1] * coes[5] + field[i + 1][j][k + 1] * coes[6] +
+                     field[i + 1][j + 1][k + 1] * coes[7];
 
             return result;
         };
 
         std::vector<Rand01> xrand(devNums);
         std::vector<Rand01> yrand(devNums);
+        std::vector<Rand01> zrand(devNums);
         std::vector<Rand01> Jrand(devNums);
 
         std::vector<Rand01> vrand(devNums);
@@ -4701,32 +5725,40 @@ class HybridModel {
                 int i, j, k;
                 double li, lj, lk;
                 double dx, dy, dz;
-                double q, psip, J, B, N, T, SFAcovyz;
+                double q, psip, J, B, N, T, SFAcovyz, SFAcovzz, SFAcov;
                 double v, Jv, E, Pphi, Lambda;
-                double x, y, vp, mu, pw;
+                double x, y, z, vp, mu, pw;
                 double coes[8];
 
                 if constexpr (spaceType == 0) {
                     do {
                         x = x0 + (x1 - x0) * xrand[devId]();
                         y = y0 + (y1 - y0) * yrand[devId]();
-                        N = interp2d(tempN, x, y);
-                        J = interp2d(tempJ, x, y);
+                        z = z0 + ((NFP == 1) ? gridDz : (z1 - z0)) * zrand[devId]();
+                        N = interp3d(tempN, x, y, z);
+                        J = interp3d(tempJ, x, y, z);
                     } while (Jrand[devId]() >= N * J / Jmax);
                 } else if constexpr (spaceType == 1) {
                     do {
                         x = x0 + (x1 - x0) * xrand[devId]();
                         y = y0 + (y1 - y0) * yrand[devId]();
-                        J = interp2d(tempJ, x, y);
+                        z = z0 + ((NFP == 1) ? gridDz : (z1 - z0)) * zrand[devId]();
+                        J = interp3d(tempJ, x, y, z);
                     } while (Jrand[devId]() >= J / Jmax);
                 }
 
-                q = interp2d(tempq, x, y);
-                psip = interp2d(temppsip, x, y);
-                SFAcovyz = interp2d(tempSFAcovyz, x, y);
-                B = interp2d(tempB, x, y);
-                N = interp2d(tempN, x, y);
-                T = interp2d(tempT, x, y);
+                q = interp3d(tempQ, x, y, z);
+                psip = interp3d(tempPsip, x, y, z);
+                SFAcovyz = interp3d(tempSFAcovyz, x, y, z);
+                SFAcovzz = interp3d(tempSFAcovzz, x, y, z);
+                B = interp3d(tempB, x, y, z);
+                N = interp3d(tempN, x, y, z);
+                T = interp3d(tempT, x, y, z);
+
+                if (NFP == 1)
+                    SFAcov = SFAcovyz;
+                else
+                    SFAcov = SFAcovyz + q * SFAcovzz;
 
                 if constexpr (velocityType == 0) {
 
@@ -4864,7 +5896,7 @@ class HybridModel {
                 }
 
                 E = 0.5 * Mass * std::pow(v, 2.0);
-                Pphi = cm * Mass * vp * 2 * psitmax * drho * (RHO0 + x * drho) * SFAcovyz / (q * J * B) - Char * psip;
+                Pphi = cm * Mass * vp * 2 * psitmax * drho * (RHO0 + x * drho) * SFAcov / (q * J * B) - Char * psip;
                 Lambda = mu / E;
 
                 if constexpr (spaceType == 0)
@@ -5058,79 +6090,99 @@ class HybridModel {
         Jmax = 0.0;
         Jvmax = std::pow(Vmax, 2.0);
 
-        std::vector<std::vector<double>> tempJ(gridNx, std::vector<double>(gridNy + 2));
-        std::vector<std::vector<double>> tempB(gridNx, std::vector<double>(gridNy + 2));
-        std::vector<std::vector<double>> tempN(gridNx, std::vector<double>(gridNy + 2));
-        std::vector<std::vector<double>> tempT(gridNx, std::vector<double>(gridNy + 2));
+        using tempField = std::vector<std::vector<std::vector<double>>>;
+
+        tempField tempJ(gridNx, std::vector<std::vector<double>>(gridNy + 2, std::vector<double>(gridNz + 2)));
+        tempField tempB(gridNx, std::vector<std::vector<double>>(gridNy + 2, std::vector<double>(gridNz + 2)));
+        tempField tempN(gridNx, std::vector<std::vector<double>>(gridNy + 2, std::vector<double>(gridNz + 2)));
+        tempField tempT(gridNx, std::vector<std::vector<double>>(gridNy + 2, std::vector<double>(gridNz + 2)));
 
         for (int i = 0; i < gridNx; i++) {
             for (int j = 0; j < gridNy; j++) {
+                for (int k = 0; k < gridNz; k++) {
 
-                tempJ[i][j + 1] = J[i][j];
-                tempB[i][j + 1] = B[i][j];
+                    const int equilK = (NFP == 1) ? 0 : k;
 
-                if constexpr (picType == 0) {
-                    tempN[i][j + 1] = Ni[i][j] * 1.0e-19;
-                    tempT[i][j + 1] = Ti[i][j];
-                } else if constexpr (picType == 1) {
-                    tempN[i][j + 1] = Na[i][j] * 1.0e-19;
-                    tempT[i][j + 1] = Ta[i][j];
-                } else if constexpr (picType == 2) {
-                    tempN[i][j + 1] = Nb[i][j] * 1.0e-19;
-                    tempT[i][j + 1] = Tb[i][j];
-                }
+                    tempJ[i][j + 1][k + 1] = J[i][j][equilK];
+                    tempB[i][j + 1][k + 1] = B[i][j][equilK];
 
-                if constexpr (spaceType == 0) {
-                    if (tempJ[i][j + 1] * tempN[i][j + 1] > Jmax)
-                        Jmax = tempJ[i][j + 1] * tempN[i][j + 1];
-                } else if constexpr (spaceType == 1) {
-                    if (tempJ[i][j + 1] > Jmax)
-                        Jmax = tempJ[i][j + 1];
+                    if constexpr (picType == 0) {
+                        tempN[i][j + 1][k + 1] = Ni[i][j][equilK] * 1.0e-19;
+                        tempT[i][j + 1][k + 1] = Ti[i][j][equilK];
+                    } else if constexpr (picType == 1) {
+                        tempN[i][j + 1][k + 1] = Na[i][j][equilK] * 1.0e-19;
+                        tempT[i][j + 1][k + 1] = Ta[i][j][equilK];
+                    } else if constexpr (picType == 2) {
+                        tempN[i][j + 1][k + 1] = Nb[i][j][equilK] * 1.0e-19;
+                        tempT[i][j + 1][k + 1] = Tb[i][j][equilK];
+                    }
+
+                    if constexpr (spaceType == 0) {
+                        if (tempJ[i][j + 1][k + 1] * tempN[i][j + 1][k + 1] > Jmax)
+                            Jmax = tempJ[i][j + 1][k + 1] * tempN[i][j + 1][k + 1];
+                    } else if constexpr (spaceType == 1) {
+                        if (tempJ[i][j + 1][k + 1] > Jmax)
+                            Jmax = tempJ[i][j + 1][k + 1];
+                    }
                 }
             }
-
-            tempJ[i][0] = tempJ[i][gridNy];
-            tempJ[i][gridNy + 1] = tempJ[i][1];
-
-            tempB[i][0] = tempB[i][gridNy];
-            tempB[i][gridNy + 1] = tempB[i][1];
-
-            tempN[i][0] = tempN[i][gridNy];
-            tempN[i][gridNy + 1] = tempN[i][1];
-
-            tempT[i][0] = tempT[i][gridNy];
-            tempT[i][gridNy + 1] = tempT[i][1];
         }
 
-        auto interp2d = [&](std::vector<std::vector<double>>& field, double x, double y) {
+        auto fillTempGhost = [&](tempField& field) {
+            for (int i = 0; i < gridNx; i++) {
+                for (int k = 1; k <= gridNz; k++) {
+                    field[i][0][k] = field[i][gridNy][k];
+                    field[i][gridNy + 1][k] = field[i][1][k];
+                }
+
+                for (int j = 0; j < gridNy + 2; j++) {
+                    field[i][j][0] = field[i][j][gridNz];
+                    field[i][j][gridNz + 1] = field[i][j][1];
+                }
+            }
+        };
+
+        fillTempGhost(tempJ);
+        fillTempGhost(tempB);
+        fillTempGhost(tempN);
+        fillTempGhost(tempT);
+
+        auto interp3d = [&](const tempField& field, double x, double y, double z) {
             double li = (x - x0) / gridDx;
             double lj = (y - y0 + 0.5 * gridDy) / gridDy;
+            double lk = (z - z0 + 0.5 * gridDz) / gridDz;
             int i = std::floor(li);
             int j = std::floor(lj);
+            int k = std::floor(lk);
             double dx = li - i;
             double dy = lj - j;
+            double dz = lk - k;
 
-            double coes[4] = {};
-            double cx[4] = {1.0, 1.0, 0.0, 0.0};
-            double sx[4] = {-1.0, -1.0, 1.0, 1.0};
-            double cy[4] = {1.0, 0.0, 1.0, 0.0};
-            double sy[4] = {-1.0, 1.0, -1.0, 1.0};
+            double coes[8] = {};
+            double cx[8] = {1.0, 1.0, 0.0, 0.0, 1.0, 1.0, 0.0, 0.0};
+            double sx[8] = {-1.0, -1.0, 1.0, 1.0, -1.0, -1.0, 1.0, 1.0};
+            double cy[8] = {1.0, 0.0, 1.0, 0.0, 1.0, 0.0, 1.0, 0.0};
+            double sy[8] = {-1.0, 1.0, -1.0, 1.0, -1.0, 1.0, -1.0, 1.0};
+            double cz[8] = {1.0, 1.0, 1.0, 1.0, 0.0, 0.0, 0.0, 0.0};
+            double sz[8] = {-1.0, -1.0, -1.0, -1.0, 1.0, 1.0, 1.0, 1.0};
 
             double result = 0.0;
 
-            coes[0] = (cx[0] + sx[0] * dx) * (cy[0] + sy[0] * dy);
-            coes[1] = (cx[1] + sx[1] * dx) * (cy[1] + sy[1] * dy);
-            coes[2] = (cx[2] + sx[2] * dx) * (cy[2] + sy[2] * dy);
-            coes[3] = (cx[3] + sx[3] * dx) * (cy[3] + sy[3] * dy);
+            for (int index = 0; index < 8; index++)
+                coes[index] =
+                    (cx[index] + sx[index] * dx) * (cy[index] + sy[index] * dy) * (cz[index] + sz[index] * dz);
 
-            result = field[i][j] * coes[0] + field[i][j + 1] * coes[1] + field[i + 1][j] * coes[2] +
-                     field[i + 1][j + 1] * coes[3];
+            result = field[i][j][k] * coes[0] + field[i][j + 1][k] * coes[1] + field[i + 1][j][k] * coes[2] +
+                     field[i + 1][j + 1][k] * coes[3] + field[i][j][k + 1] * coes[4] +
+                     field[i][j + 1][k + 1] * coes[5] + field[i + 1][j][k + 1] * coes[6] +
+                     field[i + 1][j + 1][k + 1] * coes[7];
 
             return result;
         };
 
         std::vector<Rand01> xrand(devNums);
         std::vector<Rand01> yrand(devNums);
+        std::vector<Rand01> zrand(devNums);
         std::vector<Rand01> Jrand(devNums);
 
         std::vector<Rand01> vrand(devNums);
@@ -5163,7 +6215,7 @@ class HybridModel {
                 double dx, dy;
                 double J, B, N, T;
                 double v, Jv;
-                double x, y, vp, mu, pw;
+                double x, y, z, vp, mu, pw;
                 double vpara, vperp;
                 double coes[4];
 
@@ -5171,20 +6223,22 @@ class HybridModel {
                     do {
                         x = x0 + (x1 - x0) * xrand[devId]();
                         y = y0 + (y1 - y0) * yrand[devId]();
-                        N = interp2d(tempN, x, y);
-                        J = interp2d(tempJ, x, y);
+                        z = z0 + ((NFP == 1) ? gridDz : (z1 - z0)) * zrand[devId]();
+                        N = interp3d(tempN, x, y, z);
+                        J = interp3d(tempJ, x, y, z);
                     } while (Jrand[devId]() >= N * J / Jmax);
                 } else if constexpr (spaceType == 1) {
                     do {
                         x = x0 + (x1 - x0) * xrand[devId]();
                         y = y0 + (y1 - y0) * yrand[devId]();
-                        J = interp2d(tempJ, x, y);
+                        z = z0 + ((NFP == 1) ? gridDz : (z1 - z0)) * zrand[devId]();
+                        J = interp3d(tempJ, x, y, z);
                     } while (Jrand[devId]() >= J / Jmax);
                 }
 
-                B = interp2d(tempB, x, y);
-                N = interp2d(tempN, x, y);
-                T = interp2d(tempT, x, y);
+                B = interp3d(tempB, x, y, z);
+                N = interp3d(tempN, x, y, z);
+                T = interp3d(tempT, x, y, z);
 
                 if constexpr (velocityType == 0) {
 
@@ -5434,6 +6488,7 @@ class HybridModel {
         double minPphi, maxPphi, dPphi;
         double minLambda, maxLambda, dLambda;
         double Mass, Char, Vmin, Vmax;
+        picReal* range;
 
         double drho = RHO1 - RHO0;
         double psitmax = PSITMAX / (B0 * L0 * L0);
@@ -5441,6 +6496,7 @@ class HybridModel {
 
         if constexpr (picType == 0) {
 
+            range = IonEPphiLambda;
             Mass = IonMass;
             Char = IonChar;
             Vmin = IonVmin;
@@ -5448,6 +6504,7 @@ class HybridModel {
 
         } else if constexpr (picType == 1) {
 
+            range = AlphaEPphiLambda;
             Mass = AlphaMass;
             Char = AlphaChar;
             Vmin = AlphaVmin;
@@ -5455,43 +6512,19 @@ class HybridModel {
 
         } else if constexpr (picType == 2) {
 
+            range = BeamEPphiLambda;
             Mass = BeamMass;
             Char = BeamChar;
             Vmin = BeamVmin;
             Vmax = BeamVmax;
         }
 
-        minE = 0.5 * Mass * std::pow(Vmin, 2.0);
-        maxE = 0.5 * Mass * std::pow(Vmax, 2.0);
-
-        minPphi = 20251106;
-        maxPphi = -20251106;
-
-        minLambda = 0.0;
-        maxLambda = 0.0;
-
-        for (int i = 0; i < gridNx; i++) {
-            for (int j = 0; j < gridNy; j++) {
-
-                double tempPphi, tempLambda;
-
-                tempLambda = 1.0 / B[i][j];
-                if (tempLambda > maxLambda)
-                    maxLambda = tempLambda;
-
-                tempPphi = cm * Mass * Vmax * 2 * psitmax * drho * (RHO0 + i * gridDx * drho) *
-                               SFAcovyz[i][j + gridGhost] / (q[i][j] * J[i][j] * B[i][j]) -
-                           Char * psip[i][j];
-                if (tempPphi > maxPphi)
-                    maxPphi = tempPphi;
-
-                tempPphi = -cm * Mass * Vmax * 2 * psitmax * drho * (RHO0 + i * gridDx * drho) *
-                               SFAcovyz[i][j + gridGhost] / (q[i][j] * J[i][j] * B[i][j]) -
-                           Char * psip[i][j];
-                if (tempPphi < minPphi)
-                    minPphi = tempPphi;
-            }
-        }
+        minE = range[0];
+        maxE = range[1];
+        minPphi = range[2];
+        maxPphi = range[3];
+        minLambda = range[4];
+        maxLambda = range[5];
 
         dE = (maxE - minE) / (gridE - 1);
         dPphi = (maxPphi - minPphi) / (gridPphi - 1);
@@ -5510,72 +6543,108 @@ class HybridModel {
         Jmax = 0.0;
         Jvmax = std::pow(Vmax, 2.0);
 
-        std::vector<std::vector<double>> tempq(gridNx, std::vector<double>(gridNy + 2));
-        std::vector<std::vector<double>> temppsip(gridNx, std::vector<double>(gridNy + 2));
-        std::vector<std::vector<double>> tempJ(gridNx, std::vector<double>(gridNy + 2));
-        std::vector<std::vector<double>> tempB(gridNx, std::vector<double>(gridNy + 2));
-        std::vector<std::vector<double>> tempSFAcovyz(gridNx, std::vector<double>(gridNy + 2));
+        using tempField = std::vector<std::vector<std::vector<double>>>;
+
+        tempField tempQ(gridNx, std::vector<std::vector<double>>(gridNy + 2, std::vector<double>(gridNz + 2)));
+        tempField tempPsip(gridNx, std::vector<std::vector<double>>(gridNy + 2, std::vector<double>(gridNz + 2)));
+        tempField tempJ(gridNx, std::vector<std::vector<double>>(gridNy + 2, std::vector<double>(gridNz + 2)));
+        tempField tempB(gridNx, std::vector<std::vector<double>>(gridNy + 2, std::vector<double>(gridNz + 2)));
+        tempField tempSFAcovyz(gridNx, std::vector<std::vector<double>>(gridNy + 2, std::vector<double>(gridNz + 2)));
+        tempField tempSFAcovzz(gridNx, std::vector<std::vector<double>>(gridNy + 2, std::vector<double>(gridNz + 2)));
 
         for (int i = 0; i < gridNx; i++) {
             for (int j = 0; j < gridNy; j++) {
+                for (int k = 0; k < gridNz; k++) {
 
-                tempq[i][j + 1] = q[i][j];
-                temppsip[i][j + 1] = psip[i][j];
-                tempJ[i][j + 1] = J[i][j];
-                tempB[i][j + 1] = B[i][j];
+                    const int equilK = (NFP == 1) ? 0 : k;
 
-                if (tempJ[i][j + 1] > Jmax)
-                    Jmax = tempJ[i][j + 1];
+                    tempQ[i][j + 1][k + 1] = q[i][j][equilK];
+                    tempPsip[i][j + 1][k + 1] = psip[i][j][equilK];
+                    tempJ[i][j + 1][k + 1] = J[i][j][equilK];
+                    tempB[i][j + 1][k + 1] = B[i][j][equilK];
+
+                    if (tempJ[i][j + 1][k + 1] > Jmax)
+                        Jmax = tempJ[i][j + 1][k + 1];
+                }
             }
+        }
 
-            tempq[i][0] = tempq[i][gridNy];
-            tempq[i][gridNy + 1] = tempq[i][1];
+        auto fillTempGhost = [&](tempField& field) {
+            for (int i = 0; i < gridNx; i++) {
+                for (int k = 1; k <= gridNz; k++) {
+                    field[i][0][k] = field[i][gridNy][k];
+                    field[i][gridNy + 1][k] = field[i][1][k];
+                }
 
-            temppsip[i][0] = temppsip[i][gridNy];
-            temppsip[i][gridNy + 1] = temppsip[i][1];
+                for (int j = 0; j < gridNy + 2; j++) {
+                    field[i][j][0] = field[i][j][gridNz];
+                    field[i][j][gridNz + 1] = field[i][j][1];
+                }
+            }
+        };
 
-            tempJ[i][0] = tempJ[i][gridNy];
-            tempJ[i][gridNy + 1] = tempJ[i][1];
+        fillTempGhost(tempQ);
+        fillTempGhost(tempPsip);
+        fillTempGhost(tempJ);
+        fillTempGhost(tempB);
 
-            tempB[i][0] = tempB[i][gridNy];
-            tempB[i][gridNy + 1] = tempB[i][1];
+        for (int i = 0; i < gridNx; i++) {
+            for (int j = 0; j < gridNy + 2; j++) {
+                for (int k = 0; k < gridNz; k++) {
+
+                    const int equilK = (NFP == 1) ? 0 : k;
+
+                    tempSFAcovyz[i][j][k + 1] = SFAcovyz[i][j + gridGhost - 1][equilK];
+                    tempSFAcovzz[i][j][k + 1] = SFAcovzz[i][j + gridGhost - 1][equilK];
+                }
+            }
         }
 
         for (int i = 0; i < gridNx; i++) {
             for (int j = 0; j < gridNy + 2; j++) {
-                tempSFAcovyz[i][j] = SFAcovyz[i][j + gridGhost - 1];
+                tempSFAcovyz[i][j][0] = tempSFAcovyz[i][j][gridNz];
+                tempSFAcovyz[i][j][gridNz + 1] = tempSFAcovyz[i][j][1];
+                tempSFAcovzz[i][j][0] = tempSFAcovzz[i][j][gridNz];
+                tempSFAcovzz[i][j][gridNz + 1] = tempSFAcovzz[i][j][1];
             }
         }
 
-        auto interp2d = [&](std::vector<std::vector<double>>& field, double x, double y) {
+        auto interp3d = [&](const tempField& field, double x, double y, double z) {
             double li = (x - x0) / gridDx;
             double lj = (y - y0 + 0.5 * gridDy) / gridDy;
+            double lk = (z - z0 + 0.5 * gridDz) / gridDz;
             int i = std::floor(li);
             int j = std::floor(lj);
+            int k = std::floor(lk);
             double dx = li - i;
             double dy = lj - j;
+            double dz = lk - k;
 
-            double coes[4] = {};
-            double cx[4] = {1.0, 1.0, 0.0, 0.0};
-            double sx[4] = {-1.0, -1.0, 1.0, 1.0};
-            double cy[4] = {1.0, 0.0, 1.0, 0.0};
-            double sy[4] = {-1.0, 1.0, -1.0, 1.0};
+            double coes[8] = {};
+            double cx[8] = {1.0, 1.0, 0.0, 0.0, 1.0, 1.0, 0.0, 0.0};
+            double sx[8] = {-1.0, -1.0, 1.0, 1.0, -1.0, -1.0, 1.0, 1.0};
+            double cy[8] = {1.0, 0.0, 1.0, 0.0, 1.0, 0.0, 1.0, 0.0};
+            double sy[8] = {-1.0, 1.0, -1.0, 1.0, -1.0, 1.0, -1.0, 1.0};
+            double cz[8] = {1.0, 1.0, 1.0, 1.0, 0.0, 0.0, 0.0, 0.0};
+            double sz[8] = {-1.0, -1.0, -1.0, -1.0, 1.0, 1.0, 1.0, 1.0};
 
             double result = 0.0;
 
-            coes[0] = (cx[0] + sx[0] * dx) * (cy[0] + sy[0] * dy);
-            coes[1] = (cx[1] + sx[1] * dx) * (cy[1] + sy[1] * dy);
-            coes[2] = (cx[2] + sx[2] * dx) * (cy[2] + sy[2] * dy);
-            coes[3] = (cx[3] + sx[3] * dx) * (cy[3] + sy[3] * dy);
+            for (int index = 0; index < 8; index++)
+                coes[index] =
+                    (cx[index] + sx[index] * dx) * (cy[index] + sy[index] * dy) * (cz[index] + sz[index] * dz);
 
-            result = field[i][j] * coes[0] + field[i][j + 1] * coes[1] + field[i + 1][j] * coes[2] +
-                     field[i + 1][j + 1] * coes[3];
+            result = field[i][j][k] * coes[0] + field[i][j + 1][k] * coes[1] + field[i + 1][j][k] * coes[2] +
+                     field[i + 1][j + 1][k] * coes[3] + field[i][j][k + 1] * coes[4] +
+                     field[i][j + 1][k + 1] * coes[5] + field[i + 1][j][k + 1] * coes[6] +
+                     field[i + 1][j + 1][k + 1] * coes[7];
 
             return result;
         };
 
         std::vector<Rand01> xrand(devNums);
         std::vector<Rand01> yrand(devNums);
+        std::vector<Rand01> zrand(devNums);
         std::vector<Rand01> Jrand(devNums);
 
         std::vector<Rand01> vrand(devNums);
@@ -5605,15 +6674,16 @@ class HybridModel {
                 int i, j, k;
                 double li, lj, lk;
                 double dx, dy, dz;
-                double q, psip, J, B, SFAcovyz;
+                double q, psip, J, B, SFAcovyz, SFAcovzz, SFAcov;
                 double v, Jv, E, Pphi, Lambda;
-                double x, y, vp, mu;
+                double x, y, z, vp, mu;
                 double coes[8];
 
                 do {
                     x = x0 + (x1 - x0) * xrand[devId]();
                     y = y0 + (y1 - y0) * yrand[devId]();
-                    J = interp2d(tempJ, x, y);
+                    z = z0 + ((NFP == 1) ? gridDz : (z1 - z0)) * zrand[devId]();
+                    J = interp3d(tempJ, x, y, z);
                 } while (Jrand[devId]() >= J / Jmax);
 
                 do {
@@ -5621,10 +6691,17 @@ class HybridModel {
                     Jv = std::pow(v, 2.0);
                 } while (v <= Vmin || Jvrand[devId]() >= Jv / Jvmax);
 
-                q = interp2d(tempq, x, y);
-                psip = interp2d(temppsip, x, y);
-                SFAcovyz = interp2d(tempSFAcovyz, x, y);
-                B = interp2d(tempB, x, y);
+                q = interp3d(tempQ, x, y, z);
+                psip = interp3d(tempPsip, x, y, z);
+                SFAcovyz = interp3d(tempSFAcovyz, x, y, z);
+                SFAcovzz = interp3d(tempSFAcovzz, x, y, z);
+                J = interp3d(tempJ, x, y, z);
+                B = interp3d(tempB, x, y, z);
+
+                if (NFP == 1)
+                    SFAcov = SFAcovyz;
+                else
+                    SFAcov = SFAcovyz + q * SFAcovzz;
 
                 if constexpr (picType == 2)
                     Lambda = vprand[devId]();
@@ -5634,7 +6711,7 @@ class HybridModel {
                 mu = 0.5 * Mass * std::pow(v, 2.0) * (1.0 - std::pow(Lambda, 2.0)) / B;
 
                 E = 0.5 * Mass * std::pow(v, 2.0);
-                Pphi = cm * Mass * vp * 2 * psitmax * drho * (RHO0 + x * drho) * SFAcovyz / (q * J * B) - Char * psip;
+                Pphi = cm * Mass * vp * 2 * psitmax * drho * (RHO0 + x * drho) * SFAcov / (q * J * B) - Char * psip;
                 Lambda = mu / E;
 
                 li = (E - minE) / dE;
@@ -5799,50 +6876,76 @@ class HybridModel {
         Jmax = 0.0;
         Jvmax = std::pow(Vmax, 2.0);
 
-        std::vector<std::vector<double>> tempJ(gridNx, std::vector<double>(gridNy + 2));
+        using tempField = std::vector<std::vector<std::vector<double>>>;
+
+        tempField tempJ(gridNx, std::vector<std::vector<double>>(gridNy + 2, std::vector<double>(gridNz + 2)));
 
         for (int i = 0; i < gridNx; i++) {
             for (int j = 0; j < gridNy; j++) {
+                for (int k = 0; k < gridNz; k++) {
 
-                tempJ[i][j + 1] = J[i][j];
+                    const int equilK = (NFP == 1) ? 0 : k;
 
-                if (tempJ[i][j + 1] > Jmax)
-                    Jmax = tempJ[i][j + 1];
+                    tempJ[i][j + 1][k + 1] = J[i][j][equilK];
+
+                    if (tempJ[i][j + 1][k + 1] > Jmax)
+                        Jmax = tempJ[i][j + 1][k + 1];
+                }
             }
-
-            tempJ[i][0] = tempJ[i][gridNy];
-            tempJ[i][gridNy + 1] = tempJ[i][1];
         }
 
-        auto interp2d = [&](std::vector<std::vector<double>>& field, double x, double y) {
+        auto fillTempGhost = [&](tempField& field) {
+            for (int i = 0; i < gridNx; i++) {
+                for (int k = 1; k <= gridNz; k++) {
+                    field[i][0][k] = field[i][gridNy][k];
+                    field[i][gridNy + 1][k] = field[i][1][k];
+                }
+
+                for (int j = 0; j < gridNy + 2; j++) {
+                    field[i][j][0] = field[i][j][gridNz];
+                    field[i][j][gridNz + 1] = field[i][j][1];
+                }
+            }
+        };
+
+        fillTempGhost(tempJ);
+
+        auto interp3d = [&](const tempField& field, double x, double y, double z) {
             double li = (x - x0) / gridDx;
             double lj = (y - y0 + 0.5 * gridDy) / gridDy;
+            double lk = (z - z0 + 0.5 * gridDz) / gridDz;
             int i = std::floor(li);
             int j = std::floor(lj);
+            int k = std::floor(lk);
             double dx = li - i;
             double dy = lj - j;
+            double dz = lk - k;
 
-            double coes[4] = {};
-            double cx[4] = {1.0, 1.0, 0.0, 0.0};
-            double sx[4] = {-1.0, -1.0, 1.0, 1.0};
-            double cy[4] = {1.0, 0.0, 1.0, 0.0};
-            double sy[4] = {-1.0, 1.0, -1.0, 1.0};
+            double coes[8] = {};
+            double cx[8] = {1.0, 1.0, 0.0, 0.0, 1.0, 1.0, 0.0, 0.0};
+            double sx[8] = {-1.0, -1.0, 1.0, 1.0, -1.0, -1.0, 1.0, 1.0};
+            double cy[8] = {1.0, 0.0, 1.0, 0.0, 1.0, 0.0, 1.0, 0.0};
+            double sy[8] = {-1.0, 1.0, -1.0, 1.0, -1.0, 1.0, -1.0, 1.0};
+            double cz[8] = {1.0, 1.0, 1.0, 1.0, 0.0, 0.0, 0.0, 0.0};
+            double sz[8] = {-1.0, -1.0, -1.0, -1.0, 1.0, 1.0, 1.0, 1.0};
 
             double result = 0.0;
 
-            coes[0] = (cx[0] + sx[0] * dx) * (cy[0] + sy[0] * dy);
-            coes[1] = (cx[1] + sx[1] * dx) * (cy[1] + sy[1] * dy);
-            coes[2] = (cx[2] + sx[2] * dx) * (cy[2] + sy[2] * dy);
-            coes[3] = (cx[3] + sx[3] * dx) * (cy[3] + sy[3] * dy);
+            for (int index = 0; index < 8; index++)
+                coes[index] =
+                    (cx[index] + sx[index] * dx) * (cy[index] + sy[index] * dy) * (cz[index] + sz[index] * dz);
 
-            result = field[i][j] * coes[0] + field[i][j + 1] * coes[1] + field[i + 1][j] * coes[2] +
-                     field[i + 1][j + 1] * coes[3];
+            result = field[i][j][k] * coes[0] + field[i][j + 1][k] * coes[1] + field[i + 1][j][k] * coes[2] +
+                     field[i + 1][j + 1][k] * coes[3] + field[i][j][k + 1] * coes[4] +
+                     field[i][j + 1][k + 1] * coes[5] + field[i + 1][j][k + 1] * coes[6] +
+                     field[i + 1][j + 1][k + 1] * coes[7];
 
             return result;
         };
 
         std::vector<Rand01> xrand(devNums);
         std::vector<Rand01> yrand(devNums);
+        std::vector<Rand01> zrand(devNums);
         std::vector<Rand01> Jrand(devNums);
 
         std::vector<Rand01> vrand(devNums);
@@ -5872,14 +6975,15 @@ class HybridModel {
                 double dx, dy;
                 double J;
                 double v, Jv;
-                double x, y;
+                double x, y, z;
                 double pitch, vpara, vperp;
                 double coes[4];
 
                 do {
                     x = x0 + (x1 - x0) * xrand[devId]();
                     y = y0 + (y1 - y0) * yrand[devId]();
-                    J = interp2d(tempJ, x, y);
+                    z = z0 + ((NFP == 1) ? gridDz : (z1 - z0)) * zrand[devId]();
+                    J = interp3d(tempJ, x, y, z);
                 } while (Jrand[devId]() >= J / Jmax);
 
                 do {

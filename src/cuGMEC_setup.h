@@ -27,6 +27,7 @@ const std::string finalDir = outputDir + "/final";
 
 /*----------------------------MHD Parameter----------------------------*/
 
+const int NFP = 1;
 const int gridGhost = 2;
 const int diagY = ((hostNums * devNums == 1) ? gridNy / 2 : 0);
 const int outerLoopMax = totalSteps / sortSteps / ratioDt;
