@@ -302,7 +302,7 @@ class HybridModel {
 
 	/*--------------------------------------------------MHD Perturbation on CPU---------------------------------------------------*/
 
-	mhdReal*** h_qtheta;
+	mhdReal** h_qtheta;
 
 	mhdReal*** h_w;
 	mhdReal*** h_A;
@@ -1020,7 +1020,7 @@ class HybridModel {
 
         /*----------------------------------MHD Perturbation on CPU-----------------------------------*/
 
-        HostAllocator.allocateHostArrays(gridNyPlusGhost, gridNx, equilNz, h_qtheta);
+        HostAllocator.allocateHostArrays(gridNyPlusGhost, gridNx, h_qtheta);
         HostAllocator.allocateHostArrays(gridNyPlusGhost, gridNx, gridNz, h_w, h_A, h_dNe, h_dTe, h_Phi, h_dJpB, h_dPe);
 
         /*-------------------------------Coefficient Compression on CPU-------------------------------*/
@@ -1287,7 +1287,7 @@ class HybridModel {
 
         /*----------------------------------MHD Perturbation on GPU-----------------------------------*/
 
-        DeviceAllocator.allocateDeviceArrays(localId, devNums, (devNy + 2 * gridGhost) * gridNx * equilNz, d_qtheta);
+        DeviceAllocator.allocateDeviceArrays(localId, devNums, (devNy + 2 * gridGhost) * gridNx, d_qtheta);
 
         DeviceAllocator.allocateDeviceArrays(localId, devNums, gridNy * gridNxz, d_w, d_A, d_dNe, d_dTe, d_Phi, d_dJpB,
                                              d_dPe);
@@ -1817,8 +1817,8 @@ class HybridModel {
 
             CUDACHECK(cudaSetDevice(localId * devNums + i));
 
-            H2DAllocator.hostToDevice((devNy + 2 * gridGhost) * gridNx * equilNz, 0,
-                                      (hostId * hostNy + i * devNy) * gridNx * equilNz, d_qtheta[i], h_qtheta[0][0]);
+            H2DAllocator.hostToDevice((devNy + 2 * gridGhost) * gridNx, 0, (hostId * hostNy + i * devNy) * gridNx,
+                                      d_qtheta[i], h_qtheta[0]);
 
             /*-------------------------------------------Linear-------------------------------------------*/
 
@@ -2536,10 +2536,8 @@ class HybridModel {
         input.close();
 
         for (int i = 0; i < gridNx; i++) {
-            for (int j = 0; j < gridNyPlusGhost; j++) {
-                for (int k = 0; k < equilNz; k++)
-                    h_qtheta[j][i][k] = binaryData[i * gridNyPlusGhost * equilNz + j * equilNz + k];
-            }
+            for (int j = 0; j < gridNyPlusGhost; j++)
+                h_qtheta[j][i] = binaryData[i * gridNyPlusGhost * equilNz + j * equilNz + 0];
         }
 
         Allocator B2HAllocator;

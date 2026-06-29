@@ -33,42 +33,42 @@ end
 ni_c = niSample(1,1)*1e19;
 
 if IonType~=3
-    if min(ni)<0
+    if any(ni(:)<0)
         disp('Warning: min(ni) < 0');
     end
-    if min(Ti)<0
+    if any(Ti(:)<0)
         disp('Warning: min(Ti) < 0');
     end
     if IonType==2
-        if min(Pi)<0
+        if any(Pi(:)<0)
             disp('Warning: min(Pi) < 0');
         end
     end
 end
 
 if AlphaType~=3
-    if min(na)<0
+    if any(na(:)<0)
         disp('Warnang: min(na) < 0');
     end
-    if min(Ta)<0
+    if any(Ta(:)<0)
         disp('Warnang: min(Ta) < 0');
     end
     if AlphaType==2
-        if min(Pa)<0
+        if any(Pa(:)<0)
             disp('Warnang: min(Pa) < 0');
         end
     end
 end
 
 if BeamType~=3
-    if min(nb)<0
+    if any(nb(:)<0)
         disp('Warnbng: min(nb) < 0');
     end
-    if min(Tb)<0
+    if any(Tb(:)<0)
         disp('Warnbng: min(Tb) < 0');
     end
     if BeamType==2
-        if min(Pb)<0
+        if any(Pb(:)<0)
             disp('Warnbng: min(Pb) < 0');
         end
     end
@@ -89,7 +89,7 @@ function [y2, dy2dx2] = sliding_poly_derivative(x, y, x2, label, window_len, pol
 %
 %   输入：
 %       x, y     - 原始数据向量（1×N 或 N×1）
-%       x2       - 目标插值点，可以是向量或二维数组（Nx×Ny）
+%       x2       - 目标插值点，可以是向量、二维数组（Nx×Ny）或三维数组（Nx×Ny×Nz）
 %       label    - 字符串，用于图例和标题
 %       window_len - 窗口大小（整数，2 <= window_len <= length(x)）
 %       poly_deg   - 多项式次数（整数，0 <= poly_deg < window_len）
@@ -176,9 +176,8 @@ function [y2, dy2dx2] = sliding_poly_derivative(x, y, x2, label, window_len, pol
         end
     end
 
-    % ---------- 处理 x2：支持二维数组，但仅沿第一维变化 ----------
+    % ---------- 处理 x2：支持二维/三维数组，但仅沿第一维变化 ----------
     x2_orig_shape = size(x2);
-    % 确保 x2 为行向量或二维矩阵（如果是一维，则 reshape 为列向量方便处理）
     if ndims(x2) == 2
         % 如果是二维，取第一列作为代表计算，然后扩展
         x2_col = x2(:, 1);        % 第一列，列向量
@@ -187,8 +186,14 @@ function [y2, dy2dx2] = sliding_poly_derivative(x, y, x2, label, window_len, pol
         % 扩展到与 x2 相同的列数
         y2 = repmat(y2_col, 1, size(x2, 2));
         dy2dx2 = repmat(dydx2_col, 1, size(x2, 2));
+    elseif ndims(x2) == 3
+        % 如果是三维，取 (:,1,1) 作为代表计算，然后扩展到全部 theta/phi 网格
+        x2_col = x2(:, 1, 1);
+        [y2_col, dydx2_col] = interpolate_on_x2(x2_col);
+        y2 = repmat(y2_col, 1, size(x2, 2), size(x2, 3));
+        dy2dx2 = repmat(dydx2_col, 1, size(x2, 2), size(x2, 3));
     else
-        % 一维或更高维，直接计算（但通常只有一维）
+        % 一维或其他形状，直接计算并恢复形状
         x2_vec = x2(:).';
         [y2_vec, dydx2_vec] = interpolate_on_x2(x2_vec);
         % 恢复形状

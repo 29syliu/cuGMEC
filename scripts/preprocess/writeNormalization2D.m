@@ -21,6 +21,10 @@ RHO0 = rho(1,1);
 RHO1 = rho(end,1);
 PSITMAX = psit_max;
 
+gridNx = N_rho;
+gridNy = N_theta;
+NFP = 1;
+
 IonBeta = 0;
 AlphaBeta = 0;
 BeamBeta = 0;
@@ -50,5 +54,5 @@ if BeamType~=3
 end
 
 OutputFileName = strcat(outputPath,'normalization2D.mat');
-save(OutputFileName,'B0','L0','VA0','RHO0','RHO1','PSITMAX','IonBeta','AlphaBeta','BeamBeta');
+save(OutputFileName,'gridNx','gridNy','NFP','B0','L0','VA0','RHO0','RHO1','PSITMAX','IonBeta','AlphaBeta','BeamBeta');
 

@@ -1,21 +1,20 @@
 %%
 %先得到所有平衡量在PEST坐标下的导数，再转换为Shifted Metric坐标下的导数，并进行归一化
 
-zero_ = @(f) zeros(size(f));
-
-transfer2xy_1d = @(f, df_drho, f0) {f/f0, Drho.*df_drho/f0};
-transfer2xy_3d = @(f, df_drho, df_dtheta, f0) {f/f0, df_drho.*Drho/f0, df_dtheta/f0, zero_(f)};
-transfer2xy_3d2 = @(f, df_drho, df_dtheta, df_drho2, df_drhodtheta, df_dtheta2, f0) ...
+transfer2xy_1d = @(f, df_drho, f0) {f/f0, df_drho.*Drho/f0};
+transfer2xy_3d = @(f, df_drho, df_dtheta, df_dphi, f0) {f/f0, df_drho.*Drho/f0, (df_dtheta+df_dphi.*q)/f0, df_dphi/f0};
+transfer2xy_3d2 = @(f, df_drho, df_dtheta, df_dphi, df_drho2, df_drhodtheta, df_drhodphi, df_dtheta2, df_dthetadphi, df_dphi2, f0) ...
     {f/f0, ...
-    df_drho.*Drho/f0, df_dtheta/f0, zero_(f), ...
-    df_drho2.*Drho.^2/f0, Drho.*df_drhodtheta/f0, zero_(f), ...
-    df_dtheta2/f0, zero_(f), zero_(f)};
+    df_drho.*Drho/f0, (df_dtheta+df_dphi.*q)/f0, df_dphi/f0, ...
+    df_drho2.*Drho.^2/f0, (df_drhodtheta.*Drho+df_dphi.*dq_drho.*Drho+df_drhodphi.*Drho.*q)/f0, df_drhodphi.*Drho/f0, ...
+    (df_dtheta2+2.*df_dthetadphi.*q+df_dphi2.*q.^2)/f0, (df_dthetadphi+df_dphi2.*q)/f0, df_dphi2/f0};
 
-output_ = @(f) reshape(f',[],1);
+output_ = @(f) reshape(permute(f,[3,2,1]),[],1);
 
 metric_seq_ = @(g) {g{1,1}, g{1,2}, g{2,2}, g{1,3}, g{2,3}, g{3,3}};
-zero_metric_ = @(g) cellfun(@(x) zero_(x), g, 'UniformOutput', false);
-output_metric_ = @(g,dg_dx,dg_dy) reshape(mbind_col(metric_seq_,g,dg_dx,dg_dy,zero_metric_(g)),[],1);
+output_metric_ = @(g,dg_dx,dg_dy,dg_dz) reshape(mbind_col(metric_seq_,g,dg_dx,dg_dy,dg_dz),[],1);
+
+zero3d = zeros(size(rho));
 
 %% 1d
 
@@ -61,9 +60,9 @@ if IonType~=3
 
 else
 
-    ni_out = transfer2xy_1d(zeros(N_rho,N_theta),zeros(N_rho,N_theta),N0);
-    Ti_out = transfer2xy_1d(zeros(N_rho,N_theta),zeros(N_rho,N_theta),1);
-    Pi_out = transfer2xy_1d(zeros(N_rho,N_theta),zeros(N_rho,N_theta),P0);
+    ni_out = transfer2xy_1d(zero3d,zero3d,N0);
+    Ti_out = transfer2xy_1d(zero3d,zero3d,1);
+    Pi_out = transfer2xy_1d(zero3d,zero3d,P0);
 
 end
 
@@ -95,9 +94,9 @@ if AlphaType~=3
 
 else
 
-    na_out = transfer2xy_1d(zeros(N_rho,N_theta),zeros(N_rho,N_theta),N0);
-    Ta_out = transfer2xy_1d(zeros(N_rho,N_theta),zeros(N_rho,N_theta),1);
-    Pa_out = transfer2xy_1d(zeros(N_rho,N_theta),zeros(N_rho,N_theta),P0);
+    na_out = transfer2xy_1d(zero3d,zero3d,N0);
+    Ta_out = transfer2xy_1d(zero3d,zero3d,1);
+    Pa_out = transfer2xy_1d(zero3d,zero3d,P0);
 
 end
 
@@ -129,9 +128,9 @@ if BeamType~=3
 
 else
 
-    nb_out = transfer2xy_1d(zeros(N_rho,N_theta),zeros(N_rho,N_theta),N0);
-    Tb_out = transfer2xy_1d(zeros(N_rho,N_theta),zeros(N_rho,N_theta),1);
-    Pb_out = transfer2xy_1d(zeros(N_rho,N_theta),zeros(N_rho,N_theta),P0);
+    nb_out = transfer2xy_1d(zero3d,zero3d,N0);
+    Tb_out = transfer2xy_1d(zero3d,zero3d,1);
+    Pb_out = transfer2xy_1d(zero3d,zero3d,P0);
 
 end
 
@@ -158,8 +157,9 @@ Tb_out = mbind_cell_col(output_,Tb_out)';
 Jxyz = JPEST*Drho;
 dJxyz_drho = dJPEST_drho*Drho;
 dJxyz_dtheta = dJPEST_dtheta*Drho;
+dJxyz_dphi = dJPEST_dphi*Drho;
 
-Jxyz_out = transfer2xy_3d(Jxyz, dJxyz_drho, dJxyz_dtheta, J0);
+Jxyz_out = transfer2xy_3d(Jxyz, dJxyz_drho, dJxyz_dtheta, dJxyz_dphi, J0);
 Jxyz_out = mbind_cell_col(output_,Jxyz_out)';
 
 %% Bny
@@ -167,17 +167,18 @@ Jxyz_out = mbind_cell_col(output_,Jxyz_out)';
 Bny = 2*psit_max*Drho*rho./q./Jxyz;
 dBny_drho = 2*psit_max*Drho*(1./q./Jxyz-rho.*dq_drho./Jxyz./q.^2-rho.*dJxyz_drho./q./Jxyz.^2);
 dBny_dtheta = 2*psit_max*Drho*(-rho.*dJxyz_dtheta./q./Jxyz.^2);
+dBny_dphi = 2*psit_max*Drho*(-rho.*dJxyz_dphi./q./Jxyz.^2);
 
-Bny_out = transfer2xy_3d(Bny, dBny_drho, dBny_dtheta, B0/L0);
+Bny_out = transfer2xy_3d(Bny, dBny_drho, dBny_dtheta, dBny_dphi, B0/L0);
 Bny_out = mbind_cell_col(output_,Bny_out)';
 
 %% Metric
 
-gconSFT_out = mbind_cell_col(output_,output_metric_(gconSFT,dgconSFT_dx,dgconSFT_dy))'./gcon0;
-gcovSFT_out = mbind_cell_col(output_,output_metric_(gcovSFT,dgcovSFT_dx,dgcovSFT_dy))'./gcov0;
+gconSFT_out = mbind_cell_col(output_,output_metric_(gconSFT,dgconSFT_dx,dgconSFT_dy,dgconSFT_dz))'./gcon0;
+gcovSFT_out = mbind_cell_col(output_,output_metric_(gcovSFT,dgcovSFT_dx,dgcovSFT_dy,dgcovSFT_dz))'./gcov0;
 
-gconSFA_out = mbind_cell_col(output_,output_metric_(gconSFA,dgconSFA_dx,dgconSFA_dy))'./gcon0;
-gcovSFA_out = mbind_cell_col(output_,output_metric_(gcovSFA,dgcovSFA_dx,dgcovSFA_dy))'./gcov0;
+gconSFA_out = mbind_cell_col(output_,output_metric_(gconSFA,dgconSFA_dx,dgconSFA_dy,dgconSFA_dz))'./gcon0;
+gcovSFA_out = mbind_cell_col(output_,output_metric_(gcovSFA,dgcovSFA_dx,dgcovSFA_dy,dgcovSFA_dz))'./gcov0;
 
 %% FLR 
 
@@ -187,8 +188,9 @@ dni_drho = dni_dr;
 Rho = sqrt(IonMass*mi.*Pi./ni)/e./B;
 dRho_drho = sqrt(IonMass*mi)/e*(0.5*(Pi./ni).^(-0.5).*(dPi_drho./ni-dni_drho.*Pi./ni.^2).*B-dB_drho.*sqrt(Pi./ni))./B.^2;     
 dRho_dtheta = -sqrt(IonMass*mi.*Pi./ni)/e./B.^2.*dB_dtheta;
+dRho_dphi = -sqrt(IonMass*mi.*Pi./ni)/e./B.^2.*dB_dphi;
 
-Rho_out = transfer2xy_3d(Rho, dRho_drho, dRho_dtheta, L0);
+Rho_out = transfer2xy_3d(Rho, dRho_drho, dRho_dtheta, dRho_dphi, L0);
 Rho_out = mbind_cell_col(output_,Rho_out)';
 
 %% Va
@@ -196,8 +198,9 @@ Rho_out = mbind_cell_col(output_,Rho_out)';
 Va = B./sqrt(mu0*IonMass*mi*ni);
 dVa_drho = dB_drho./sqrt(mu0*IonMass*mi*ni) - 0.5*B.*(mu0*IonMass*mi*ni).^(-1.5)*mu0*IonMass*mi.*dni_drho;
 dVa_dtheta = dB_dtheta./sqrt(mu0*IonMass*mi*ni);
+dVa_dphi = dB_dphi./sqrt(mu0*IonMass*mi*ni);
 
-Va_out = transfer2xy_3d(Va, dVa_drho, dVa_dtheta, VA0);
+Va_out = transfer2xy_3d(Va, dVa_drho, dVa_dtheta, dVa_dphi, VA0);
 Va_out = mbind_cell_col(output_,Va_out)';
 
 %% RZ
@@ -209,12 +212,12 @@ RZ_out = mbind_cell_col(output_,RZ_out)';
 
 %% B
 
-Bs_out = transfer2xy_3d2(B, dB_drho, dB_dtheta, dB_drho2, dB_drhodtheta, dB_dtheta2, B0);
+Bs_out = transfer2xy_3d2(B, dB_drho, dB_dtheta, dB_dphi, dB_drho2, dB_drhodtheta, dB_drhodphi, dB_dtheta2, dB_dthetadphi, dB_dphi2, B0);
 Bs_out = mbind_cell_col(output_,Bs_out)';
 
 %% JpB
 
-jp_B_out = transfer2xy_3d(jp_B, djp_B_drho, djp_B_dtheta, Jp_B_0);
+jp_B_out = transfer2xy_3d(jp_B, djp_B_drho, djp_B_dtheta, djp_B_dphi, Jp_B_0);
 jp_B_out = mbind_cell_col(output_,jp_B_out)';
 
 %% q
@@ -250,36 +253,17 @@ B = B / B0;
 J = Jxyz / J0;
 psip = psip / (B0*L0^2);
 SFAcovyz = gcovSFA{2,3} / L0^2;
-SFAcovyz = SFAcovyz(:,1+ghost:size(B,2)+ghost);
+SFAcovzz = gcovSFA{3,3} / L0^2;
+SFAcovyz = SFAcovyz(:,1+ghost:size(B,2)+ghost,:);
+SFAcovzz = SFAcovzz(:,1+ghost:size(B,2)+ghost,:);
 theta = theta_pest;
 
-normalizationFile = fullfile(outputPath, 'normalization2D.mat');
+normalizationFile = fullfile(outputPath, 'normalization3D.mat');
 save(normalizationFile, ...
-    'MP', 'QE', 'B', 'J', 'psip', 'SFAcovyz', ...
-    'q', 'R', 'Z', 'rho', 'theta', '-append');
+    'MP', 'QE', 'B', 'J', 'psip', 'SFAcovyz', 'SFAcovzz', ...
+    'q', 'R', 'Z', 'rho', 'theta', 'phi', 'NFP', 'fullTorus', '-append');
 
 %% function
-
-function [f, df_dr] = poly1d(poly, rho)
-
-    [Nx, Ny] = size(rho);
-    rho_col = rho(:, 1);       
-    P = length(poly);
-    f_val = zeros(Nx, 1);
-    df_val = zeros(Nx, 1);
-
-    for j = 1:P
-        f_val = f_val + poly(j) * rho_col.^(j-1);
-    end
-
-    for j = 2:P
-        df_val = df_val + (j-1) * poly(j) * rho_col.^(j-2);
-    end
-
-    f = repmat(f_val, 1, Ny);
-    df_dr = repmat(df_val, 1, Ny);
-
-end
 
 function out = mbind_col(f,varargin)
     % f:: x -> [a]

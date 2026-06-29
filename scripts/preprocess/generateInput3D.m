@@ -1,15 +1,15 @@
-%% cuGMEC 二维输入文件生成脚本
+%% cuGMEC 三维输入文件生成脚本
 
 %{
 
 1. 脚本功能
-将 DESC 的二维平衡数据和给定的径向粒子剖面转换为 cuGMEC 的平衡输入文件。
+将 DESC 的三维平衡数据和给定的径向粒子剖面转换为 cuGMEC 的平衡输入文件。
 
 2. 代码块 (1) 的参数含义
 addpath：MATLAB 预处理脚本目录和 BSI 目录的位置。
-inputPath：DESC 输出数据和 NTP.mat 所在目录。当前脚本会从该目录读取 standard2D.mat，NTP.mat。
+inputPath：DESC 输出数据和 NTP.mat 所在目录。当前脚本会从该目录读取 standard3D.mat，NTP.mat。
 outputPath：MATLAB 生成 cuGMEC 输入文件的输出目录。
-equilibriumName：最终生成的平衡输入二进制文件名，例如 MHDEquilibrium_256_32.bin。
+equilibriumName：最终生成的平衡输入二进制文件名，例如 MHDEquilibrium_256_32_16.bin。
 
 3. 代码块 (2) 的参数含义
 NTP.mat 需要包含：
@@ -36,8 +36,8 @@ Type = 3：该粒子组分不存在。
 4. 代码块 (3) 的输出
 运行后，outputPath 下会生成：
 equilibriumName，即 cuGMEC 的平衡输入文件，对应 cuGMEC 参数中的 MHDEquilibrium。
-normalization2D.mat，即后续设置 cuGMEC 参数所需的归一化文件。
-normalization2D.mat 中包含 gridNx，gridNy，NFP，B0，L0，VA0，RHO0，RHO1，PSITMAX，IonBeta，AlphaBeta，BeamBeta。
+normalization3D.mat，即后续设置 cuGMEC 参数所需的归一化文件。
+normalization3D.mat 中包含 gridNx，gridNy，gridNz，NFP，tubes，B0，L0，VA0，RHO0，RHO1，PSITMAX，IonBeta，AlphaBeta，BeamBeta。
 
 %}
 
@@ -50,13 +50,13 @@ addpath('C:\Users\Desktop\preprocess\BSI')
 
 inputPath = 'C:\Users\Desktop\';
 outputPath = 'C:\Users\Desktop\';
-equilibriumName = 'MHDEquilibrium_256_32.bin';
+equilibriumName = 'MHDEquilibrium_256_32_16.bin';
 
 if ~exist(outputPath, 'dir')
     mkdir(outputPath);
 end
 
-load(strcat(inputPath,'standard2D.mat'));
+load(strcat(inputPath,'standard3D.mat'));
 
 %% (2)
 
@@ -97,6 +97,6 @@ run writeProfile1D
 
 %% (3)
 
-run DESC2PEST2SFA2D
-run writeNormalization2D
-run writeEquilibrium2D
+run DESC2PEST2SFA3D
+run writeNormalization3D
+run writeEquilibrium3D

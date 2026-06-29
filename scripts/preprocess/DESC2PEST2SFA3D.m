@@ -14,7 +14,12 @@ I1 = ones(N_rho,N_theta,N_phi);
 order = uint64(5);
 
 isperiodic_3d = [false,true,true]';
-range_3d = {[double(rho(1,1,1)),double(rho(end,1,1))];[double(theta_pest(1,1,1)),double(theta_pest(1,1,1))+2*pi];[double(phi(1,1,1)),double(phi(1,1,1))+2*pi/double(NFP)]};
+if fullTorus == 1
+    phi_period = 2*pi;
+else
+    phi_period = 2*pi/double(NFP);
+end
+range_3d = {[double(rho(1,1,1)),double(rho(end,1,1))];[double(theta_pest(1,1,1)),double(theta_pest(1,1,1))+2*pi];[double(phi(1,1,1)),double(phi(1,1,1))+phi_period]};
 
 coor_interp_3d = double([rho(:),theta_pest(:),phi(:)]);
 
@@ -547,9 +552,9 @@ djp_B_drho = (djp_drho.*B-dB_drho.*jp)./B.^2;
 djp_B_dtheta = (djp_dtheta.*B-dB_dtheta.*jp)./B.^2;
 djp_B_dphi = (djp_dphi.*B-dB_dphi.*jp)./B.^2;
 
-plotFields3D_({jp_B,djp_B_drho,djp_B_dtheta,djp_B_dphi}, ...
-    {'Jpara/B','d(Jpara/B)/drho','d(Jpara/B)/dtheta','d(Jpara/B)/dphi'}, ...
-    'Jpara/B',1);
+plotFields3D_({jp,djp_drho,djp_dtheta,djp_dphi}, ...
+    {'Jpara','dJpara/drho','dJpara/dtheta','dJpara/dphi'}, ...
+    'Jpara',1);
 
 
 %% Compare PEST Metric and Jacobian
@@ -759,239 +764,132 @@ plotMetricComponents3D_(gconSFT,gcovSFT, ...
 
 %% Field Aligned Coordinate (SFA)
 
-N_theta_sfa = size(theta_sfa,2);
-N_phi_sfa = size(theta_sfa,3);
-q_withghost = repmat(q(:,1,1),1,N_theta_sfa,N_phi_sfa);
-dq_drho_withghost = repmat(dq_drho(:,1,1),1,N_theta_sfa,N_phi_sfa);
-dq_drho2_withghost = repmat(dq_drho2(:,1,1),1,N_theta_sfa,N_phi_sfa);
-thetap_withghost = theta_sfa;
+ghost = 2;
+
+q_withghost = zeros(N_rho,N_theta+2*ghost,N_phi);
+thetap_withghost = zeros(N_rho,N_theta+2*ghost,N_phi);
+
+for j=1:N_theta+2*ghost
+    for k=1:N_phi
+        q_withghost(:,j,k) = q(:,1,1);
+    end
+end
+
+for i=1:N_rho
+    for k=1:N_phi
+        thetap_withghost(i,:,k) = -pi+(-(ghost-0.5):1:N_theta+(ghost-0.5))/N_theta*2*pi;
+    end
+end
+
 qtheta = q_withghost.*thetap_withghost;
 
-gcon_rhorho = SFA_PESTcon_xx;
-gcon_rhotheta = SFA_PESTcon_xy;
-gcon_rhophi = SFA_PESTcon_xz;
-gcon_thetatheta = SFA_PESTcon_yy;
-gcon_thetaphi = SFA_PESTcon_yz;
-gcon_phiphi = SFA_PESTcon_zz;
-
-gcov_rhorho = SFA_PESTcov_xx;
-gcov_rhotheta = SFA_PESTcov_xy;
-gcov_rhophi = SFA_PESTcov_xz;
-gcov_thetatheta = SFA_PESTcov_yy;
-gcov_thetaphi = SFA_PESTcov_yz;
-gcov_phiphi = SFA_PESTcov_zz;
-
 vars = ["rho","theta","phi"];
-metric_names = ["rhorho","rhotheta","rhophi","thetatheta","thetaphi","phiphi"];
-direct_names = ["xx","xy","xz","yy","yz","zz"];
-direct_vars = ["px","py","pz"];
-for n=1:numel(metric_names)
-    for k=1:3
-        eval(['dgcon_',char(metric_names(n)),'_d',char(vars(k)),' = SFA_dPESTcon_',char(direct_names(n)),'_',char(direct_vars(k)),';']);
-        eval(['dgcov_',char(metric_names(n)),'_d',char(vars(k)),' = SFA_dPESTcov_',char(direct_names(n)),'_',char(direct_vars(k)),';']);
+
+for i=1:3
+    for j=i:3
+        varname = ['gcov_',char(vars(i)),char(vars(j))];
+        eval([varname,' = ','[',varname,'(:,end-ghost+1:end,:),',varname,',',varname,'(:,1:ghost,:)];']);
+        varname = ['gcon_',char(vars(i)),char(vars(j))];
+        eval([varname,' = ','[',varname,'(:,end-ghost+1:end,:),',varname,',',varname,'(:,1:ghost,:)];']);
+    end
+end
+
+for i=1:3
+    for j=i:3
+        for k=1:3
+            varname = ['dgcov_',char(vars(i)),char(vars(j)),'_d',char(vars(k))];        
+            eval([varname,' = ','[',varname,'(:,end-ghost+1:end,:),',varname,',',varname,'(:,1:ghost,:)];']);
+            varname = ['dgcon_',char(vars(i)),char(vars(j)),'_d',char(vars(k))];        
+            eval([varname,' = ','[',varname,'(:,end-ghost+1:end,:),',varname,',',varname,'(:,1:ghost,:)];']);
+        end
     end
 end
 
 gconSFA=reshape({Drho.^(-2).*gcon_rhorho;
 Drho.^(-1).*gcon_rhotheta;
-Drho.^(-1).*(gcon_rhophi+(-1).*gcon_rhotheta.*q_withghost+(-1).*dq_drho_withghost.* ...
-  gcon_rhorho.*thetap_withghost);
+Drho.^(-1).*gcon_rhophi;
 Drho.^(-1).*gcon_rhotheta;
 gcon_thetatheta;
-gcon_thetaphi+(-1).*gcon_thetatheta.*q_withghost+(-1).*dq_drho_withghost.* ...
-  gcon_rhotheta.*thetap_withghost;
-Drho.^(-1).*(gcon_rhophi+(-1).*gcon_rhotheta.*q_withghost+(-1).*dq_drho_withghost.* ...
-  gcon_rhorho.*thetap_withghost);
-gcon_thetaphi+(-1).*gcon_thetatheta.*q_withghost+(-1).*dq_drho_withghost.* ...
-  gcon_rhotheta.*thetap_withghost;
-gcon_phiphi+gcon_thetatheta.*q_withghost.^2+dq_drho_withghost.*thetap_withghost.*((-2).*gcon_rhophi+ ...
-  dq_drho_withghost.*gcon_rhorho.*thetap_withghost)+(-2).*q_withghost.*(gcon_thetaphi+(-1).*dq_drho_withghost.* ...
-  gcon_rhotheta.*thetap_withghost);
+gcon_thetaphi;
+Drho.^(-1).*gcon_rhophi;
+gcon_thetaphi;
+gcon_phiphi;
 },3,3);
 
-
-dgconSFA_dx=reshape({Drho.^(-1).*(dgcon_rhorho_drho+dgcon_rhorho_dphi.*dq_drho_withghost.*thetap_withghost);
-dgcon_rhotheta_drho+dgcon_rhotheta_dphi.*dq_drho_withghost.*thetap_withghost;
-dgcon_rhophi_drho+(-1).*dq_drho_withghost.*gcon_rhotheta+(-1).* ...
-  dgcon_rhotheta_drho.*q_withghost+dgcon_rhophi_dphi.*dq_drho_withghost.*thetap_withghost+(-1).* ...
-  dgcon_rhorho_drho.*dq_drho_withghost.*thetap_withghost+(-1).*dq_drho2_withghost.*gcon_rhorho.*thetap_withghost+(-1) ...
-  .*dgcon_rhotheta_dphi.*dq_drho_withghost.*q_withghost.*thetap_withghost+(-1).*dgcon_rhorho_dphi.* ...
-  dq_drho_withghost.^2.*thetap_withghost.^2;
-dgcon_rhotheta_drho+dgcon_rhotheta_dphi.*dq_drho_withghost.*thetap_withghost;
-Drho.*(dgcon_thetatheta_drho+dgcon_thetatheta_dphi.*dq_drho_withghost.*thetap_withghost);
-Drho.*(dgcon_thetaphi_drho+(-1).*dq_drho_withghost.*gcon_thetatheta+(-1).* ...
-  dgcon_thetatheta_drho.*q_withghost+(-1).*dgcon_rhotheta_drho.*dq_drho_withghost.*thetap_withghost+( ...
-  -1).*dq_drho2_withghost.*gcon_rhotheta.*thetap_withghost+dq_drho_withghost.*thetap_withghost.*(dgcon_thetaphi_dphi+( ...
-  -1).*dgcon_thetatheta_dphi.*q_withghost+(-1).*dgcon_rhotheta_dphi.*dq_drho_withghost.* ...
-  thetap_withghost));
-dgcon_rhophi_drho+(-1).*dq_drho_withghost.*gcon_rhotheta+(-1).* ...
-  dgcon_rhotheta_drho.*q_withghost+dgcon_rhophi_dphi.*dq_drho_withghost.*thetap_withghost+(-1).* ...
-  dgcon_rhorho_drho.*dq_drho_withghost.*thetap_withghost+(-1).*dq_drho2_withghost.*gcon_rhorho.*thetap_withghost+(-1) ...
-  .*dgcon_rhotheta_dphi.*dq_drho_withghost.*q_withghost.*thetap_withghost+(-1).*dgcon_rhorho_dphi.* ...
-  dq_drho_withghost.^2.*thetap_withghost.^2;
-Drho.*(dgcon_thetaphi_drho+(-1).*dq_drho_withghost.*gcon_thetatheta+(-1).* ...
-  dgcon_thetatheta_drho.*q_withghost+(-1).*dgcon_rhotheta_drho.*dq_drho_withghost.*thetap_withghost+( ...
-  -1).*dq_drho2_withghost.*gcon_rhotheta.*thetap_withghost+dq_drho_withghost.*thetap_withghost.*(dgcon_thetaphi_dphi+( ...
-  -1).*dgcon_thetatheta_dphi.*q_withghost+(-1).*dgcon_rhotheta_dphi.*dq_drho_withghost.* ...
-  thetap_withghost));
-Drho.*(dgcon_phiphi_drho+2.*dq_drho_withghost.*gcon_thetatheta.*q_withghost+ ...
-  dgcon_thetatheta_drho.*q_withghost.^2+dq_drho2_withghost.*thetap_withghost.*((-2).*gcon_rhophi+ ...
-  dq_drho_withghost.*gcon_rhorho.*thetap_withghost)+dq_drho_withghost.*thetap_withghost.*((-2).*dgcon_rhophi_drho+ ...
-  dgcon_rhorho_drho.*dq_drho_withghost.*thetap_withghost+dq_drho2_withghost.*gcon_rhorho.*thetap_withghost)+2.* ...
-  dq_drho_withghost.*((-1).*gcon_thetaphi+dq_drho_withghost.*gcon_rhotheta.*thetap_withghost)+2.*q_withghost.*(( ...
-  -1).*dgcon_thetaphi_drho+dgcon_rhotheta_drho.*dq_drho_withghost.*thetap_withghost+ ...
-  dq_drho2_withghost.*gcon_rhotheta.*thetap_withghost)+dq_drho_withghost.*thetap_withghost.*(dgcon_phiphi_dphi+(-2).* ...
-  dgcon_thetaphi_dphi.*q_withghost+dgcon_thetatheta_dphi.*q_withghost.^2+2.*dq_drho_withghost.*(( ...
-  -1).*dgcon_rhophi_dphi+dgcon_rhotheta_dphi.*q_withghost).*thetap_withghost+ ...
-  dgcon_rhorho_dphi.*dq_drho_withghost.^2.*thetap_withghost.^2));
+dgconSFA_dx=reshape({dgcon_rhorho_drho.*Drho.^(-1);
+dgcon_rhotheta_drho;
+dgcon_rhophi_drho;
+dgcon_rhotheta_drho;
+dgcon_thetatheta_drho.*Drho;
+dgcon_thetaphi_drho.*Drho;
+dgcon_rhophi_drho;
+dgcon_thetaphi_drho.*Drho;
+dgcon_phiphi_drho.*Drho;
 },3,3);
 
-
-dgconSFA_dy=reshape({Drho.^(-2).*(dgcon_rhorho_dtheta+dgcon_rhorho_dphi.*q_withghost);
-Drho.^(-1).*(dgcon_rhotheta_dtheta+dgcon_rhotheta_dphi.*q_withghost);
-(-1).*Drho.^(-1).*((-1).*dgcon_rhophi_dtheta+dq_drho_withghost.*gcon_rhorho+ ...
-  dgcon_rhotheta_dphi.*q_withghost.^2+dgcon_rhorho_dtheta.*dq_drho_withghost.*thetap_withghost+q_withghost.*((-1) ...
-  .*dgcon_rhophi_dphi+dgcon_rhotheta_dtheta+dgcon_rhorho_dphi.* ...
-  dq_drho_withghost.*thetap_withghost));
-Drho.^(-1).*(dgcon_rhotheta_dtheta+dgcon_rhotheta_dphi.*q_withghost);
-dgcon_thetatheta_dtheta+dgcon_thetatheta_dphi.*q_withghost;
-dgcon_thetaphi_dtheta+(-1).*dq_drho_withghost.*gcon_rhotheta+(-1).* ...
-  dgcon_thetatheta_dphi.*q_withghost.^2+(-1).*dgcon_rhotheta_dtheta.*dq_drho_withghost.* ...
-  thetap_withghost+(-1).*q_withghost.*((-1).*dgcon_thetaphi_dphi+dgcon_thetatheta_dtheta+ ...
-  dgcon_rhotheta_dphi.*dq_drho_withghost.*thetap_withghost);
-(-1).*Drho.^(-1).*((-1).*dgcon_rhophi_dtheta+dq_drho_withghost.*gcon_rhorho+ ...
-  dgcon_rhotheta_dphi.*q_withghost.^2+dgcon_rhorho_dtheta.*dq_drho_withghost.*thetap_withghost+q_withghost.*((-1) ...
-  .*dgcon_rhophi_dphi+dgcon_rhotheta_dtheta+dgcon_rhorho_dphi.* ...
-  dq_drho_withghost.*thetap_withghost));
-dgcon_thetaphi_dtheta+(-1).*dq_drho_withghost.*gcon_rhotheta+(-1).* ...
-  dgcon_thetatheta_dphi.*q_withghost.^2+(-1).*dgcon_rhotheta_dtheta.*dq_drho_withghost.* ...
-  thetap_withghost+(-1).*q_withghost.*((-1).*dgcon_thetaphi_dphi+dgcon_thetatheta_dtheta+ ...
-  dgcon_rhotheta_dphi.*dq_drho_withghost.*thetap_withghost);
-dgcon_phiphi_dtheta+(-2).*dq_drho_withghost.*gcon_rhophi+ ...
-  dgcon_thetatheta_dphi.*q_withghost.^3+(-2).*dgcon_rhophi_dtheta.*dq_drho_withghost.*thetap_withghost+ ...
-  2.*dq_drho_withghost.^2.*gcon_rhorho.*thetap_withghost+dgcon_rhorho_dtheta.*dq_drho_withghost.^2.* ...
-  thetap_withghost.^2+q_withghost.^2.*((-2).*dgcon_thetaphi_dphi+dgcon_thetatheta_dtheta+2.* ...
-  dgcon_rhotheta_dphi.*dq_drho_withghost.*thetap_withghost)+q_withghost.*(dgcon_phiphi_dphi+(-2).* ...
-  dgcon_thetaphi_dtheta+2.*dq_drho_withghost.*gcon_rhotheta+2.*((-1).* ...
-  dgcon_rhophi_dphi+dgcon_rhotheta_dtheta).*dq_drho_withghost.*thetap_withghost+ ...
-  dgcon_rhorho_dphi.*dq_drho_withghost.^2.*thetap_withghost.^2);
+dgconSFA_dy=reshape({dgcon_rhorho_dtheta.*Drho.^(-2);
+dgcon_rhotheta_dtheta.*Drho.^(-1);
+dgcon_rhophi_dtheta.*Drho.^(-1);
+dgcon_rhotheta_dtheta.*Drho.^(-1);
+dgcon_thetatheta_dtheta;
+dgcon_thetaphi_dtheta;
+dgcon_rhophi_dtheta.*Drho.^(-1);
+dgcon_thetaphi_dtheta;
+dgcon_phiphi_dtheta;
 },3,3);
-
 
 dgconSFA_dz=reshape({dgcon_rhorho_dphi.*Drho.^(-2);
 dgcon_rhotheta_dphi.*Drho.^(-1);
-Drho.^(-1).*(dgcon_rhophi_dphi+(-1).*dgcon_rhotheta_dphi.*q_withghost+(-1).* ...
-  dgcon_rhorho_dphi.*dq_drho_withghost.*thetap_withghost);
+dgcon_rhophi_dphi.*Drho.^(-1);
 dgcon_rhotheta_dphi.*Drho.^(-1);
 dgcon_thetatheta_dphi;
-dgcon_thetaphi_dphi+(-1).*dgcon_thetatheta_dphi.*q_withghost+(-1).* ...
-  dgcon_rhotheta_dphi.*dq_drho_withghost.*thetap_withghost;
-Drho.^(-1).*(dgcon_rhophi_dphi+(-1).*dgcon_rhotheta_dphi.*q_withghost+(-1).* ...
-  dgcon_rhorho_dphi.*dq_drho_withghost.*thetap_withghost);
-dgcon_thetaphi_dphi+(-1).*dgcon_thetatheta_dphi.*q_withghost+(-1).* ...
-  dgcon_rhotheta_dphi.*dq_drho_withghost.*thetap_withghost;
-dgcon_phiphi_dphi+(-2).*dgcon_thetaphi_dphi.*q_withghost+ ...
-  dgcon_thetatheta_dphi.*q_withghost.^2+2.*dq_drho_withghost.*((-1).*dgcon_rhophi_dphi+ ...
-  dgcon_rhotheta_dphi.*q_withghost).*thetap_withghost+dgcon_rhorho_dphi.*dq_drho_withghost.^2.*thetap_withghost.^2;
+dgcon_thetaphi_dphi;
+dgcon_rhophi_dphi.*Drho.^(-1);
+dgcon_thetaphi_dphi;
+dgcon_phiphi_dphi;
 },3,3);
 
-
-gcovSFA=reshape({Drho.^2.*(gcov_rhorho+dq_drho_withghost.*thetap_withghost.*(2.*gcov_rhophi+dq_drho_withghost.* ...
-  gcov_phiphi.*thetap_withghost));
-Drho.*(gcov_rhotheta+dq_drho_withghost.*gcov_thetaphi.*thetap_withghost+q_withghost.*(gcov_rhophi+ ...
-  dq_drho_withghost.*gcov_phiphi.*thetap_withghost));
-Drho.*(gcov_rhophi+dq_drho_withghost.*gcov_phiphi.*thetap_withghost);
-Drho.*(gcov_rhotheta+gcov_rhophi.*q_withghost+dq_drho_withghost.*(gcov_thetaphi+ ...
-  gcov_phiphi.*q_withghost).*thetap_withghost);
-gcov_thetatheta+q_withghost.*(2.*gcov_thetaphi+gcov_phiphi.*q_withghost);
-gcov_thetaphi+gcov_phiphi.*q_withghost;
-Drho.*(gcov_rhophi+dq_drho_withghost.*gcov_phiphi.*thetap_withghost);
-gcov_thetaphi+gcov_phiphi.*q_withghost;
+gcovSFA=reshape({Drho.^2.*gcov_rhorho;
+Drho.*gcov_rhotheta;
+Drho.*gcov_rhophi;
+Drho.*gcov_rhotheta;
+gcov_thetatheta;
+gcov_thetaphi;
+Drho.*gcov_rhophi;
+gcov_thetaphi;
 gcov_phiphi;
 },3,3);
 
-
-dgcovSFA_dx=reshape({Drho.^3.*(dgcov_rhorho_drho+2.*dgcov_rhophi_drho.*dq_drho_withghost.*thetap_withghost+ ...
-  dgcov_rhorho_dphi.*dq_drho_withghost.*thetap_withghost+2.*dq_drho2_withghost.*gcov_rhophi.*thetap_withghost+ ...
-  dgcov_phiphi_drho.*dq_drho_withghost.^2.*thetap_withghost.^2+2.*dgcov_rhophi_dphi.* ...
-  dq_drho_withghost.^2.*thetap_withghost.^2+2.*dq_drho_withghost.*dq_drho2_withghost.*gcov_phiphi.*thetap_withghost.^2+ ...
-  dgcov_phiphi_dphi.*dq_drho_withghost.^3.*thetap_withghost.^3);
-Drho.^2.*(dgcov_rhotheta_drho+dgcov_thetaphi_drho.*dq_drho_withghost.*thetap_withghost+ ...
-  dq_drho2_withghost.*gcov_thetaphi.*thetap_withghost+dq_drho_withghost.*(gcov_rhophi+dq_drho_withghost.* ...
-  gcov_phiphi.*thetap_withghost)+q_withghost.*(dgcov_rhophi_drho+dgcov_phiphi_drho.*dq_drho_withghost.* ...
-  thetap_withghost+dq_drho2_withghost.*gcov_phiphi.*thetap_withghost)+dq_drho_withghost.*thetap_withghost.*(dgcov_rhotheta_dphi+ ...
-  dgcov_thetaphi_dphi.*dq_drho_withghost.*thetap_withghost+q_withghost.*(dgcov_rhophi_dphi+ ...
-  dgcov_phiphi_dphi.*dq_drho_withghost.*thetap_withghost)));
-Drho.^2.*(dgcov_rhophi_drho+(dgcov_phiphi_drho+dgcov_rhophi_dphi) ...
-  .*dq_drho_withghost.*thetap_withghost+dq_drho2_withghost.*gcov_phiphi.*thetap_withghost+dgcov_phiphi_dphi.* ...
-  dq_drho_withghost.^2.*thetap_withghost.^2);
-Drho.^2.*(dgcov_rhotheta_drho+dq_drho_withghost.*gcov_rhophi+ ...
-  dgcov_rhophi_drho.*q_withghost+dq_drho_withghost.*(dgcov_thetaphi_drho+dq_drho_withghost.* ...
-  gcov_phiphi+dgcov_phiphi_drho.*q_withghost).*thetap_withghost+dq_drho2_withghost.*(gcov_thetaphi+ ...
-  gcov_phiphi.*q_withghost).*thetap_withghost+dq_drho_withghost.*thetap_withghost.*(dgcov_rhotheta_dphi+ ...
-  dgcov_rhophi_dphi.*q_withghost+dq_drho_withghost.*(dgcov_thetaphi_dphi+ ...
-  dgcov_phiphi_dphi.*q_withghost).*thetap_withghost));
-Drho.*(dgcov_thetatheta_drho+2.*dq_drho_withghost.*gcov_thetaphi+ ...
-  dgcov_thetatheta_dphi.*dq_drho_withghost.*thetap_withghost+q_withghost.^2.*(dgcov_phiphi_drho+ ...
-  dgcov_phiphi_dphi.*dq_drho_withghost.*thetap_withghost)+2.*q_withghost.*(dgcov_thetaphi_drho+ ...
-  dq_drho_withghost.*gcov_phiphi+dgcov_thetaphi_dphi.*dq_drho_withghost.*thetap_withghost));
-Drho.*(dgcov_thetaphi_drho+dq_drho_withghost.*gcov_phiphi+ ...
-  dgcov_phiphi_drho.*q_withghost+dq_drho_withghost.*(dgcov_thetaphi_dphi+ ...
-  dgcov_phiphi_dphi.*q_withghost).*thetap_withghost);
-Drho.^2.*(dgcov_rhophi_drho+(dgcov_phiphi_drho+dgcov_rhophi_dphi) ...
-  .*dq_drho_withghost.*thetap_withghost+dq_drho2_withghost.*gcov_phiphi.*thetap_withghost+dgcov_phiphi_dphi.* ...
-  dq_drho_withghost.^2.*thetap_withghost.^2);
-Drho.*(dgcov_thetaphi_drho+dq_drho_withghost.*gcov_phiphi+ ...
-  dgcov_phiphi_drho.*q_withghost+dq_drho_withghost.*(dgcov_thetaphi_dphi+ ...
-  dgcov_phiphi_dphi.*q_withghost).*thetap_withghost);
-Drho.*(dgcov_phiphi_drho+dgcov_phiphi_dphi.*dq_drho_withghost.*thetap_withghost);
+dgcovSFA_dx=reshape({dgcov_rhorho_drho.*Drho.^3;
+dgcov_rhotheta_drho.*Drho.^2;
+dgcov_rhophi_drho.*Drho.^2;
+dgcov_rhotheta_drho.*Drho.^2;
+dgcov_thetatheta_drho.*Drho;
+dgcov_thetaphi_drho.*Drho;
+dgcov_rhophi_drho.*Drho.^2;
+dgcov_thetaphi_drho.*Drho;
+dgcov_phiphi_drho.*Drho;
 },3,3);
 
-
-dgcovSFA_dy=reshape({Drho.^2.*(dgcov_rhorho_dtheta+2.*dq_drho_withghost.*gcov_rhophi+ ...
-  dgcov_rhorho_dphi.*q_withghost+2.*dgcov_rhophi_dtheta.*dq_drho_withghost.*thetap_withghost+2.* ...
-  dq_drho_withghost.^2.*gcov_phiphi.*thetap_withghost+2.*dgcov_rhophi_dphi.*dq_drho_withghost.*q_withghost.*thetap_withghost+ ...
-  dgcov_phiphi_dtheta.*dq_drho_withghost.^2.*thetap_withghost.^2+dgcov_phiphi_dphi.* ...
-  dq_drho_withghost.^2.*q_withghost.*thetap_withghost.^2);
-Drho.*(dgcov_rhotheta_dtheta+dq_drho_withghost.*gcov_thetaphi+ ...
-  dgcov_thetaphi_dtheta.*dq_drho_withghost.*thetap_withghost+q_withghost.^2.*(dgcov_rhophi_dphi+ ...
-  dgcov_phiphi_dphi.*dq_drho_withghost.*thetap_withghost)+q_withghost.*(dgcov_rhophi_dtheta+ ...
-  dgcov_rhotheta_dphi+dq_drho_withghost.*gcov_phiphi+dgcov_phiphi_dtheta.* ...
-  dq_drho_withghost.*thetap_withghost+dgcov_thetaphi_dphi.*dq_drho_withghost.*thetap_withghost));
-Drho.*(dgcov_rhophi_dtheta+dq_drho_withghost.*gcov_phiphi+ ...
-  dgcov_phiphi_dtheta.*dq_drho_withghost.*thetap_withghost+q_withghost.*(dgcov_rhophi_dphi+ ...
-  dgcov_phiphi_dphi.*dq_drho_withghost.*thetap_withghost));
-Drho.*(dgcov_rhotheta_dtheta+dgcov_rhophi_dtheta.*q_withghost+dq_drho_withghost.*( ...
-  gcov_thetaphi+gcov_phiphi.*q_withghost)+dq_drho_withghost.*(dgcov_thetaphi_dtheta+ ...
-  dgcov_phiphi_dtheta.*q_withghost).*thetap_withghost+q_withghost.*(dgcov_rhotheta_dphi+ ...
-  dgcov_rhophi_dphi.*q_withghost+dq_drho_withghost.*(dgcov_thetaphi_dphi+ ...
-  dgcov_phiphi_dphi.*q_withghost).*thetap_withghost));
-dgcov_thetatheta_dtheta+(2.*dgcov_thetaphi_dtheta+ ...
-  dgcov_thetatheta_dphi).*q_withghost+(dgcov_phiphi_dtheta+2.* ...
-  dgcov_thetaphi_dphi).*q_withghost.^2+dgcov_phiphi_dphi.*q_withghost.^3;
-dgcov_thetaphi_dtheta+(dgcov_phiphi_dtheta+dgcov_thetaphi_dphi).* ...
-  q_withghost+dgcov_phiphi_dphi.*q_withghost.^2;
-Drho.*(dgcov_rhophi_dtheta+dq_drho_withghost.*gcov_phiphi+ ...
-  dgcov_phiphi_dtheta.*dq_drho_withghost.*thetap_withghost+q_withghost.*(dgcov_rhophi_dphi+ ...
-  dgcov_phiphi_dphi.*dq_drho_withghost.*thetap_withghost));
-dgcov_thetaphi_dtheta+(dgcov_phiphi_dtheta+dgcov_thetaphi_dphi).* ...
-  q_withghost+dgcov_phiphi_dphi.*q_withghost.^2;
-dgcov_phiphi_dtheta+dgcov_phiphi_dphi.*q_withghost;
+dgcovSFA_dy=reshape({dgcov_rhorho_dtheta.*Drho.^2;
+dgcov_rhotheta_dtheta.*Drho;
+dgcov_rhophi_dtheta.*Drho;
+dgcov_rhotheta_dtheta.*Drho;
+dgcov_thetatheta_dtheta;
+dgcov_thetaphi_dtheta;
+dgcov_rhophi_dtheta.*Drho;
+dgcov_thetaphi_dtheta;
+dgcov_phiphi_dtheta;
 },3,3);
 
-
-dgcovSFA_dz=reshape({Drho.^2.*(dgcov_rhorho_dphi+dq_drho_withghost.*thetap_withghost.*(2.*dgcov_rhophi_dphi+ ...
-  dgcov_phiphi_dphi.*dq_drho_withghost.*thetap_withghost));
-Drho.*(dgcov_rhotheta_dphi+dgcov_thetaphi_dphi.*dq_drho_withghost.*thetap_withghost+q_withghost.*( ...
-  dgcov_rhophi_dphi+dgcov_phiphi_dphi.*dq_drho_withghost.*thetap_withghost));
-Drho.*(dgcov_rhophi_dphi+dgcov_phiphi_dphi.*dq_drho_withghost.*thetap_withghost);
-Drho.*(dgcov_rhotheta_dphi+dgcov_rhophi_dphi.*q_withghost+dq_drho_withghost.*( ...
-  dgcov_thetaphi_dphi+dgcov_phiphi_dphi.*q_withghost).*thetap_withghost);
-dgcov_thetatheta_dphi+q_withghost.*(2.*dgcov_thetaphi_dphi+ ...
-  dgcov_phiphi_dphi.*q_withghost);
-dgcov_thetaphi_dphi+dgcov_phiphi_dphi.*q_withghost;
-Drho.*(dgcov_rhophi_dphi+dgcov_phiphi_dphi.*dq_drho_withghost.*thetap_withghost);
-dgcov_thetaphi_dphi+dgcov_phiphi_dphi.*q_withghost;
+dgcovSFA_dz=reshape({dgcov_rhorho_dphi.*Drho.^2;
+dgcov_rhotheta_dphi.*Drho;
+dgcov_rhophi_dphi.*Drho;
+dgcov_rhotheta_dphi.*Drho;
+dgcov_thetatheta_dphi;
+dgcov_thetaphi_dphi;
+dgcov_rhophi_dphi.*Drho;
+dgcov_thetaphi_dphi;
 dgcov_phiphi_dphi;
 },3,3);
 
@@ -1000,25 +898,6 @@ plotMetricComponents3D_(gconSFA,gcovSFA, ...
     dgconSFA_dy,dgcovSFA_dy, ...
     dgconSFA_dz,dgcovSFA_dz, ...
     'SFA');
-
-SFA_identity_error = cell(3,3);
-SFA_identity_error_max = zeros(3,3);
-for i=1:3
-    for j=1:3
-        SFA_identity_error{i,j} = zeros(size(gconSFA{1,1}));
-        for k=1:3
-            SFA_identity_error{i,j} = SFA_identity_error{i,j}+gconSFA{i,k}.*gcovSFA{k,j};
-        end
-        if i == j
-            SFA_identity_error{i,j} = SFA_identity_error{i,j}-1;
-        end
-        SFA_identity_error_max(i,j) = max(abs(SFA_identity_error{i,j}),[],'all');
-    end
-end
-
-disp('max(abs(gconSFA*gcovSFA-I)) =');
-disp(SFA_identity_error_max);
-plotTensorComponents3D_(SFA_identity_error,'SFA identity error');
 
 
 %% local function

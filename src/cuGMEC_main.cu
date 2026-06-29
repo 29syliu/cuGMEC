@@ -494,12 +494,12 @@ int main(int argc, char* argv[]) {
                 forEachDev([&](int i) {
                     if constexpr (std::is_same_v<mhdReal, double>) {
                         cufftExecD2Z(nPlanR2Cs[i], (double*)midl[i] + gridGhost * gridNxz, nFreqd[i]);
-                        MHDSelectNMExtractN<<<LocalNMGridSize, NMBlockSize, 0, 0>>>(nFreqd[i], midl[i], nmLocal[i],
-                                                                                    toroidal);
+                        MHDSelectNMSubtractMode<<<LocalNMGridSize, NMBlockSize, 0, 0>>>(nFreqd[i], midl[i], nmLocal[i],
+                                                                                        toroidal);
                     } else {
                         cufftExecR2C(nPlanR2Cs[i], (float*)midl[i] + gridGhost * gridNxz, nFreqf[i]);
-                        MHDSelectNMExtractN<<<LocalNMGridSize, NMBlockSize, 0, 0>>>(nFreqf[i], midl[i], nmLocal[i],
-                                                                                    toroidal);
+                        MHDSelectNMSubtractMode<<<LocalNMGridSize, NMBlockSize, 0, 0>>>(nFreqf[i], midl[i], nmLocal[i],
+                                                                                        toroidal);
                     }
 
                     MHDSelectNMShifted2A<<<LocalNMGridSize, NMBlockSize, 0, 0>>>(qtheta[i], nmLocal[i], nmLocal[i],

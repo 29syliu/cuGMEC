@@ -48,6 +48,7 @@ const int devNums = 1;
 const int gridNx = 384;
 const int gridNy = 32;
 const int gridNz = 16;
+const int NFP = 6;
 const int ppcNums = 64;
 
 /*-------------------------------MHD Setting------------------------------*/

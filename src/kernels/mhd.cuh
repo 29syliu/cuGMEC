@@ -81,7 +81,10 @@ __global__ void MHDLinearRK4(type* __restrict__ d_qtheta, type* __restrict__ w_b
     qtheta_lr[2] = d_qtheta[offset2d + 1 * gridNx];
     qtheta_lr[3] = d_qtheta[offset2d + 2 * gridNx];
 
-    offset2d = j * gridNx + i;
+    if constexpr (NFP == 1)
+        offset2d = j * gridNx + i;
+    else
+        offset2d = j * gridNxz + i * gridNz + k;
 
     dwdt = 0;
     dAdt = 0;
@@ -358,7 +361,7 @@ __global__ void MHDNonlinearRK4(type* __restrict__ d_qtheta, type* __restrict__ 
     int i = blockIdx.x * blockDim.z + threadIdx.z;
     int j = blockIdx.y * blockDim.y + threadIdx.y;
     int k = blockIdx.z * blockDim.x + threadIdx.x;
-    int offset2d = j * gridNx + i;
+    int offset2d;
     int offset3d = (j + gridGhost) * gridNxz + i * gridNz + k;
     int lane_id = (threadIdx.z * blockDim.y * blockDim.x + threadIdx.y * blockDim.x + threadIdx.x) % 32;
 
@@ -390,6 +393,11 @@ __global__ void MHDNonlinearRK4(type* __restrict__ d_qtheta, type* __restrict__ 
 
     /*---------------------------------------Initialize---------------------------------------*/
 
+    if constexpr (NFP == 1)
+        offset2d = j * gridNx + i;
+    else
+        offset2d = j * gridNxz + i * gridNz + k;
+
     Ne0 = d_Ne0[offset2d];
     Te0 = d_Te0[offset2d];
     Ne0_px = d_Ne0_px[offset2d];
@@ -404,7 +412,10 @@ __global__ void MHDNonlinearRK4(type* __restrict__ d_qtheta, type* __restrict__ 
     qtheta_lr[2] = d_qtheta[offset2d + 1 * gridNx];
     qtheta_lr[3] = d_qtheta[offset2d + 2 * gridNx];
 
-    offset2d = j * gridNx + i;
+    if constexpr (NFP == 1)
+        offset2d = j * gridNx + i;
+    else
+        offset2d = j * gridNxz + i * gridNz + k;
 
     dwdt = 0;
     dAdt = 0;
@@ -705,7 +716,7 @@ __global__ void MHD2dJpBdPePhi(type* __restrict__ A_mid, type* __restrict__ dJpB
     int i = blockIdx.x * blockDim.z + threadIdx.z;
     int j = blockIdx.y * blockDim.y + threadIdx.y;
     int k = blockIdx.z * blockDim.x + threadIdx.x;
-    int offset2d = j * gridNx + i;
+    int offset2d;
     int offset3d = (j + gridGhost) * gridNxz + i * gridNz + k;
     int lane_id = (threadIdx.z * blockDim.y * blockDim.x + threadIdx.y * blockDim.x + threadIdx.x) % 32;
 
@@ -723,6 +734,11 @@ __global__ void MHD2dJpBdPePhi(type* __restrict__ A_mid, type* __restrict__ dJpB
     type compcoes[6];
 
     /*---------------------------------------Initialize---------------------------------------*/
+
+    if constexpr (NFP == 1)
+        offset2d = j * gridNx + i;
+    else
+        offset2d = j * gridNxz + i * gridNz + k;
 
     for (int index = 0; index < 6; index++)
         compcoes[index] = d_A2dJpB[offset2d * 6 + index];
@@ -820,7 +836,7 @@ __global__ void MHD2w(type* __restrict__ Phi_mid, type* __restrict__ w_mid, type
     int i = blockIdx.x * blockDim.z + threadIdx.z;
     int j = blockIdx.y * blockDim.y + threadIdx.y;
     int k = blockIdx.z * blockDim.x + threadIdx.x;
-    int offset2d = j * gridNx + i;
+    int offset2d;
     int offset3d = (j + gridGhost) * gridNxz + i * gridNz + k;
     int lane_id = (threadIdx.z * blockDim.y * blockDim.x + threadIdx.y * blockDim.x + threadIdx.x) % 32;
 
@@ -838,6 +854,11 @@ __global__ void MHD2w(type* __restrict__ Phi_mid, type* __restrict__ w_mid, type
     type compcoes[5];
 
     /*---------------------------------------Initialize---------------------------------------*/
+
+    if constexpr (NFP == 1)
+        offset2d = j * gridNx + i;
+    else
+        offset2d = j * gridNxz + i * gridNz + k;
 
     for (int index = 0; index < 5; index++)
         compcoes[index] = d_Phi2w[offset2d * 5 + index];
@@ -1081,8 +1102,8 @@ __device__ void MHDSelectNMRotateComplex(const cufftType& value, const type& pha
 }
 
 template <typename cufftType, typename type>
-__global__ void MHDSelectNMExtractN(cufftType* __restrict__ d_freq, type* __restrict__ d_field,
-                                    cufftType* __restrict__ d_nmLocal, int toroidal) {
+__global__ void MHDSelectNMSubtractMode(cufftType* __restrict__ d_freq, type* __restrict__ d_field,
+                                        cufftType* __restrict__ d_nmLocal, int toroidal) {
 
     /*-------------------------------------Related Index--------------------------------------*/
 
@@ -1342,7 +1363,10 @@ __global__ void MHD2Apt(type* __restrict__ d_qtheta, type* __restrict__ A_mid, t
     qtheta_lr[2] = d_qtheta[offset2d + 1 * gridNx];
     qtheta_lr[3] = d_qtheta[offset2d + 2 * gridNx];
 
-    offset2d = j * gridNx + i;
+    if constexpr (NFP == 1)
+        offset2d = j * gridNx + i;
+    else
+        offset2d = j * gridNxz + i * gridNz + k;
 
     dAdt = 0;
 
@@ -1877,7 +1901,10 @@ __global__ void MHDDiagEparallel(type* __restrict__ d_qtheta, type* __restrict__
     qtheta_lr[2] = d_qtheta[offset2d + 1 * gridNx];
     qtheta_lr[3] = d_qtheta[offset2d + 2 * gridNx];
 
-    offset2d = j * gridNx + i;
+    if constexpr (NFP == 1)
+        offset2d = j * gridNx + i;
+    else
+        offset2d = j * gridNxz + i * gridNz + k;
 
     Epara = 0;
     EparaES = 0;
@@ -1938,7 +1965,10 @@ __global__ void MHDDiagEparallel(type* __restrict__ d_qtheta, type* __restrict__
         qtheta_lr[2] = d_qtheta[offset2d + 1 * gridNx];
         qtheta_lr[3] = d_qtheta[offset2d + 2 * gridNx];
 
-        offset2d = j * gridNx + i;
+        if constexpr (NFP == 1)
+            offset2d = j * gridNx + i;
+        else
+            offset2d = j * gridNxz + i * gridNz + k;
 
         A = A_mid[offset3d];
         PartialZ<falseType>(k, offset3d, lane_id, A_mid, A, field_du, A_pz);

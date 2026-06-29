@@ -8,7 +8,9 @@
 将相关输入、诊断和输出文件放在同一个 inputDir 中。
 
 必须包含：
-cuGMEC_param.h, standard2D.mat, plot2D.mat, normalization2D.mat, NTP.mat
+cuGMEC_param.h, NTP.mat，以及以下二者之一：
+standard2D.mat, plot2D.mat, normalization2D.mat
+standard3D.mat, plot3D.mat, normalization3D.mat
 
 按开关读取：
 ifDiagAmplitude, ifDiagFrequency, ifDiagEparallel, ifDiagZFDrive,
@@ -30,9 +32,7 @@ clear; close all;
 inputDir = 'C:\Users\Desktop\test';
 
 paramFile = fullfile(inputDir, 'cuGMEC_param.h');
-standardFile = fullfile(inputDir, 'standard2D.mat');
-plotFile = fullfile(inputDir, 'plot2D.mat');
-normalizationFile = fullfile(inputDir, 'normalization2D.mat');
+[standardFile, plotFile, normalizationFile, equilibriumDim] = resolveMHDInputFiles(inputDir);
 NTPFile = fullfile(inputDir, 'NTP.mat');
 bsiDir = fullfile(inputDir, 'BSI');
 scriptDir = fileparts(mfilename('fullpath'));
@@ -57,9 +57,17 @@ end
 paramText = fileread(paramFile);
 mhdInput = loadMHDInputData(standardFile, plotFile, normalizationFile, NTPFile);
 meta = readMHDMetadata(paramText);
+meta.equilibriumDim = equilibriumDim;
+meta.NFP = readNormalizationNFP(mhdInput);
+meta.isTokamak = (meta.NFP == 1);
+meta.isStellarator = (meta.NFP ~= 1);
+plotPhi = [];
+if isfield(mhdInput, 'phi')
+    plotPhi = mhdInput.phi;
+end
 mhdFieldGeom = mhdFieldPlotGeometry(mhdInput.q, mhdInput.theta_pest, mhdInput.rho, ...
     mhdInput.qplot, mhdInput.rhoplot, mhdInput.Rplot, mhdInput.Zplot, ...
-    meta.yGrid, meta.zGrid, meta.tubes, meta.gridGhost);
+    meta.yGrid, meta.zGrid, meta.tubes, meta.gridGhost, meta.NFP, plotPhi);
 mhdData = readAllMHDDiagnostics(inputDir, meta);
 
 mhdWorkspace = struct();
@@ -76,6 +84,7 @@ mhdFieldOpt = struct( ...
     'names', "Phi", ...
     'modeN', meta.physicalNAll(1), ...
     'toroidalAngle', 0.0, ...
+    'toroidalIndex', 1, ...
     'colormapIndex', 1, ...
     'bsplineOrder', 4, ...
     'titleFontSize', 14, ...
@@ -85,7 +94,8 @@ mhdFieldOpt = struct( ...
 enabled      : 是否绘图。
 names         : 可选 "Phi", "A", "dNe", "dTe", "dPi", "dPa", "dPb"。
 modeN         : 真实物理环向模数 n；[] 表示全部有效 n；示例 [6 18 36]。
-toroidalAngle : 绘图所在环向角 phi。
+toroidalAngle : 托卡马克绘图所在环向角 phi。
+toroidalIndex : 仿星器绘图所在环向网格索引。
 colormapIndex : 色表序号，可选 1-5。
 bsplineOrder  : B 样条阶数。
 titleFontSize : 标题字号。
@@ -106,6 +116,7 @@ mhdPoloidalModeOpt = struct( ...
     'names', "Phi", ...
     'modeN', mhdFieldOpt.modeN, ...
     'toroidalAngle', mhdFieldOpt.toroidalAngle, ...
+    'toroidalIndex', mhdFieldOpt.toroidalIndex, ...
     'mRange', [1, 20], ...
     'plotThreshold', 1e-8, ...
     'minFFT', 0, ...
@@ -123,7 +134,8 @@ mhdPoloidalModeOpt = struct( ...
 enabled       : 是否绘图。
 names         : 可选 "Phi", "A", "dNe", "dTe", "dPi", "dPa", "dPb"。
 modeN         : 真实物理环向模数 n；[] 表示全部有效 n；示例 [6 18 36]。
-toroidalAngle : 做极向截面的环向角 phi。
+toroidalAngle : 极向模数对所有环向位置取最大，此项不参与诊断。
+toroidalIndex : 极向模数对所有环向位置取最大，此项不参与诊断。
 mRange        : 绘制的极向模数 m 范围；示例 [1 20]。
 plotThreshold : 只绘制峰值超过全局峰值该比例的 m。
 minFFT        : 只绘制归一化峰值超过该值的 m。
@@ -349,6 +361,7 @@ mhdTotalFieldOpt = struct( ...
     'timeIndex', meta.nOutputTime, ...
     'modeN', meta.physicalNAll, ...
     'toroidalAngle', 0.0, ...
+    'toroidalIndex', 1, ...
     'colormapIndex', 3, ...
     'bsplineOrder', 4, ...
     'titleFontSize', 14, ...
@@ -359,7 +372,8 @@ enabled      : 是否绘图。
 names         : 可选 "Phi", "A", "dNe", "dTe", "dPi", "dPa", "dPb"。
 timeIndex     : total 场量输出时间索引（1 到 nOutputTime）。
 modeN         : 真实物理环向模数 n；[] 表示全部有效 n；示例 [6 18 36]。
-toroidalAngle : 绘图所在环向角 phi。
+toroidalAngle : 托卡马克绘图所在环向角 phi。
+toroidalIndex : 仿星器绘图所在环向网格索引。
 colormapIndex : 色表序号，可选 1-5。
 bsplineOrder  : B 样条阶数。
 titleFontSize : 标题字号。
@@ -382,6 +396,7 @@ mhdTotalPoloidalModeOpt = struct( ...
     'timeIndex', meta.nOutputTime, ...
     'modeN', mhdTotalFieldOpt.modeN, ...
     'toroidalAngle', mhdTotalFieldOpt.toroidalAngle, ...
+    'toroidalIndex', mhdTotalFieldOpt.toroidalIndex, ...
     'mRange', [1, 20], ...
     'plotThreshold', 1e-8, ...
     'minFFT', 0, ...
@@ -400,7 +415,8 @@ enabled       : 是否绘图。
 names         : 可选 "Phi", "A", "dNe", "dTe", "dPi", "dPa", "dPb"；对应 totalPhi 等 total 场。
 timeIndex     : total 场量输出时间索引（1 到 nOutputTime）。
 modeN         : 真实物理环向模数 n；[] 表示全部有效 n；示例 [6 18 36]。
-toroidalAngle : 做极向截面的环向角 phi。
+toroidalAngle : 极向模数对所有环向位置取最大，此项不参与诊断。
+toroidalIndex : 极向模数对所有环向位置取最大，此项不参与诊断。
 mRange        : 绘制的极向模数 m 范围；示例 [1 20]。
 plotThreshold : 只绘制峰值超过全局峰值该比例的 m。
 minFFT        : 只绘制归一化峰值超过该值的 m。
@@ -416,6 +432,38 @@ axisFontSize  : 坐标轴字号。
 mhdWorkspace.totalPoloidalMode = runMHDPoloidalModePlot(mhdData.total, meta, mhdInput, mhdFieldGeom, mhdTotalPoloidalModeOpt);
 
 %% 局部函数
+
+function [standardFile, plotFile, normalizationFile, equilibriumDim] = resolveMHDInputFiles(inputDir)
+
+    standard3DFile = fullfile(inputDir, 'standard3D.mat');
+    plot3DFile = fullfile(inputDir, 'plot3D.mat');
+    normalization3DFile = fullfile(inputDir, 'normalization3D.mat');
+
+    if isfile(standard3DFile) && isfile(plot3DFile) && isfile(normalization3DFile)
+        standardFile = standard3DFile;
+        plotFile = plot3DFile;
+        normalizationFile = normalization3DFile;
+        equilibriumDim = 3;
+        return;
+    end
+
+    standard2DFile = fullfile(inputDir, 'standard2D.mat');
+    plot2DFile = fullfile(inputDir, 'plot2D.mat');
+    normalization2DFile = fullfile(inputDir, 'normalization2D.mat');
+
+    standardFile = standard2DFile;
+    plotFile = plot2DFile;
+    normalizationFile = normalization2DFile;
+    equilibriumDim = 2;
+end
+
+function NFP = readNormalizationNFP(mhdInput)
+
+    assert(isfield(mhdInput, 'NFP'), '归一化 MAT 文件缺少字段 "NFP"。');
+    NFP = double(mhdInput.NFP);
+    assert(isscalar(NFP) && isfinite(NFP) && NFP == floor(NFP) && NFP >= 1, ...
+        'NFP 必须为正整数。');
+end
 
 function [shifted, aligned, hasResult] = extractShiftedAligned(workspace)
 
@@ -731,10 +779,7 @@ end
 function [plotField, fftField, xVec, xLabelText, selectedM, yData, rawAmplitude] = ...
     calculateMHDPoloidalModeFFT(fieldZYX, mhdInput, geom, opt)
 
-    alignedField = undoMHDFieldAlignedShift(fieldZYX, geom, opt);
-    alignedGhost = buildFieldAlignedGhost(alignedField, geom, opt);
-    [alignedRefined, ~, refinedIndex] = refineFieldAlignedY(alignedGhost, geom, opt);
-    pestRefined = shiftAlignedToRefinedPest(alignedRefined, refinedIndex, geom, opt);
+    pestRefined = prepareMHDPESTField(fieldZYX, geom, opt, geom.nPlotTheta);
 
     plotField = squeeze(pestRefined(1, :, :));
     fftField = fft(pestRefined, [], 3);
@@ -768,6 +813,18 @@ function [plotField, fftField, xVec, xLabelText, selectedM, yData, rawAmplitude]
     [xVec, xLabelText] = poloidalModeRadialAxis(mhdInput, geom, opt, size(amplitude, 1));
 end
 
+function [pestRefined, alignedField, refinedYGrid] = prepareMHDPESTField(fieldZYX, geom, opt, targetThetaCount)
+
+    if nargin < 4
+        targetThetaCount = [];
+    end
+
+    alignedField = undoMHDFieldAlignedShift(fieldZYX, geom, opt);
+    alignedGhost = buildFieldAlignedGhost(alignedField, geom, opt);
+    [alignedRefined, refinedYGrid, refinedIndex] = refineFieldAlignedY(alignedGhost, geom, opt, targetThetaCount);
+    pestRefined = shiftAlignedToRefinedPest(alignedRefined, refinedIndex, geom, opt);
+end
+
 function alignedGhost = buildFieldAlignedGhost(alignedField, geom, opt)
 
     [nZ, nX, nY] = size(alignedField);
@@ -791,17 +848,20 @@ function alignedGhost = buildFieldAlignedGhost(alignedField, geom, opt)
     end
 end
 
-function [alignedRefined, refinedYGrid, refinedIndex] = refineFieldAlignedY(alignedGhost, geom, opt)
+function [alignedRefined, refinedYGrid, refinedIndex] = refineFieldAlignedY(alignedGhost, geom, opt, targetThetaCount)
 
     [nZ, nX, ~] = size(alignedGhost);
     nY = numel(geom.yGrid);
     gridGhost = geom.gridGhost;
-    refinedTimes = poloidalFFTRefinedTimes(opt, nY);
+    if nargin < 4
+        targetThetaCount = [];
+    end
+    refinedTimes = poloidalFFTRefinedTimes(opt, nY, targetThetaCount);
     refinedNy = nY * refinedTimes;
     dtheta = 2.0 * pi / nY;
     theta0 = geom.yGrid(1);
 
-    refinedIndex = ((0:refinedNy - 1) + 1) / refinedTimes - 1;
+    refinedIndex = ((0:refinedNy - 1) + 0.5) / refinedTimes - 0.5;
     refinedYGrid = theta0 + refinedIndex * dtheta;
     alignedRefined = zeros(nZ, nX, refinedNy);
     for iY = 1:refinedNy
@@ -815,7 +875,7 @@ function [alignedRefined, refinedYGrid, refinedIndex] = refineFieldAlignedY(alig
     end
 end
 
-function refinedTimes = poloidalFFTRefinedTimes(opt, gridNy)
+function refinedTimes = poloidalFFTRefinedTimes(opt, gridNy, targetThetaCount)
 
     refinedTimes = 2;
     if isfield(opt, 'mRange') && numel(opt.mRange) >= 2
@@ -824,7 +884,12 @@ function refinedTimes = poloidalFFTRefinedTimes(opt, gridNy)
         maxM = floor(gridNy / 2);
     end
 
-    while gridNy * refinedTimes <= 16 * maxM
+    minRefinedNy = 16 * maxM;
+    if nargin >= 3 && ~isempty(targetThetaCount)
+        minRefinedNy = max(minRefinedNy, double(targetThetaCount));
+    end
+
+    while gridNy * refinedTimes < minRefinedNy
         refinedTimes = refinedTimes * 2;
     end
 end
@@ -1380,21 +1445,123 @@ function fieldFilteredZYX = filterMHDToroidalModes(fieldZYX, modeIndexAll, modeI
     fieldFilteredZYX = real(ifft(fieldSpectrum, [], 1));
 end
 
-function geom = mhdFieldPlotGeometry(q, theta_pest, rho, qplot, rhoplot, Rplot, Zplot, yGrid, zGrid, tubes, gridGhost)
-    [nPlotRho, nPlotTheta] = size(qplot);
+function geom = mhdFieldPlotGeometry(q, theta_pest, rho, qplot, rhoplot, Rplot, Zplot, yGrid, zGrid, tubes, gridGhost, NFP, phi)
+    [nPlotRho, nPlotTheta, nPlotPhi] = size(qplot);
     thetaPlotGrid = (0.5:nPlotTheta - 0.5) / nPlotTheta * 2 * pi - pi;
+    q2D = firstToroidalSlice(q);
+    theta2D = firstToroidalSlice(theta_pest);
+    rho2D = firstToroidalSlice(rho);
+    has3DPlot = (ndims(qplot) >= 3 && nPlotPhi > 1);
 
-    geom.qtheta = q .* theta_pest;
-    geom.rhoGrid = rho(:, 1);
-    geom.Rplot = Rplot;
-    geom.Zplot = Zplot;
-    geom.rhoplot = rhoplot;
+    geom.qtheta = q2D .* theta2D;
+    geom.rhoGrid = rho2D(:, 1);
+    geom.qplotAll = qplot;
+    geom.rhoplotAll = rhoplot;
+    geom.RplotAll = Rplot;
+    geom.ZplotAll = Zplot;
+    geom.qplot = firstToroidalSlice(qplot);
+    geom.Rplot = firstToroidalSlice(Rplot);
+    geom.Zplot = firstToroidalSlice(Zplot);
+    geom.rhoplot = firstToroidalSlice(rhoplot);
     geom.thplot = repmat(thetaPlotGrid, nPlotRho, 1);
-    geom.qthetaplot = qplot .* geom.thplot;
+    geom.qthetaplot = geom.qplot .* geom.thplot;
+    geom.nPlotTheta = nPlotTheta;
+    geom.nPlotPhi = nPlotPhi;
+    geom.plotPhiGrid = mhdPlotPhiGrid(phi, nPlotPhi, zGrid);
+    geom.has3DPlot = has3DPlot;
+    geom.NFP = NFP;
+    geom.isTokamak = (NFP == 1);
+    geom.isStellarator = (NFP ~= 1);
     geom.yGrid = yGrid;
     geom.zGrid = zGrid;
     geom.tubes = tubes;
     geom.gridGhost = gridGhost;
+end
+
+function value2D = firstToroidalSlice(value)
+
+    if ndims(value) >= 3 && size(value, 3) > 1
+        value2D = value(:, :, 1);
+    else
+        value2D = value;
+    end
+    value2D = squeeze(value2D);
+end
+
+function phiGrid = mhdPlotPhiGrid(phi, nPlotPhi, zGrid)
+
+    if nargin < 1 || isempty(phi)
+        if nPlotPhi == numel(zGrid)
+            phiGrid = zGrid(:);
+        else
+            phiGrid = zeros(nPlotPhi, 1);
+        end
+        return;
+    end
+
+    if ndims(phi) >= 3
+        phiGrid = squeeze(phi(1, 1, :));
+    elseif isvector(phi)
+        phiGrid = phi(:);
+    else
+        phiGrid = squeeze(phi(1, :));
+    end
+
+    assert(numel(phiGrid) == nPlotPhi, ...
+        'phi 网格长度必须匹配 plot3D.mat 的环向维度。');
+    phiGrid = double(phiGrid(:));
+end
+
+function [planeGeom, phi0, toroidalIndex] = mhdPlotPlaneGeometry(geom, opt)
+
+    if geom.isStellarator
+        assert(geom.has3DPlot, '仿星器绘图需要 plot3D.mat。');
+        requestedIndex = 1;
+        if isfield(opt, 'toroidalIndex') && ~isempty(opt.toroidalIndex)
+            requestedIndex = opt.toroidalIndex;
+        end
+        toroidalIndex = parseToroidalIndex(requestedIndex, geom.nPlotPhi);
+        phi0 = geom.plotPhiGrid(toroidalIndex);
+    else
+        toroidalIndex = 1;
+        phi0 = 0.0;
+        if isfield(opt, 'toroidalAngle') && ~isempty(opt.toroidalAngle)
+            phi0 = double(opt.toroidalAngle);
+        end
+    end
+
+    planeGeom = geom;
+    planeGeom.qplot = mhdPlotToroidalSlice(geom.qplotAll, toroidalIndex);
+    planeGeom.rhoplot = mhdPlotToroidalSlice(geom.rhoplotAll, toroidalIndex);
+    planeGeom.Rplot = mhdPlotToroidalSlice(geom.RplotAll, toroidalIndex);
+    planeGeom.Zplot = mhdPlotToroidalSlice(geom.ZplotAll, toroidalIndex);
+    planeGeom.qthetaplot = planeGeom.qplot .* geom.thplot;
+end
+
+function value2D = mhdPlotToroidalSlice(value, toroidalIndex)
+
+    if ndims(value) >= 3 && size(value, 3) > 1
+        value2D = squeeze(value(:, :, toroidalIndex));
+    else
+        value2D = squeeze(value);
+    end
+end
+
+function toroidalIndex = parseToroidalIndex(toroidalIndex, nPlotPhi)
+
+    toroidalIndex = double(toroidalIndex);
+    assert(isscalar(toroidalIndex) && isfinite(toroidalIndex) && ...
+        toroidalIndex == floor(toroidalIndex) && toroidalIndex >= 1 && toroidalIndex <= nPlotPhi, ...
+        'toroidalIndex 必须是 [1, %d] 内的整数。', nPlotPhi);
+end
+
+function text = mhdToroidalLocationText(geom, phi0, toroidalIndex)
+
+    if geom.isStellarator
+        text = sprintf('phiIndex=%d, phi=%.6g', toroidalIndex, phi0);
+    else
+        text = sprintf('phi=%.6g', phi0);
+    end
 end
 
 function [shifted, aligned] = plotMHDFieldOnPoloidalPlane(fieldZYX, fieldName, geom, opt, physicalN, contextText)
@@ -1405,18 +1572,18 @@ function [shifted, aligned] = plotMHDFieldOnPoloidalPlane(fieldZYX, fieldName, g
         contextText = '';
     end
 
-    fieldNonShiftZYX = undoMHDFieldAlignedShift(fieldZYX, geom, opt);
+    [pestRefined, fieldNonShiftZYX, refinedYGrid] = prepareMHDPESTField(fieldZYX, geom, opt, geom.nPlotTheta);
     shifted = mhdFieldZYXToNYXZ(fieldZYX);
     aligned = mhdFieldZYXToNYXZ(fieldNonShiftZYX);
-    fieldPlotZYX = normalizeMHDFieldForPlot(fieldNonShiftZYX);
-    result = interpolateMHDFieldToPlotGrid(fieldPlotZYX, geom, opt);
-    drawMHDFieldSurface(result, fieldName, geom, opt);
+    fieldPlotZYX = normalizeMHDFieldForPlot(pestRefined);
+    [result, planeGeom, phi0, toroidalIndex] = interpolateMHDFieldToPlotGrid(fieldPlotZYX, refinedYGrid, geom, opt);
+    drawMHDFieldSurface(result, fieldName, planeGeom, opt);
 
     if strlength(string(contextText)) > 0
         contextText = [char(contextText), ', '];
     end
-    fprintf('[plot] %s: %sphi=%.6g, n=[%s]\n', ...
-        char(fieldName), char(contextText), opt.toroidalAngle, formatNumberList(physicalN));
+    fprintf('[plot] %s: %s%s, n=[%s]\n', ...
+        char(fieldName), char(contextText), mhdToroidalLocationText(geom, phi0, toroidalIndex), formatNumberList(physicalN));
 end
 
 function fieldPlotZYX = normalizeMHDFieldForPlot(fieldZYX)
@@ -1442,19 +1609,20 @@ function fieldNonShiftZYX = undoMHDFieldAlignedShift(fieldZYX, geom, opt)
     end
 end
 
-function result = interpolateMHDFieldToPlotGrid(fieldNonShiftZYX, geom, opt)
-    plotZ = opt.toroidalAngle - geom.qthetaplot;
-    coordinate3D = [plotZ(:), geom.rhoplot(:), geom.thplot(:)];
+function [result, planeGeom, phi0, toroidalIndex] = interpolateMHDFieldToPlotGrid(fieldPestZYX, refinedYGrid, geom, opt)
+    [planeGeom, phi0, toroidalIndex] = mhdPlotPlaneGeometry(geom, opt);
+    plotZ = phi0 + zeros(size(planeGeom.rhoplot));
+    coordinate3D = [plotZ(:), planeGeom.rhoplot(:), planeGeom.thplot(:)];
     derivative = uint64([0, 0, 0])';
     isPeriodic = [true, false, false]';
     rangeZRhoTheta = { ...
         [geom.zGrid(1), geom.zGrid(1) + 2 * pi / geom.tubes]; ...
         [geom.rhoGrid(1), geom.rhoGrid(end)]; ...
-        [geom.yGrid(1), geom.yGrid(1) + 2 * pi]};
+        [refinedYGrid(1), refinedYGrid(1) + 2 * pi]};
 
     result = bspline(uint64(opt.bsplineOrder), isPeriodic, rangeZRhoTheta, ...
-        fieldNonShiftZYX, coordinate3D, derivative);
-    result = reshape(result, size(geom.Rplot));
+        fieldPestZYX, coordinate3D, derivative);
+    result = reshape(result, size(planeGeom.Rplot));
 end
 
 function drawMHDFieldSurface(result, fieldName, geom, opt)

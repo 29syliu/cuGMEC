@@ -824,14 +824,14 @@ djp_B_dphi = (djp_dphi.*B-dB_dphi.*jp)./B.^2;
 
 figure;
 subplot(1,3,1);
-mesh(jp_B);
-title('Jpara/B');
+mesh(jp);
+title('Jpara');
 subplot(1,3,2);
-mesh(djp_B_drho);
-title('d(Jpara/B)/drho');
+mesh(djp_drho);
+title('dJpara/drho');
 subplot(1,3,3);
-mesh(djp_B_dtheta);
-title('d(Jpara/B)/dtheta');
+mesh(djp_dtheta);
+title('dJpara/dtheta');
 
 %% Shifted Metric Coordinate (SFT)
 
