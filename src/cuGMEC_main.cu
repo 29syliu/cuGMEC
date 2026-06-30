@@ -147,6 +147,7 @@ int main(int argc, char* argv[]) {
                    .A = toBool<ifOutputA>,
                    .dNe = toBool<ifOutputdNe>,
                    .dTe = toBool<ifOutputdTe>,
+                   .dP = toBool<ifOutputdP>,
                    .dPi = toBool<ifOutputdPi>,
                    .dPa = toBool<ifOutputdPa>,
                    .dPb = toBool<ifOutputdPb>}});
@@ -209,6 +210,7 @@ int main(int argc, char* argv[]) {
     REF(A_beg);   REF(A_midl);   REF(A_midr);   REF(A_end);
     REF(dNe_beg); REF(dNe_midl); REF(dNe_midr); REF(dNe_end);
     REF(dTe_beg); REF(dTe_midl); REF(dTe_midr); REF(dTe_end);
+    REF(dP_beg);  REF(dP_midl);  REF(dP_midr);  REF(dP_end);
 
     REF(Phi_midl);  REF(Phi_midr);
     REF(dJpB_midl); REF(dJpB_midr);
@@ -217,9 +219,9 @@ int main(int argc, char* argv[]) {
     REF(Ne0); REF(Te0); REF(Ne0_px); REF(Te0_px);
 
     REF(w2Phi); REF(A2dJpB); REF(Phi2w);
-    REF(wdPAdJpB2w); REF(APhidNe2A); REF(dPePhiAdJpB2dNe); REF(PhidTedNe2dTe);
+    REF(wdPAdJpB2w); REF(APhidNe2A); REF(dPePhiAdJpB2dNe); REF(PhidTedNe2dTe); REF(Phi2dP);
     REF(wPhi_w); REF(AdJpB_w); REF(PhiA_A); REF(NeA_A);
-    REF(dNePhi_dNe); REF(PhiTe_dTe); REF(PhiTeA_dTe);
+    REF(dNePhi_dNe); REF(PhiTe_dTe); REF(PhiTeA_dTe); REF(dPPhi_dP);
 
     REF(pic1d); REF(pic2d); REF(pic3d);
     REF(globalA);  REF(globalPhi); REF(globalApt);
@@ -245,7 +247,7 @@ int main(int argc, char* argv[]) {
     REF(IonPhasePower);  REF(AlphaPhasePower);  REF(BeamPhasePower);
     REF(IonPitchPower);  REF(AlphaPitchPower);  REF(BeamPitchPower);
     REF(NANFlag);
-    REF(totalPhi); REF(totalA); REF(totaldNe); REF(totaldTe);
+    REF(totalPhi); REF(totalA); REF(totaldNe); REF(totaldTe); REF(totaldP);
     REF(totaldPi); REF(totaldPa); REF(totaldPb);
 
     REF(nmLocal); REF(nmGlobal); REF(nmRefined);
@@ -329,15 +331,15 @@ int main(int argc, char* argv[]) {
                 MHDQNeutrality2dNe<<<MRK4GridSize, MRK4BlockSize, 0, 0>>>(w_midl[i], dNi_midl[i], dNa_midl[i],
                                                                           dNb_midl[i], dNe_midl[i]);
             }
-            MHD2dJpBdPePhi<ifNonlinearMHD, ifLocal, ifFLRMHD><<<MRK4GridSize, MRK4BlockSize, 0, 0>>>(
+            MHD2dJpBdPePhi<ifNonlinearMHD, ifLocal, ifFLRMHD, ifReducedMHD><<<MRK4GridSize, MRK4BlockSize, 0, 0>>>(
                 A_midl[i], dJpB_midl[i], A2dJpB[i], w_midl[i], Phi_midl[i], w2Phi[i], dNe_midl[i], dTe_midl[i],
-                dPe_midl[i], Ne0[i], Te0[i]);
+                dP_midl[i], dPe_midl[i], Ne0[i], Te0[i]);
             cudaMemcpyAsync(w_beg[i], w_midl[i], sizeof(mhdReal) * (devNy + 2 * gridGhost) * gridNxz,
                             cudaMemcpyDeviceToDevice, 0);
         });
 
         ncclGroupStart();
-        haloExchange(w_midl, A_midl, dNe_midl, dTe_midl, Phi_midl, dJpB_midl, dPe_midl);
+        haloExchange(w_midl, A_midl, dNe_midl, dTe_midl, dP_midl, Phi_midl, dJpB_midl, dPe_midl);
         haloExchange.template operator()<ifIon>(dPi_midl);
         haloExchange.template operator()<ifAlpha>(dPa_midl);
         haloExchange.template operator()<ifBeam>(dPb_midl);
@@ -348,23 +350,27 @@ int main(int argc, char* argv[]) {
     };
 
     auto runMHDRK4Stage = [&]<int stage>(mhdReal** w_in = nullptr, mhdReal** A_in = nullptr, mhdReal** dNe_in = nullptr,
-                                         mhdReal** dTe_in = nullptr, mhdReal** w_out = nullptr,
-                                         mhdReal** A_out = nullptr, mhdReal** dNe_out = nullptr,
-                                         mhdReal** dTe_out = nullptr) {
+                                         mhdReal** dTe_in = nullptr, mhdReal** dP_in = nullptr,
+                                         mhdReal** w_out = nullptr, mhdReal** A_out = nullptr,
+                                         mhdReal** dNe_out = nullptr, mhdReal** dTe_out = nullptr,
+                                         mhdReal** dP_out = nullptr) {
         if constexpr (stage != 5) {
             forEachDev([&](int i) {
-                MHDLinearRK4<stage, ifNonlinearMHD, ifLocal, ifEparallel><<<MRK4GridSize, MRK4BlockSize, 0, 0>>>(
-                    qtheta[i], w_beg[i], w_in[i], w_out[i], w_end[i], A_beg[i], A_in[i], A_out[i], A_end[i], dNe_beg[i],
-                    dNe_in[i], dNe_out[i], dNe_end[i], dTe_beg[i], dTe_in[i], dTe_out[i], dTe_end[i], Phi_midl[i],
-                    dJpB_midl[i], dPe_midl[i], dPi_midl[i], dPa_midl[i], dPb_midl[i], wdPAdJpB2w[i], APhidNe2A[i],
-                    dPePhiAdJpB2dNe[i], PhidTedNe2dTe[i]);
+                MHDLinearRK4<stage, ifNonlinearMHD, ifLocal, ifEparallel, ifReducedMHD>
+                    <<<MRK4GridSize, MRK4BlockSize, 0, 0>>>(
+                        qtheta[i], w_beg[i], w_in[i], w_out[i], w_end[i], A_beg[i], A_in[i], A_out[i], A_end[i],
+                        dNe_beg[i], dNe_in[i], dNe_out[i], dNe_end[i], dTe_beg[i], dTe_in[i], dTe_out[i], dTe_end[i],
+                        dP_beg[i], dP_in[i], dP_out[i], dP_end[i], Phi_midl[i], dJpB_midl[i], dPe_midl[i], dPi_midl[i],
+                        dPa_midl[i], dPb_midl[i], wdPAdJpB2w[i], APhidNe2A[i], dPePhiAdJpB2dNe[i], PhidTedNe2dTe[i],
+                        Phi2dP[i]);
                 if constexpr (std::is_same_v<ifNonlinearMHD, trueType>) {
-                    MHDNonlinearRK4<stage, ifMaxwellStress, ifReynoldsStress, ifDiagZFDrive, ifLocal, ifEparallel>
-                        <<<MRK4GridSize, MRK4BlockSize, 0, 0>>>(
-                            qtheta[i], w_in[i], w_out[i], w_end[i], A_in[i], A_out[i], A_end[i], dNe_in[i], dNe_out[i],
-                            dNe_end[i], dTe_in[i], dTe_out[i], dTe_end[i], Phi_midl[i], dJpB_midl[i], dPe_midl[i],
-                            Ne0[i], Te0[i], Ne0_px[i], Te0_px[i], APhidNe2A[i], wPhi_w[i], AdJpB_w[i], PhiA_A[i],
-                            NeA_A[i], dNePhi_dNe[i], PhiTe_dTe[i], PhiTeA_dTe[i], Maxwell[i], Reynolds[i]);
+                    MHDNonlinearRK4<stage, ifMaxwellStress, ifReynoldsStress, ifDiagZFDrive, ifLocal, ifEparallel,
+                                    ifReducedMHD><<<MRK4GridSize, MRK4BlockSize, 0, 0>>>(
+                        qtheta[i], w_in[i], w_out[i], w_end[i], A_in[i], A_out[i], A_end[i], dNe_in[i], dNe_out[i],
+                        dNe_end[i], dTe_in[i], dTe_out[i], dTe_end[i], dP_in[i], dP_out[i], dP_end[i], Phi_midl[i],
+                        dJpB_midl[i], dPe_midl[i], Ne0[i], Te0[i], Ne0_px[i], Te0_px[i], APhidNe2A[i], wPhi_w[i],
+                        AdJpB_w[i], PhiA_A[i], NeA_A[i], dNePhi_dNe[i], PhiTe_dTe[i], PhiTeA_dTe[i], dPPhi_dP[i],
+                        Maxwell[i], Reynolds[i]);
                 }
                 for (int j = 0; j < devNy; j++) {
                     cudssMatrixSetValues(laplacianBs[i][j], w_out[i] + (j + gridGhost) * gridNxz);
@@ -376,9 +382,10 @@ int main(int argc, char* argv[]) {
                                                                               dNb_midl[i], dNe_out[i]);
                 }
                 if constexpr (stage != 4) {
-                    MHD2dJpBdPePhi<ifNonlinearMHD, ifLocal, ifFLRMHD><<<MRK4GridSize, MRK4BlockSize, 0, 0>>>(
-                        A_out[i], dJpB_midl[i], A2dJpB[i], w_out[i], Phi_midl[i], w2Phi[i], dNe_out[i], dTe_out[i],
-                        dPe_midl[i], Ne0[i], Te0[i]);
+                    MHD2dJpBdPePhi<ifNonlinearMHD, ifLocal, ifFLRMHD, ifReducedMHD>
+                        <<<MRK4GridSize, MRK4BlockSize, 0, 0>>>(A_out[i], dJpB_midl[i], A2dJpB[i], w_out[i],
+                                                                Phi_midl[i], w2Phi[i], dNe_out[i], dTe_out[i],
+                                                                dP_out[i], dPe_midl[i], Ne0[i], Te0[i]);
                 }
                 if constexpr (stage == 4 && std::is_same_v<ifDiagZFDrive, trueType>) {
                     cudaMemcpyAsync(w_in[i], w_beg[i], sizeof(mhdReal) * (devNy + 2 * gridGhost) * gridNxz,
@@ -387,7 +394,7 @@ int main(int argc, char* argv[]) {
             });
             if constexpr (stage != 4) {
                 ncclGroupStart();
-                haloExchange(w_out, A_out, dNe_out, dTe_out, Phi_midl, dJpB_midl, dPe_midl);
+                haloExchange(w_out, A_out, dNe_out, dTe_out, dP_out, Phi_midl, dJpB_midl, dPe_midl);
                 ncclGroupEnd();
             }
         } else {
@@ -397,9 +404,9 @@ int main(int argc, char* argv[]) {
                     MHDQNeutrality2dNe<<<MRK4GridSize, MRK4BlockSize, 0, 0>>>(w_midl[i], dNi_midl[i], dNa_midl[i],
                                                                               dNb_midl[i], dNe_midl[i]);
                 }
-                MHD2dJpBdPePhi<ifNonlinearMHD, ifLocal, ifFLRMHD><<<MRK4GridSize, MRK4BlockSize, 0, 0>>>(
+                MHD2dJpBdPePhi<ifNonlinearMHD, ifLocal, ifFLRMHD, ifReducedMHD><<<MRK4GridSize, MRK4BlockSize, 0, 0>>>(
                     A_midl[i], dJpB_midl[i], A2dJpB[i], w_midl[i], Phi_midl[i], w2Phi[i], dNe_midl[i], dTe_midl[i],
-                    dPe_midl[i], Ne0[i], Te0[i]);
+                    dP_midl[i], dPe_midl[i], Ne0[i], Te0[i]);
                 cudaMemcpyAsync(w_beg[i], w_midl[i], sizeof(mhdReal) * (devNy + 2 * gridGhost) * gridNxz,
                                 cudaMemcpyDeviceToDevice, 0);
                 cudaMemcpyAsync(A_beg[i], A_midl[i], sizeof(mhdReal) * (devNy + 2 * gridGhost) * gridNxz,
@@ -408,9 +415,11 @@ int main(int argc, char* argv[]) {
                                 cudaMemcpyDeviceToDevice, 0);
                 cudaMemcpyAsync(dTe_beg[i], dTe_midl[i], sizeof(mhdReal) * (devNy + 2 * gridGhost) * gridNxz,
                                 cudaMemcpyDeviceToDevice, 0);
+                cudaMemcpyAsync(dP_beg[i], dP_midl[i], sizeof(mhdReal) * (devNy + 2 * gridGhost) * gridNxz,
+                                cudaMemcpyDeviceToDevice, 0);
             });
             ncclGroupStart();
-            haloExchange(w_midl, A_midl, dNe_midl, dTe_midl, Phi_midl, dJpB_midl, dPe_midl);
+            haloExchange(w_midl, A_midl, dNe_midl, dTe_midl, dP_midl, Phi_midl, dJpB_midl, dPe_midl);
             ncclGroupEnd();
         }
     };
@@ -714,6 +723,10 @@ int main(int argc, char* argv[]) {
                 ncclAllGather(dTe_midl[i] + gridGhost * gridNxz,
                               totaldTe[i] + (size_t)outputIdx / outputSteps * gridNy * gridNxz, devNy * gridNxz,
                               ncclType, comms[i], 0);
+            if constexpr (std::is_same_v<ifOutputdP, trueType>)
+                ncclAllGather(dP_midl[i] + gridGhost * gridNxz,
+                              totaldP[i] + (size_t)outputIdx / outputSteps * gridNy * gridNxz, devNy * gridNxz,
+                              ncclType, comms[i], 0);
             if constexpr (std::is_same_v<ifOutputdPi, trueType>)
                 ncclAllGather(dPi_midl[i] + gridGhost * gridNxz,
                               totaldPi[i] + (size_t)outputIdx / outputSteps * gridNy * gridNxz, devNy * gridNxz,
@@ -946,7 +959,7 @@ int main(int argc, char* argv[]) {
             forEachDev([&](int i) {
                 cudaMemsetAsync(NANFlag[i], 0, sizeof(int), 0);
                 MHDCheckNAN<<<MRK4GridSize, MRK4BlockSize, 0, 0>>>(NANFlag[i], Phi_midl[i], A_midl[i], dNe_midl[i],
-                                                                   dTe_midl[i]);
+                                                                   dTe_midl[i], dP_midl[i]);
             });
             forEachDev([&](int i) {
                 int devLocal;
@@ -1001,10 +1014,14 @@ int main(int argc, char* argv[]) {
 
                 /*----------------------------------MHD RK4-----------------------------------*/
 
-                runMHDRK4Stage.operator()<1>(w_midl, A_midl, dNe_midl, dTe_midl, w_midr, A_midr, dNe_midr, dTe_midr);
-                runMHDRK4Stage.operator()<2>(w_midr, A_midr, dNe_midr, dTe_midr, w_midl, A_midl, dNe_midl, dTe_midl);
-                runMHDRK4Stage.operator()<3>(w_midl, A_midl, dNe_midl, dTe_midl, w_midr, A_midr, dNe_midr, dTe_midr);
-                runMHDRK4Stage.operator()<4>(w_midr, A_midr, dNe_midr, dTe_midr, w_midl, A_midl, dNe_midl, dTe_midl);
+                runMHDRK4Stage.operator()<1>(w_midl, A_midl, dNe_midl, dTe_midl, dP_midl, w_midr, A_midr, dNe_midr,
+                                             dTe_midr, dP_midr);
+                runMHDRK4Stage.operator()<2>(w_midr, A_midr, dNe_midr, dTe_midr, dP_midr, w_midl, A_midl, dNe_midl,
+                                             dTe_midl, dP_midl);
+                runMHDRK4Stage.operator()<3>(w_midl, A_midl, dNe_midl, dTe_midl, dP_midl, w_midr, A_midr, dNe_midr,
+                                             dTe_midr, dP_midr);
+                runMHDRK4Stage.operator()<4>(w_midr, A_midr, dNe_midr, dTe_midr, dP_midr, w_midl, A_midl, dNe_midl,
+                                             dTe_midl, dP_midl);
 
                 nablaPerp2.template operator()<ifNablaPerp2Phi>(PhiConfigs, PhiDatas, PhiAs, PhiXs, PhiBs, Phi_midl,
                                                                 Phi_midr);
@@ -1014,26 +1031,32 @@ int main(int argc, char* argv[]) {
                                                                 dNe_midr);
                 nablaPerp2.template operator()<ifNablaPerp2dTe>(dTeConfigs, dTeDatas, dTeAs, dTeXs, dTeBs, dTe_midl,
                                                                 dTe_midr);
+                nablaPerp2.template operator()<ifNablaPerp2dP, ifReducedMHD>(dPConfigs, dPDatas, dPAs, dPXs, dPBs,
+                                                                             dP_midl, dP_midr);
 
                 nablaPara4.template operator()<0, ifNablaPara4Phi>(Phi_midl, Phi_midr);
                 nablaPara4.template operator()<1, ifNablaPara4A>(A_midl, A_midr);
                 nablaPara4.template operator()<2, ifNablaPara4dNe>(dNe_midl, dNe_midr);
                 nablaPara4.template operator()<3, ifNablaPara4dTe>(dTe_midl, dTe_midr);
+                nablaPara4.template operator()<4, ifNablaPara4dP, ifReducedMHD>(dP_midl, dP_midr);
 
                 filterModeN.template operator()<ifFilterN_Phi>(Phi_midl, leftN, rightN);
                 filterModeN.template operator()<ifFilterN_A>(A_midl, leftN, rightN);
                 filterModeN.template operator()<ifFilterN_dNe>(dNe_midl, leftN, rightN);
                 filterModeN.template operator()<ifFilterN_dTe>(dTe_midl, leftN, rightN);
+                filterModeN.template operator()<ifFilterN_dP, ifReducedMHD>(dP_midl, leftN, rightN);
 
                 removeModeN.template operator()<removeN_Phi>(Phi_midl, Phi_midr);
                 removeModeN.template operator()<removeN_A>(A_midl, A_midr);
                 removeModeN.template operator()<removeN_dNe>(dNe_midl, dNe_midr);
                 removeModeN.template operator()<removeN_dTe>(dTe_midl, dTe_midr);
+                removeModeN.template operator()<removeN_dP, ifReducedMHD>(dP_midl, dP_midr);
 
                 selectModeNM.template operator()<selectNM_Phi>(Phi_midl);
                 selectModeNM.template operator()<selectNM_A>(A_midl);
                 selectModeNM.template operator()<selectNM_dNe>(dNe_midl);
                 selectModeNM.template operator()<selectNM_dTe>(dTe_midl);
+                selectModeNM.template operator()<selectNM_dP, ifReducedMHD>(dP_midl);
 
                 runMHDRK4Stage.operator()<5>();
 
@@ -1144,9 +1167,10 @@ int main(int argc, char* argv[]) {
                 forEachDev([&](int i) {
                     MHDQNeutrality2dNe<<<MRK4GridSize, MRK4BlockSize, 0, 0>>>(w_midl[i], dNi_midl[i], dNa_midl[i],
                                                                               dNb_midl[i], dNe_midl[i]);
-                    MHD2dJpBdPePhi<ifNonlinearMHD, ifLocal, falseType><<<MRK4GridSize, MRK4BlockSize, 0, 0>>>(
-                        A_midl[i], dJpB_midl[i], A2dJpB[i], w_midl[i], Phi_midl[i], w2Phi[i], dNe_midl[i], dTe_midl[i],
-                        dPe_midl[i], Ne0[i], Te0[i]);
+                    MHD2dJpBdPePhi<ifNonlinearMHD, ifLocal, falseType, ifReducedMHD>
+                        <<<MRK4GridSize, MRK4BlockSize, 0, 0>>>(A_midl[i], dJpB_midl[i], A2dJpB[i], w_midl[i],
+                                                                Phi_midl[i], w2Phi[i], dNe_midl[i], dTe_midl[i],
+                                                                dP_midl[i], dPe_midl[i], Ne0[i], Te0[i]);
                 });
                 ncclGroupStart();
                 haloExchange(dNe_midl, dJpB_midl, dPe_midl);

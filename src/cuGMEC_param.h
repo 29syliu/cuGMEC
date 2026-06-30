@@ -84,6 +84,10 @@ using ifNonlinearMHD = trueType;
 using ifEparallel = trueType;
 using ifFLRMHD = falseType;
 using ifQNeutrality = falseType;
+
+using ifReducedMHD = falseType;
+const mhdReal Gamma = 0.0;
+
 using ifMaxwellStress = trueType;
 using ifReynoldsStress = trueType;
 const mhdReal MaxwellStressCoef = 1.0;
@@ -176,6 +180,7 @@ using ifOutputPhi = falseType;
 using ifOutputA = falseType;
 using ifOutputdNe = falseType;
 using ifOutputdTe = falseType;
+using ifOutputdP = falseType;
 using ifOutputdPi = falseType;
 using ifOutputdPa = falseType;
 using ifOutputdPb = falseType;

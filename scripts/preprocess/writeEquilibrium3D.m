@@ -227,10 +227,12 @@ q_out = mbind_cell_col(output_,q_out)';
 
 %% psip
 
-dpsip_drho = dpsip_dr;
+% dpsip_drho = dpsip_dr;
 
-psip_out = transfer2xy_1d(psip, dpsip_drho, B0*L0*L0);
-psip_out = mbind_cell_col(output_,psip_out)';
+% psip_out = transfer2xy_1d(psip, dpsip_drho, B0*L0*L0);
+% psip_out = mbind_cell_col(output_,psip_out)';
+
+psip_out = q_out;
 
 %% Output
 
@@ -251,7 +253,7 @@ MP = mi;
 QE = e;
 B = B / B0;
 J = Jxyz / J0;
-psip = psip / (B0*L0^2);
+psip = q / (B0*L0^2);
 SFAcovyz = gcovSFA{2,3} / L0^2;
 SFAcovzz = gcovSFA{3,3} / L0^2;
 SFAcovyz = SFAcovyz(:,1+ghost:size(B,2)+ghost,:);

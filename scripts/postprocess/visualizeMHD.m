@@ -34,8 +34,8 @@ inputDir = 'C:\Users\Desktop\test';
 paramFile = fullfile(inputDir, 'cuGMEC_param.h');
 [standardFile, plotFile, normalizationFile, equilibriumDim] = resolveMHDInputFiles(inputDir);
 NTPFile = fullfile(inputDir, 'NTP.mat');
-bsiDir = fullfile(inputDir, 'BSI');
-scriptDir = fileparts(mfilename('fullpath'));
+scriptFile = which('visualizeMHD');
+scriptDir = fileparts(scriptFile);
 repoBsiDir = fullfile(scriptDir, '..', 'preprocess', 'BSI');
 
 %% 读取所有输入
@@ -46,9 +46,7 @@ assert(isfile(standardFile), '缺少 MAT 文件：%s', standardFile);
 assert(isfile(plotFile), '缺少 MAT 文件：%s', plotFile);
 assert(isfile(normalizationFile), '缺少 MAT 文件：%s', normalizationFile);
 assert(isfile(NTPFile), '缺少 MAT 文件：%s', NTPFile);
-if isfolder(bsiDir)
-    addpath(bsiDir);
-elseif isfolder(repoBsiDir)
+if isfolder(repoBsiDir)
     addpath(repoBsiDir);
 else
     fprintf('[skip] BSI: 目录不存在\n');

@@ -21,17 +21,19 @@
 
 /*----------------------------------------MHD Kernels-----------------------------------------*/
 
-template <int rk4, typename nonlinear, typename local, typename Eparallel, typename type>
+template <int rk4, typename nonlinear, typename local, typename Eparallel, typename ReducedMHD, typename type>
 __global__ void MHDLinearRK4(type* __restrict__ d_qtheta, type* __restrict__ w_beg, type* __restrict__ w_midl,
                              type* __restrict__ w_midr, type* __restrict__ w_end, type* __restrict__ A_beg,
                              type* __restrict__ A_midl, type* __restrict__ A_midr, type* __restrict__ A_end,
                              type* __restrict__ dNe_beg, type* __restrict__ dNe_midl, type* __restrict__ dNe_midr,
                              type* __restrict__ dNe_end, type* __restrict__ dTe_beg, type* __restrict__ dTe_midl,
-                             type* __restrict__ dTe_midr, type* __restrict__ dTe_end, type* __restrict__ Phi_mid,
-                             type* __restrict__ dJpB_mid, type* __restrict__ dPe_mid, type* __restrict__ dPi_mid,
-                             type* __restrict__ dPa_mid, type* __restrict__ dPb_mid, type* __restrict__ d_wdPAdJpB2w,
-                             type* __restrict__ d_APhidNe2A, type* __restrict__ d_dPePhiAdJpB2dNe,
-                             type* __restrict__ d_PhidTedNe2dTe) {
+                             type* __restrict__ dTe_midr, type* __restrict__ dTe_end, type* __restrict__ dP_beg,
+                             type* __restrict__ dP_midl, type* __restrict__ dP_midr, type* __restrict__ dP_end,
+                             type* __restrict__ Phi_mid, type* __restrict__ dJpB_mid, type* __restrict__ dPe_mid,
+                             type* __restrict__ dPi_mid, type* __restrict__ dPa_mid, type* __restrict__ dPb_mid,
+                             type* __restrict__ d_wdPAdJpB2w, type* __restrict__ d_APhidNe2A,
+                             type* __restrict__ d_dPePhiAdJpB2dNe, type* __restrict__ d_PhidTedNe2dTe,
+                             type* __restrict__ d_Phi2dP) {
 
     /*-------------------------------------Related Index--------------------------------------*/
 
@@ -67,6 +69,7 @@ __global__ void MHDLinearRK4(type* __restrict__ d_qtheta, type* __restrict__ w_b
     type A_begin, dAdt;
     type dNe_begin, dNedt;
     type dTe_begin, dTedt;
+    type dP_begin, dPdt;
 
     /*---------------------------------------Initialize---------------------------------------*/
 
@@ -74,6 +77,7 @@ __global__ void MHDLinearRK4(type* __restrict__ d_qtheta, type* __restrict__ w_b
     A_begin = A_beg[offset3d];
     dNe_begin = dNe_beg[offset3d];
     dTe_begin = dTe_beg[offset3d];
+    dP_begin = dP_beg[offset3d];
 
     qtheta = d_qtheta[offset2d];
     qtheta_lr[0] = d_qtheta[offset2d - 2 * gridNx];
@@ -90,6 +94,7 @@ __global__ void MHDLinearRK4(type* __restrict__ d_qtheta, type* __restrict__ w_b
     dAdt = 0;
     dNedt = 0;
     dTedt = 0;
+    dPdt = 0;
 
     /*------------------Electron Pressure in Vorticity and Electron Density-------------------*/
 
@@ -175,6 +180,14 @@ __global__ void MHDLinearRK4(type* __restrict__ d_qtheta, type* __restrict__ w_b
         compcoes[index] = d_dPePhiAdJpB2dNe[offset2d * 11 + index + 3];
 
     dNedt += compcoes[0] * field_px + compcoes[1] * field_py + compcoes[2] * field_pz;
+
+    if constexpr (std::is_same_v<ReducedMHD, trueType>) {
+
+        for (int index = 0; index < 3; index++)
+            compcoes[index] = d_Phi2dP[offset2d * 3 + index];
+
+        dPdt += compcoes[0] * field_px + compcoes[1] * field_py + compcoes[2] * field_pz;
+    }
 
     if constexpr (std::is_same_v<nonlinear, falseType>) {
 
@@ -289,6 +302,9 @@ __global__ void MHDLinearRK4(type* __restrict__ d_qtheta, type* __restrict__ w_b
 
             dTe_midr[offset3d] = dTe_begin + dTedt * mhdGridDt / 2;
             dTe_end[offset3d] = dTe_begin + dTedt * mhdGridDt / 6;
+
+            dP_midr[offset3d] = dP_begin + dPdt * mhdGridDt / 2;
+            dP_end[offset3d] = dP_begin + dPdt * mhdGridDt / 6;
         }
 
     } else if constexpr (rk4 == 2) {
@@ -305,6 +321,9 @@ __global__ void MHDLinearRK4(type* __restrict__ d_qtheta, type* __restrict__ w_b
 
             dTe_midr[offset3d] = dTe_begin + dTedt * mhdGridDt / 2;
             dTe_end[offset3d] += dTedt * mhdGridDt / 3;
+
+            dP_midr[offset3d] = dP_begin + dPdt * mhdGridDt / 2;
+            dP_end[offset3d] += dPdt * mhdGridDt / 3;
         }
 
     } else if constexpr (rk4 == 3) {
@@ -321,6 +340,9 @@ __global__ void MHDLinearRK4(type* __restrict__ d_qtheta, type* __restrict__ w_b
 
             dTe_midr[offset3d] = dTe_begin + dTedt * mhdGridDt;
             dTe_end[offset3d] += dTedt * mhdGridDt / 3;
+
+            dP_midr[offset3d] = dP_begin + dPdt * mhdGridDt;
+            dP_end[offset3d] += dPdt * mhdGridDt / 3;
         }
 
     } else if constexpr (rk4 == 4) {
@@ -337,24 +359,25 @@ __global__ void MHDLinearRK4(type* __restrict__ d_qtheta, type* __restrict__ w_b
 
             dTe_midr[offset3d] = dTe_end[offset3d] + dTedt * mhdGridDt / 6;
             dTe_end[offset3d] += dTedt * mhdGridDt / 6;
+
+            dP_midr[offset3d] = dP_end[offset3d] + dPdt * mhdGridDt / 6;
+            dP_end[offset3d] += dPdt * mhdGridDt / 6;
         }
     }
 }
 
 template <int rk4, typename MaxwellStress, typename ReynoldsStress, typename diagZFDrive, typename local,
-          typename Eparallel, typename type>
-__global__ void MHDNonlinearRK4(type* __restrict__ d_qtheta, type* __restrict__ w_midl, type* __restrict__ w_midr,
-                                type* __restrict__ w_end, type* __restrict__ A_midl, type* __restrict__ A_midr,
-                                type* __restrict__ A_end, type* __restrict__ dNe_midl, type* __restrict__ dNe_midr,
-                                type* __restrict__ dNe_end, type* __restrict__ dTe_midl, type* __restrict__ dTe_midr,
-                                type* __restrict__ dTe_end, type* __restrict__ Phi_mid, type* __restrict__ dJpB_mid,
-                                type* __restrict__ dPe_mid, type* __restrict__ d_Ne0, type* __restrict__ d_Te0,
-                                type* __restrict__ d_Ne0_px, type* __restrict__ d_Te0_px,
-                                type* __restrict__ d_APhidNe2A, type* __restrict__ d_wPhi_w,
-                                type* __restrict__ d_AdJpB_w, type* __restrict__ d_PhiA_A, type* __restrict__ d_NeA_A,
-                                type* __restrict__ d_dNePhi_dNe, type* __restrict__ d_PhiTe_dTe,
-                                type* __restrict__ d_PhiTeA_dTe, type* __restrict__ d_Maxwell,
-                                type* __restrict__ d_Reynolds) {
+          typename Eparallel, typename ReducedMHD, typename type>
+__global__ void MHDNonlinearRK4(
+    type* __restrict__ d_qtheta, type* __restrict__ w_midl, type* __restrict__ w_midr, type* __restrict__ w_end,
+    type* __restrict__ A_midl, type* __restrict__ A_midr, type* __restrict__ A_end, type* __restrict__ dNe_midl,
+    type* __restrict__ dNe_midr, type* __restrict__ dNe_end, type* __restrict__ dTe_midl, type* __restrict__ dTe_midr,
+    type* __restrict__ dTe_end, type* __restrict__ dP_midl, type* __restrict__ dP_midr, type* __restrict__ dP_end,
+    type* __restrict__ Phi_mid, type* __restrict__ dJpB_mid, type* __restrict__ dPe_mid, type* __restrict__ d_Ne0,
+    type* __restrict__ d_Te0, type* __restrict__ d_Ne0_px, type* __restrict__ d_Te0_px, type* __restrict__ d_APhidNe2A,
+    type* __restrict__ d_wPhi_w, type* __restrict__ d_AdJpB_w, type* __restrict__ d_PhiA_A, type* __restrict__ d_NeA_A,
+    type* __restrict__ d_dNePhi_dNe, type* __restrict__ d_PhiTe_dTe, type* __restrict__ d_PhiTeA_dTe,
+    type* __restrict__ d_dPPhi_dP, type* __restrict__ d_Maxwell, type* __restrict__ d_Reynolds) {
 
     /*-------------------------------------Related Index--------------------------------------*/
 
@@ -388,7 +411,7 @@ __global__ void MHDNonlinearRK4(type* __restrict__ d_qtheta, type* __restrict__ 
 
     /*-------------------------------------RK4 Variables--------------------------------------*/
 
-    type dwdt, dAdt, dNedt, dTedt;
+    type dwdt, dAdt, dNedt, dTedt, dPdt;
     type MaxwellDrive, ReynoldsDrive, dwdtBefore;
 
     /*---------------------------------------Initialize---------------------------------------*/
@@ -421,6 +444,7 @@ __global__ void MHDNonlinearRK4(type* __restrict__ d_qtheta, type* __restrict__ 
     dAdt = 0;
     dNedt = 0;
     dTedt = 0;
+    dPdt = 0;
     MaxwellDrive = 0;
     ReynoldsDrive = 0;
 
@@ -500,6 +524,24 @@ __global__ void MHDNonlinearRK4(type* __restrict__ d_qtheta, type* __restrict__ 
              compcoes[6] * field_py * Phi_pz + compcoes[7] * field_pz * Phi_px + compcoes[8] * field_pz * Phi_py;
 
     Ne = Ne0 + field;
+
+    /*-----------------------------dPPhi in Single Fluid Pressure-----------------------------*/
+
+    if constexpr (std::is_same_v<ReducedMHD, trueType>) {
+
+        for (int index = 0; index < 9; index++)
+            compcoes[index] = d_dPPhi_dP[offset2d * 9 + index];
+
+        field = dP_midl[offset3d];
+        PartialZ<local>(k, offset3d, lane_id, dP_midl, field, field_du, field_pz);
+        PartialX(0, i, k, offset3d, dP_midl, field, field_lr, field_px);
+        PartialY<local>(k, offset3d, lane_id, shift_k, shift_lk, shift_dk, qtheta, qtheta_lr, dP_midl, field_du,
+                        field_lr, field_py);
+
+        dPdt += compcoes[0] * field * Phi_px + compcoes[1] * field * Phi_py + compcoes[2] * field * Phi_pz +
+                compcoes[3] * field_px * Phi_py + compcoes[4] * field_px * Phi_pz + compcoes[5] * field_py * Phi_px +
+                compcoes[6] * field_py * Phi_pz + compcoes[7] * field_pz * Phi_px + compcoes[8] * field_pz * Phi_py;
+    }
 
     /*-----------------------------PhiTeA in Electron Temperature-----------------------------*/
 
@@ -635,6 +677,9 @@ __global__ void MHDNonlinearRK4(type* __restrict__ d_qtheta, type* __restrict__ 
 
             dTe_midr[offset3d] += dTedt * mhdGridDt / 2;
             dTe_end[offset3d] += dTedt * mhdGridDt / 6;
+
+            dP_midr[offset3d] += dPdt * mhdGridDt / 2;
+            dP_end[offset3d] += dPdt * mhdGridDt / 6;
         }
 
     } else if constexpr (rk4 == 2) {
@@ -651,6 +696,9 @@ __global__ void MHDNonlinearRK4(type* __restrict__ d_qtheta, type* __restrict__ 
 
             dTe_midr[offset3d] += dTedt * mhdGridDt / 2;
             dTe_end[offset3d] += dTedt * mhdGridDt / 3;
+
+            dP_midr[offset3d] += dPdt * mhdGridDt / 2;
+            dP_end[offset3d] += dPdt * mhdGridDt / 3;
         }
 
     } else if constexpr (rk4 == 3) {
@@ -667,6 +715,9 @@ __global__ void MHDNonlinearRK4(type* __restrict__ d_qtheta, type* __restrict__ 
 
             dTe_midr[offset3d] += dTedt * mhdGridDt;
             dTe_end[offset3d] += dTedt * mhdGridDt / 3;
+
+            dP_midr[offset3d] += dPdt * mhdGridDt;
+            dP_end[offset3d] += dPdt * mhdGridDt / 3;
         }
 
     } else if constexpr (rk4 == 4) {
@@ -683,6 +734,9 @@ __global__ void MHDNonlinearRK4(type* __restrict__ d_qtheta, type* __restrict__ 
 
             dTe_midr[offset3d] += dTedt * mhdGridDt / 6;
             dTe_end[offset3d] += dTedt * mhdGridDt / 6;
+
+            dP_midr[offset3d] += dPdt * mhdGridDt / 6;
+            dP_end[offset3d] += dPdt * mhdGridDt / 6;
         }
     }
 
@@ -705,11 +759,11 @@ __global__ void MHDNonlinearRK4(type* __restrict__ d_qtheta, type* __restrict__ 
     }
 }
 
-template <typename nonlinear, typename local, typename FLRMHD, typename type>
+template <typename nonlinear, typename local, typename FLRMHD, typename ReducedMHD, typename type>
 __global__ void MHD2dJpBdPePhi(type* __restrict__ A_mid, type* __restrict__ dJpB_mid, type* __restrict__ d_A2dJpB,
                                type* __restrict__ w_mid, type* __restrict__ Phi_mid, type* __restrict__ d_w2Phi,
-                               type* __restrict__ dNe_mid, type* __restrict__ dTe_mid, type* __restrict__ dPe_mid,
-                               type* __restrict__ d_Ne0, type* __restrict__ d_Te0) {
+                               type* __restrict__ dNe_mid, type* __restrict__ dTe_mid, type* __restrict__ dP_mid,
+                               type* __restrict__ dPe_mid, type* __restrict__ d_Ne0, type* __restrict__ d_Te0) {
 
     /*-------------------------------------Related Index--------------------------------------*/
 
@@ -795,10 +849,14 @@ __global__ void MHD2dJpBdPePhi(type* __restrict__ A_mid, type* __restrict__ dJpB
 
     /*-----------------------Electron Density, Temperature and Pressure-----------------------*/
 
-    if constexpr (std::is_same_v<nonlinear, falseType>)
-        dPe_mid[offset3d] = dNe * Te0 + Ne0 * dTe;
-    else
-        dPe_mid[offset3d] = dNe * Te0 + Ne0 * dTe + dNe * dTe;
+    if constexpr (std::is_same_v<ReducedMHD, trueType>) {
+        dPe_mid[offset3d] = dP_mid[offset3d];
+    } else {
+        if constexpr (std::is_same_v<nonlinear, falseType>)
+            dPe_mid[offset3d] = dNe * Te0 + Ne0 * dTe;
+        else
+            dPe_mid[offset3d] = dNe * Te0 + Ne0 * dTe + dNe * dTe;
+    }
 }
 
 template <typename type>

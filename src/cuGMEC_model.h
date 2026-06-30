@@ -103,7 +103,7 @@ struct HybridModelConfig {
     struct NFFTSize       { int time, batch, freq; };  NFFTSize nFFT;
     struct MFFTSize       { int time; };               MFFTSize mFFT;
     struct DiagFlags      { bool amplitude, frequency, Eparallel, density, diffusivity, ZFDrive, checkNAN; } diag;
-    struct OutputFlags    { bool Phi, A, dNe, dTe, dPi, dPa, dPb; } output;
+    struct OutputFlags    { bool Phi, A, dNe, dTe, dP, dPi, dPa, dPb; } output;
 };
 // clang-format on
 
@@ -155,8 +155,8 @@ class HybridModel {
           ifCheckNAN{cfg.diag.checkNAN},
 
           ifOutputPhi{cfg.output.Phi}, ifOutputA{cfg.output.A}, ifOutputdNe{cfg.output.dNe},
-          ifOutputdTe{cfg.output.dTe}, ifOutputdPi{cfg.output.dPi}, ifOutputdPa{cfg.output.dPa},
-          ifOutputdPb{cfg.output.dPb} {
+          ifOutputdTe{cfg.output.dTe}, ifOutputdP{cfg.output.dP}, ifOutputdPi{cfg.output.dPi},
+          ifOutputdPa{cfg.output.dPa}, ifOutputdPb{cfg.output.dPb} {
 
         if (hostId == 0) {
 
@@ -308,6 +308,7 @@ class HybridModel {
 	mhdReal*** h_A;
 	mhdReal*** h_dNe;
 	mhdReal*** h_dTe;
+	mhdReal*** h_dP;
 	mhdReal*** h_Phi;
 	mhdReal*** h_dJpB;
 	mhdReal*** h_dPe;
@@ -350,6 +351,8 @@ class HybridModel {
 	mhdReal*** h_dTe_dTe; mhdReal*** h_dTe_px_dTe; mhdReal*** h_dTe_py_dTe; mhdReal*** h_dTe_pz_dTe;
 	mhdReal*** h_dNe_dTe; mhdReal*** h_dNe_px_dTe; mhdReal*** h_dNe_py_dTe; mhdReal*** h_dNe_pz_dTe;
 
+	mhdReal*** h_Phi_dP; mhdReal*** h_Phi_px_dP; mhdReal*** h_Phi_py_dP; mhdReal*** h_Phi_pz_dP;
+
 	mhdReal*** h_Ne0; mhdReal*** h_Te0;
 	mhdReal*** h_Ne0_px; mhdReal*** h_Te0_px;
 
@@ -360,6 +363,7 @@ class HybridModel {
 	mhdReal*** h_APhidNe2A;
 	mhdReal*** h_dPePhiAdJpB2dNe;
 	mhdReal*** h_PhidTedNe2dTe;
+	mhdReal*** h_Phi2dP;
 
 	/*-----------------------------------------Nonlinear------------------------------------------*/
 
@@ -367,6 +371,7 @@ class HybridModel {
 	mhdReal*** h_PhiA_A; mhdReal*** h_NeA_A;
 	mhdReal*** h_AdJpB_dNe; mhdReal*** h_dNePhi_dNe;
 	mhdReal*** h_PhiTe_dTe; mhdReal*** h_PhiTeA_dTe;
+	mhdReal*** h_dPPhi_dP;
 
 	/*-------------------------------------------------------Matrix on CPU--------------------------------------------------------*/
 
@@ -382,6 +387,7 @@ class HybridModel {
 	mhdReal** d_A;
 	mhdReal** d_dNe;
 	mhdReal** d_dTe;
+	mhdReal** d_dP;
 	mhdReal** d_Phi;
 	mhdReal** d_dJpB;
 	mhdReal** d_dPe;
@@ -390,6 +396,7 @@ class HybridModel {
 	mhdReal** d_A_beg; mhdReal** d_A_midl; mhdReal** d_A_midr; mhdReal** d_A_end;
 	mhdReal** d_dNe_beg; mhdReal** d_dNe_midl; mhdReal** d_dNe_midr; mhdReal** d_dNe_end;
 	mhdReal** d_dTe_beg; mhdReal** d_dTe_midl; mhdReal** d_dTe_midr; mhdReal** d_dTe_end;
+	mhdReal** d_dP_beg; mhdReal** d_dP_midl; mhdReal** d_dP_midr; mhdReal** d_dP_end;
 	mhdReal** d_Phi_midl; mhdReal** d_Phi_midr;
 	mhdReal** d_dJpB_midl; mhdReal** d_dJpB_midr;
 	mhdReal** d_dPe_midl; mhdReal** d_dPe_midr;
@@ -415,6 +422,7 @@ class HybridModel {
 	mhdReal** d_APhidNe2A;
 	mhdReal** d_dPePhiAdJpB2dNe;
 	mhdReal** d_PhidTedNe2dTe;
+	mhdReal** d_Phi2dP;
 
 	/*-----------------------------------------Nonlinear------------------------------------------*/
 
@@ -422,6 +430,7 @@ class HybridModel {
 	mhdReal** d_PhiA_A; mhdReal** d_NeA_A;
 	mhdReal** d_AdJpB_dNe; mhdReal** d_dNePhi_dNe;
 	mhdReal** d_PhiTe_dTe; mhdReal** d_PhiTeA_dTe;
+	mhdReal** d_dPPhi_dP;
 
 	/*-------------------------------------------------------Matrix on GPU--------------------------------------------------------*/
 
@@ -557,7 +566,7 @@ class HybridModel {
 	const int mFFTTimeSize;
 
 	const bool ifDiagAmplitude, ifDiagFrequency, ifDiagEparallel, ifDiagDensity, ifDiagDiffusivity, ifDiagZFDrive, ifCheckNAN;
-	const bool ifOutputPhi, ifOutputA, ifOutputdNe, ifOutputdTe, ifOutputdPi, ifOutputdPa, ifOutputdPb;
+	const bool ifOutputPhi, ifOutputA, ifOutputdNe, ifOutputdTe, ifOutputdP, ifOutputdPi, ifOutputdPa, ifOutputdPb;
 
 	/*---------------------------------------------------Diagnostic on CPU/GPU----------------------------------------------------*/
 
@@ -581,7 +590,7 @@ class HybridModel {
 	/*--------------------------------------------------Output Totals on CPU/GPU--------------------------------------------------*/
 
 	std::vector<mhdReal> h_totalPhi; std::vector<mhdReal> h_totalA;
-	std::vector<mhdReal> h_totaldNe; std::vector<mhdReal> h_totaldTe;
+	std::vector<mhdReal> h_totaldNe; std::vector<mhdReal> h_totaldTe; std::vector<mhdReal> h_totaldP;
 	std::vector<mhdReal> h_totaldPi; std::vector<mhdReal> h_totaldPa; std::vector<mhdReal> h_totaldPb;
     std::vector<mhdReal> h_IonPhaseDeltaF; std::vector<mhdReal> h_AlphaPhaseDeltaF; std::vector<mhdReal> h_BeamPhaseDeltaF;
     std::vector<mhdReal> h_IonPitchDeltaF; std::vector<mhdReal> h_AlphaPitchDeltaF; std::vector<mhdReal> h_BeamPitchDeltaF;
@@ -589,7 +598,7 @@ class HybridModel {
     std::vector<mhdReal> h_IonPitchPower; std::vector<mhdReal> h_AlphaPitchPower; std::vector<mhdReal> h_BeamPitchPower;
 
 	mhdReal** d_totalPhi; mhdReal** d_totalA;
-	mhdReal** d_totaldNe; mhdReal** d_totaldTe;
+	mhdReal** d_totaldNe; mhdReal** d_totaldTe; mhdReal** d_totaldP;
 	mhdReal** d_totaldPi; mhdReal** d_totaldPa; mhdReal** d_totaldPb;
     mhdReal** d_IonPhaseDeltaF; mhdReal** d_AlphaPhaseDeltaF; mhdReal** d_BeamPhaseDeltaF;
     mhdReal** d_IonPitchDeltaF; mhdReal** d_AlphaPitchDeltaF; mhdReal** d_BeamPitchDeltaF;
@@ -1021,7 +1030,8 @@ class HybridModel {
         /*----------------------------------MHD Perturbation on CPU-----------------------------------*/
 
         HostAllocator.allocateHostArrays(gridNyPlusGhost, gridNx, h_qtheta);
-        HostAllocator.allocateHostArrays(gridNyPlusGhost, gridNx, gridNz, h_w, h_A, h_dNe, h_dTe, h_Phi, h_dJpB, h_dPe);
+        HostAllocator.allocateHostArrays(gridNyPlusGhost, gridNx, gridNz, h_w, h_A, h_dNe, h_dTe, h_dP, h_Phi, h_dJpB,
+                                         h_dPe);
 
         /*-------------------------------Coefficient Compression on CPU-------------------------------*/
 
@@ -1054,6 +1064,8 @@ class HybridModel {
                                          h_dTe_dTe, h_dTe_px_dTe, h_dTe_py_dTe, h_dTe_pz_dTe, h_dNe_dTe, h_dNe_px_dTe,
                                          h_dNe_py_dTe, h_dNe_pz_dTe, h_Ne0, h_Te0, h_Ne0_px, h_Te0_px);
 
+        HostAllocator.allocateHostArrays(gridNy, gridNx, equilNz, h_Phi_dP, h_Phi_px_dP, h_Phi_py_dP, h_Phi_pz_dP);
+
         HostAllocator.allocateHostArrays(gridNy, gridNx, equilNz * 5, h_F2perp2);
         HostAllocator.allocateHostArrays(gridNy, gridNx, equilNz * 6, h_A2dJpB);
         HostAllocator.allocateHostArrays(gridNy, gridNx, equilNz * 5, h_Phi2w);
@@ -1061,6 +1073,7 @@ class HybridModel {
         HostAllocator.allocateHostArrays(gridNy, gridNx, equilNz * 5, h_APhidNe2A);
         HostAllocator.allocateHostArrays(gridNy, gridNx, equilNz * 11, h_dPePhiAdJpB2dNe);
         HostAllocator.allocateHostArrays(gridNy, gridNx, equilNz * 6, h_PhidTedNe2dTe);
+        HostAllocator.allocateHostArrays(gridNy, gridNx, equilNz * 3, h_Phi2dP);
 
         /*-------------------------Nonlinear--------------------------*/
 
@@ -1070,6 +1083,7 @@ class HybridModel {
         HostAllocator.allocateHostArrays(gridNy, gridNx, equilNz * 9, h_AdJpB_dNe, h_dNePhi_dNe);
         HostAllocator.allocateHostArrays(gridNy, gridNx, equilNz * 6, h_PhiTe_dTe);
         HostAllocator.allocateHostArrays(gridNy, gridNx, equilNz * 18, h_PhiTeA_dTe);
+        HostAllocator.allocateHostArrays(gridNy, gridNx, equilNz * 9, h_dPPhi_dP);
 
         /*--------------------------------------Particle in Cell--------------------------------------*/
 
@@ -1130,6 +1144,7 @@ class HybridModel {
         h_totalA.resize(outputLen);
         h_totaldNe.resize(outputLen);
         h_totaldTe.resize(outputLen);
+        h_totaldP.resize(outputLen);
         h_totaldPi.resize(outputLen);
         h_totaldPa.resize(outputLen);
         h_totaldPb.resize(outputLen);
@@ -1208,7 +1223,7 @@ class HybridModel {
         /*----------------------------------MHD Perturbation on CPU-----------------------------------*/
 
         HostAllocator.releaseHostArrays(h_qtheta);
-        HostAllocator.releaseHostArrays(h_w, h_A, h_dNe, h_dTe, h_Phi, h_dJpB, h_dPe);
+        HostAllocator.releaseHostArrays(h_w, h_A, h_dNe, h_dTe, h_dP, h_Phi, h_dJpB, h_dPe);
 
         /*-------------------------------Coefficient Compression on CPU-------------------------------*/
 
@@ -1239,6 +1254,8 @@ class HybridModel {
                                         h_dTe_py_dTe, h_dTe_pz_dTe, h_dNe_dTe, h_dNe_px_dTe, h_dNe_py_dTe, h_dNe_pz_dTe,
                                         h_Ne0, h_Te0, h_Ne0_px, h_Te0_px);
 
+        HostAllocator.releaseHostArrays(h_Phi_dP, h_Phi_px_dP, h_Phi_py_dP, h_Phi_pz_dP);
+
         HostAllocator.releaseHostArrays(h_F2perp2);
         HostAllocator.releaseHostArrays(h_A2dJpB);
         HostAllocator.releaseHostArrays(h_Phi2w);
@@ -1246,11 +1263,12 @@ class HybridModel {
         HostAllocator.releaseHostArrays(h_APhidNe2A);
         HostAllocator.releaseHostArrays(h_dPePhiAdJpB2dNe);
         HostAllocator.releaseHostArrays(h_PhidTedNe2dTe);
+        HostAllocator.releaseHostArrays(h_Phi2dP);
 
         /*-------------------------Nonlinear--------------------------*/
 
         HostAllocator.releaseHostArrays(h_wPhi_w, h_AdJpB_w, h_PhiA_A, h_NeA_A, h_AdJpB_dNe, h_dNePhi_dNe, h_PhiTe_dTe,
-                                        h_PhiTeA_dTe);
+                                        h_PhiTeA_dTe, h_dPPhi_dP);
 
         /*--------------------------------------Particle in Cell--------------------------------------*/
 
@@ -1289,15 +1307,15 @@ class HybridModel {
 
         DeviceAllocator.allocateDeviceArrays(localId, devNums, (devNy + 2 * gridGhost) * gridNx, d_qtheta);
 
-        DeviceAllocator.allocateDeviceArrays(localId, devNums, gridNy * gridNxz, d_w, d_A, d_dNe, d_dTe, d_Phi, d_dJpB,
-                                             d_dPe);
+        DeviceAllocator.allocateDeviceArrays(localId, devNums, gridNy * gridNxz, d_w, d_A, d_dNe, d_dTe, d_dP, d_Phi,
+                                             d_dJpB, d_dPe);
 
         DeviceAllocator.allocateDeviceArrays(
             localId, devNums, (devNy + 2 * gridGhost) * gridNxz, d_w_beg, d_w_midl, d_w_midr, d_w_end, d_A_beg,
             d_A_midl, d_A_midr, d_A_end, d_dNe_beg, d_dNe_midl, d_dNe_midr, d_dNe_end, d_dTe_beg, d_dTe_midl,
-            d_dTe_midr, d_dTe_end, d_Phi_midl, d_Phi_midr, d_dJpB_midl, d_dJpB_midr, d_dPe_midl, d_dPe_midr, d_dPi_midl,
-            d_dPi_midr, d_dPa_midl, d_dPa_midr, d_dPb_midl, d_dPb_midr, d_dNi_midl, d_dNi_midr, d_dNa_midl, d_dNa_midr,
-            d_dNb_midl, d_dNb_midr, d_Apt_midl, d_Apt_midr);
+            d_dTe_midr, d_dTe_end, d_dP_beg, d_dP_midl, d_dP_midr, d_dP_end, d_Phi_midl, d_Phi_midr, d_dJpB_midl,
+            d_dJpB_midr, d_dPe_midl, d_dPe_midr, d_dPi_midl, d_dPi_midr, d_dPa_midl, d_dPa_midr, d_dPb_midl, d_dPb_midr,
+            d_dNi_midl, d_dNi_midr, d_dNa_midl, d_dNa_midr, d_dNb_midl, d_dNb_midr, d_Apt_midl, d_Apt_midr);
 
         /*-------------------------------Coefficient Compression on GPU-------------------------------*/
 
@@ -1312,6 +1330,7 @@ class HybridModel {
         DeviceAllocator.allocateDeviceArrays(localId, devNums, devNy * gridNx * equilNz * 5, d_APhidNe2A);
         DeviceAllocator.allocateDeviceArrays(localId, devNums, devNy * gridNx * equilNz * 11, d_dPePhiAdJpB2dNe);
         DeviceAllocator.allocateDeviceArrays(localId, devNums, devNy * gridNx * equilNz * 6, d_PhidTedNe2dTe);
+        DeviceAllocator.allocateDeviceArrays(localId, devNums, devNy * gridNx * equilNz * 3, d_Phi2dP);
 
         /*-------------------------Nonlinear--------------------------*/
 
@@ -1321,6 +1340,7 @@ class HybridModel {
         DeviceAllocator.allocateDeviceArrays(localId, devNums, devNy * gridNx * equilNz * 9, d_AdJpB_dNe, d_dNePhi_dNe);
         DeviceAllocator.allocateDeviceArrays(localId, devNums, devNy * gridNx * equilNz * 6, d_PhiTe_dTe);
         DeviceAllocator.allocateDeviceArrays(localId, devNums, devNy * gridNx * equilNz * 18, d_PhiTeA_dTe);
+        DeviceAllocator.allocateDeviceArrays(localId, devNums, devNy * gridNx * equilNz * 9, d_dPPhi_dP);
 
         /*--------------------------------------Particle in Cell--------------------------------------*/
 
@@ -1415,6 +1435,8 @@ class HybridModel {
             DeviceAllocator.allocateDeviceArrays(localId, devNums, outputTotalSize, d_totaldNe);
         if (ifOutputdTe)
             DeviceAllocator.allocateDeviceArrays(localId, devNums, outputTotalSize, d_totaldTe);
+        if (ifOutputdP)
+            DeviceAllocator.allocateDeviceArrays(localId, devNums, outputTotalSize, d_totaldP);
         if (ifOutputdPi)
             DeviceAllocator.allocateDeviceArrays(localId, devNums, outputTotalSize, d_totaldPi);
         if (ifOutputdPa)
@@ -1529,14 +1551,14 @@ class HybridModel {
 
         DeviceAllocator.releaseDeviceArrays(localId, devNums, d_qtheta);
 
-        DeviceAllocator.releaseDeviceArrays(localId, devNums, d_w, d_A, d_dNe, d_dTe, d_Phi, d_dJpB, d_dPe);
+        DeviceAllocator.releaseDeviceArrays(localId, devNums, d_w, d_A, d_dNe, d_dTe, d_dP, d_Phi, d_dJpB, d_dPe);
 
-        DeviceAllocator.releaseDeviceArrays(localId, devNums, d_w_beg, d_w_midl, d_w_midr, d_w_end, d_A_beg, d_A_midl,
-                                            d_A_midr, d_A_end, d_dNe_beg, d_dNe_midl, d_dNe_midr, d_dNe_end, d_dTe_beg,
-                                            d_dTe_midl, d_dTe_midr, d_dTe_end, d_Phi_midl, d_Phi_midr, d_dJpB_midl,
-                                            d_dJpB_midr, d_dPe_midl, d_dPe_midr, d_dPi_midl, d_dPi_midr, d_dPa_midl,
-                                            d_dPa_midr, d_dPb_midl, d_dPb_midr, d_dNi_midl, d_dNi_midr, d_dNa_midl,
-                                            d_dNa_midr, d_dNb_midl, d_dNb_midr, d_Apt_midl, d_Apt_midr);
+        DeviceAllocator.releaseDeviceArrays(
+            localId, devNums, d_w_beg, d_w_midl, d_w_midr, d_w_end, d_A_beg, d_A_midl, d_A_midr, d_A_end, d_dNe_beg,
+            d_dNe_midl, d_dNe_midr, d_dNe_end, d_dTe_beg, d_dTe_midl, d_dTe_midr, d_dTe_end, d_dP_beg, d_dP_midl,
+            d_dP_midr, d_dP_end, d_Phi_midl, d_Phi_midr, d_dJpB_midl, d_dJpB_midr, d_dPe_midl, d_dPe_midr, d_dPi_midl,
+            d_dPi_midr, d_dPa_midl, d_dPa_midr, d_dPb_midl, d_dPb_midr, d_dNi_midl, d_dNi_midr, d_dNa_midl, d_dNa_midr,
+            d_dNb_midl, d_dNb_midr, d_Apt_midl, d_Apt_midr);
 
         /*-------------------------------Coefficient Compression on GPU-------------------------------*/
 
@@ -1550,11 +1572,12 @@ class HybridModel {
         DeviceAllocator.releaseDeviceArrays(localId, devNums, d_APhidNe2A);
         DeviceAllocator.releaseDeviceArrays(localId, devNums, d_dPePhiAdJpB2dNe);
         DeviceAllocator.releaseDeviceArrays(localId, devNums, d_PhidTedNe2dTe);
+        DeviceAllocator.releaseDeviceArrays(localId, devNums, d_Phi2dP);
 
         /*-------------------------Nonlinear--------------------------*/
 
         DeviceAllocator.releaseDeviceArrays(localId, devNums, d_wPhi_w, d_AdJpB_w, d_PhiA_A, d_NeA_A, d_AdJpB_dNe,
-                                            d_dNePhi_dNe, d_PhiTe_dTe, d_PhiTeA_dTe);
+                                            d_dNePhi_dNe, d_PhiTe_dTe, d_PhiTeA_dTe, d_dPPhi_dP);
 
         /*-----------------------------------Inverse Matrix on GPU------------------------------------*/
 
@@ -1707,6 +1730,8 @@ class HybridModel {
             DeviceAllocator.releaseDeviceArrays(localId, devNums, d_totaldNe);
         if (ifOutputdTe)
             DeviceAllocator.releaseDeviceArrays(localId, devNums, d_totaldTe);
+        if (ifOutputdP)
+            DeviceAllocator.releaseDeviceArrays(localId, devNums, d_totaldP);
         if (ifOutputdPi)
             DeviceAllocator.releaseDeviceArrays(localId, devNums, d_totaldPi);
         if (ifOutputdPa)
@@ -1849,6 +1874,9 @@ class HybridModel {
             H2DAllocator.hostToDevice(devNy * gridNx * equilNz * 6, 0,
                                       (hostId * hostNy + i * devNy) * gridNx * equilNz * 6, d_PhidTedNe2dTe[i],
                                       h_PhidTedNe2dTe[0][0]);
+            H2DAllocator.hostToDevice(devNy * gridNx * equilNz * 3, 0,
+                                      (hostId * hostNy + i * devNy) * gridNx * equilNz * 3, d_Phi2dP[i],
+                                      h_Phi2dP[0][0]);
 
             /*-----------------------------------------Nonlinear------------------------------------------*/
 
@@ -1881,6 +1909,9 @@ class HybridModel {
             H2DAllocator.hostToDevice(devNy * gridNx * equilNz * 18, 0,
                                       (hostId * hostNy + i * devNy) * gridNx * equilNz * 18, d_PhiTeA_dTe[i],
                                       h_PhiTeA_dTe[0][0]);
+            H2DAllocator.hostToDevice(devNy * gridNx * equilNz * 9, 0,
+                                      (hostId * hostNy + i * devNy) * gridNx * equilNz * 9, d_dPPhi_dP[i],
+                                      h_dPPhi_dP[0][0]);
 
             /*--------------------------------------------MHD---------------------------------------------*/
 
@@ -1892,11 +1923,12 @@ class HybridModel {
                 h_globalPb[0][0], d_dPb_midr[i], h_globalPb[0][0], d_dNi_midl[i], h_globalNi[0][0], d_dNi_midr[i],
                 h_globalNi[0][0], d_dNa_midl[i], h_globalNa[0][0], d_dNa_midr[i], h_globalNa[0][0], d_dNb_midl[i],
                 h_globalNb[0][0], d_dNb_midr[i], h_globalNb[0][0], d_Apt_midl[i], h_dPe[0][0], d_Apt_midr[i],
-                h_dPe[0][0], d_w_beg[i], h_w[0][0], d_w_midl[i], h_w[0][0], d_w_midr[i], h_dPe[0][0], d_w_end[i],
+                h_dPe[0][0], d_w_beg[i], h_dPe[0][0], d_w_midl[i], h_dPe[0][0], d_w_midr[i], h_dPe[0][0], d_w_end[i],
                 h_dPe[0][0], d_A_beg[i], h_A[0][0], d_A_midl[i], h_A[0][0], d_A_midr[i], h_dPe[0][0], d_A_end[i],
                 h_dPe[0][0], d_dNe_beg[i], h_dNe[0][0], d_dNe_midl[i], h_dNe[0][0], d_dNe_midr[i], h_dPe[0][0],
                 d_dNe_end[i], h_dPe[0][0], d_dTe_beg[i], h_dTe[0][0], d_dTe_midl[i], h_dTe[0][0], d_dTe_midr[i],
-                h_dPe[0][0], d_dTe_end[i], h_dPe[0][0]);
+                h_dPe[0][0], d_dTe_end[i], h_dPe[0][0], d_dP_beg[i], h_dP[0][0], d_dP_midl[i], h_dP[0][0], d_dP_midr[i],
+                h_dPe[0][0], d_dP_end[i], h_dPe[0][0]);
 
             /*--------------------------------------------PIC---------------------------------------------*/
 
@@ -2081,7 +2113,7 @@ class HybridModel {
                 reduceField(h_BeamPitchPower, d_BeamPitchPower);
         }
 
-        /*--------------------------------MHD Perturbation (13 fields)--------------------------------*/
+        /*--------------------------------MHD Perturbation (14 fields)--------------------------------*/
 
         auto gatherField = [&](mhdReal* hostBase, mhdReal** midlSrc) {
             std::vector<mhdReal> localSlab(hostSlabLen);
@@ -2098,6 +2130,7 @@ class HybridModel {
         gatherField(h_A[0][0], d_A_midl);
         gatherField(h_dNe[0][0], d_dNe_midl);
         gatherField(h_dTe[0][0], d_dTe_midl);
+        gatherField(h_dP[0][0], d_dP_midl);
         gatherField(h_Phi[0][0], d_Phi_midl);
         gatherField(h_dJpB[0][0], d_dJpB_midl);
         gatherField(h_dPe[0][0], d_dPe_midl);
@@ -2108,7 +2141,7 @@ class HybridModel {
         gatherField(h_globalNa[0][0], d_dNa_midl);
         gatherField(h_globalNb[0][0], d_dNb_midl);
 
-        /*-------------------------------Output Totals (7 conditional)--------------------------------*/
+        /*-------------------------------Output Totals (8 conditional)--------------------------------*/
 
         CUDACHECK(cudaSetDevice(localId * devNums));
         if (ifOutputPhi)
@@ -2123,6 +2156,9 @@ class HybridModel {
         if (ifOutputdTe)
             CUDACHECK(cudaMemcpy(h_totaldTe.data(), d_totaldTe[0], sizeof(mhdReal) * h_totaldTe.size(),
                                  cudaMemcpyDeviceToHost));
+        if (ifOutputdP)
+            CUDACHECK(
+                cudaMemcpy(h_totaldP.data(), d_totaldP[0], sizeof(mhdReal) * h_totaldP.size(), cudaMemcpyDeviceToHost));
         if (ifOutputdPi)
             CUDACHECK(cudaMemcpy(h_totaldPi.data(), d_totaldPi[0], sizeof(mhdReal) * h_totaldPi.size(),
                                  cudaMemcpyDeviceToHost));
@@ -2292,6 +2328,8 @@ class HybridModel {
                 writeBin(finalDir + "/totaldNe.bin", h_totaldNe.data(), sizeof(mhdReal) * h_totaldNe.size());
             if (ifOutputdTe)
                 writeBin(finalDir + "/totaldTe.bin", h_totaldTe.data(), sizeof(mhdReal) * h_totaldTe.size());
+            if (ifOutputdP)
+                writeBin(finalDir + "/totaldP.bin", h_totaldP.data(), sizeof(mhdReal) * h_totaldP.size());
             if (ifOutputdPi)
                 writeBin(finalDir + "/totaldPi.bin", h_totaldPi.data(), sizeof(mhdReal) * h_totaldPi.size());
             if (ifOutputdPa)
@@ -2469,6 +2507,7 @@ class HybridModel {
             writeBin(finalDir + "/A.bin", h_A[0][0] + gridGhost * gridNxz, sizeof(mhdReal) * gridNy * gridNxz);
             writeBin(finalDir + "/dNe.bin", h_dNe[0][0] + gridGhost * gridNxz, sizeof(mhdReal) * gridNy * gridNxz);
             writeBin(finalDir + "/dTe.bin", h_dTe[0][0] + gridGhost * gridNxz, sizeof(mhdReal) * gridNy * gridNxz);
+            writeBin(finalDir + "/dP.bin", h_dP[0][0] + gridGhost * gridNxz, sizeof(mhdReal) * gridNy * gridNxz);
             writeBin(finalDir + "/Phi.bin", h_Phi[0][0] + gridGhost * gridNxz, sizeof(mhdReal) * gridNy * gridNxz);
             writeBin(finalDir + "/dJpB.bin", h_dJpB[0][0] + gridGhost * gridNxz, sizeof(mhdReal) * gridNy * gridNxz);
             writeBin(finalDir + "/dPe.bin", h_dPe[0][0] + gridGhost * gridNxz, sizeof(mhdReal) * gridNy * gridNxz);
@@ -2479,7 +2518,7 @@ class HybridModel {
             writeBin(finalDir + "/dNa.bin", h_globalNa[0][0] + gridGhost * gridNxz, sizeof(mhdReal) * gridNy * gridNxz);
             writeBin(finalDir + "/dNb.bin", h_globalNb[0][0] + gridGhost * gridNxz, sizeof(mhdReal) * gridNy * gridNxz);
 
-            std::vector<mhdReal> MHDFinalPerturbation(gridNy * gridNxz * 10);
+            std::vector<mhdReal> MHDFinalPerturbation(gridNy * gridNxz * 11);
 
             for (int j = 0; j < gridNy; j++) {
                 for (int i = 0; i < gridNx; i++) {
@@ -2493,16 +2532,18 @@ class HybridModel {
                         MHDFinalPerturbation[j * gridNxz + i * gridNz + k + 3 * gridNy * gridNxz] =
                             h_dTe[j + gridGhost][i][k];
                         MHDFinalPerturbation[j * gridNxz + i * gridNz + k + 4 * gridNy * gridNxz] =
-                            h_globalPi[j + gridGhost][i][k];
+                            h_dP[j + gridGhost][i][k];
                         MHDFinalPerturbation[j * gridNxz + i * gridNz + k + 5 * gridNy * gridNxz] =
-                            h_globalPa[j + gridGhost][i][k];
+                            h_globalPi[j + gridGhost][i][k];
                         MHDFinalPerturbation[j * gridNxz + i * gridNz + k + 6 * gridNy * gridNxz] =
-                            h_globalPb[j + gridGhost][i][k];
+                            h_globalPa[j + gridGhost][i][k];
                         MHDFinalPerturbation[j * gridNxz + i * gridNz + k + 7 * gridNy * gridNxz] =
-                            h_globalNi[j + gridGhost][i][k];
+                            h_globalPb[j + gridGhost][i][k];
                         MHDFinalPerturbation[j * gridNxz + i * gridNz + k + 8 * gridNy * gridNxz] =
-                            h_globalNa[j + gridGhost][i][k];
+                            h_globalNi[j + gridGhost][i][k];
                         MHDFinalPerturbation[j * gridNxz + i * gridNz + k + 9 * gridNy * gridNxz] =
+                            h_globalNa[j + gridGhost][i][k];
+                        MHDFinalPerturbation[j * gridNxz + i * gridNz + k + 10 * gridNy * gridNxz] =
                             h_globalNb[j + gridGhost][i][k];
                     }
                 }
@@ -2728,12 +2769,13 @@ class HybridModel {
                     h_A[j + gridGhost][i][k] = binaryData[j * gridNxz + i * gridNz + k + 1 * gridNy * gridNxz];
                     h_dNe[j + gridGhost][i][k] = binaryData[j * gridNxz + i * gridNz + k + 2 * gridNy * gridNxz];
                     h_dTe[j + gridGhost][i][k] = binaryData[j * gridNxz + i * gridNz + k + 3 * gridNy * gridNxz];
-                    h_globalPi[j + gridGhost][i][k] = binaryData[j * gridNxz + i * gridNz + k + 4 * gridNy * gridNxz];
-                    h_globalPa[j + gridGhost][i][k] = binaryData[j * gridNxz + i * gridNz + k + 5 * gridNy * gridNxz];
-                    h_globalPb[j + gridGhost][i][k] = binaryData[j * gridNxz + i * gridNz + k + 6 * gridNy * gridNxz];
-                    h_globalNi[j + gridGhost][i][k] = binaryData[j * gridNxz + i * gridNz + k + 7 * gridNy * gridNxz];
-                    h_globalNa[j + gridGhost][i][k] = binaryData[j * gridNxz + i * gridNz + k + 8 * gridNy * gridNxz];
-                    h_globalNb[j + gridGhost][i][k] = binaryData[j * gridNxz + i * gridNz + k + 9 * gridNy * gridNxz];
+                    h_dP[j + gridGhost][i][k] = binaryData[j * gridNxz + i * gridNz + k + 4 * gridNy * gridNxz];
+                    h_globalPi[j + gridGhost][i][k] = binaryData[j * gridNxz + i * gridNz + k + 5 * gridNy * gridNxz];
+                    h_globalPa[j + gridGhost][i][k] = binaryData[j * gridNxz + i * gridNz + k + 6 * gridNy * gridNxz];
+                    h_globalPb[j + gridGhost][i][k] = binaryData[j * gridNxz + i * gridNz + k + 7 * gridNy * gridNxz];
+                    h_globalNi[j + gridGhost][i][k] = binaryData[j * gridNxz + i * gridNz + k + 8 * gridNy * gridNxz];
+                    h_globalNa[j + gridGhost][i][k] = binaryData[j * gridNxz + i * gridNz + k + 9 * gridNy * gridNxz];
+                    h_globalNb[j + gridGhost][i][k] = binaryData[j * gridNxz + i * gridNz + k + 10 * gridNy * gridNxz];
                 }
             }
         }
@@ -2780,7 +2822,7 @@ class HybridModel {
         }
 
         if (hostId == 0) {
-            std::vector<mhdReal> buf(gridNy * gridNxz * 10, 0);
+            std::vector<mhdReal> buf(gridNy * gridNxz * 11, 0);
             for (int j = 0; j < gridNy; j++)
                 for (int i = 0; i < gridNx; i++)
                     for (int k = 0; k < gridNz; k++)
@@ -2796,6 +2838,24 @@ class HybridModel {
     void compressCoefficient() {
 
         logStart("Compress coefficient in shifted metric coordinate.");
+
+        /*---------------------Thermal Pressure-----------------------*/
+
+        std::vector<std::vector<std::vector<double>>> P(
+            gridNx, std::vector<std::vector<double>>(gridNy, std::vector<double>(equilNz)));
+
+        std::vector<std::vector<std::vector<double>>> P_px(
+            gridNx, std::vector<std::vector<double>>(gridNy, std::vector<double>(equilNz)));
+
+        for (int i = 0; i < gridNx; i++) {
+            for (int j = 0; j < gridNy; j++) {
+                for (int k = 0; k < equilNz; k++) {
+
+                    P[i][j][k] = Pi[i][j][k] + Pe[i][j][k];
+                    P_px[i][j][k] = Pi_px[i][j][k] + Pe_px[i][j][k];
+                }
+            }
+        }
 
         if (NFP == 1) {
 
@@ -3093,6 +3153,38 @@ class HybridModel {
                     h_PhidTedNe2dTe[j][i][0 * 6 + 3] = h_dTe_pz_dTe[j][i][0];
                     h_PhidTedNe2dTe[j][i][0 * 6 + 4] = h_dNe_py_dTe[j][i][0];
                     h_PhidTedNe2dTe[j][i][0 * 6 + 5] = h_dNe_pz_dTe[j][i][0];
+
+                    // Single Fluid Pressure
+
+                    h_Phi_dP[j][i][0] = 0.0;
+                    h_Phi_px_dP[j][i][0] =
+                        -2.0 * std::pow(B[i][j][0], -3.0) *
+                        (B[i][j][0] * Bny_py[i][j][0] * gcovyz[i][j][0] +
+                         Bny[i][j][0] * ((-1.0) * B_py[i][j][0] * gcovyz[i][j][0] + B[i][j][0] * gcovyz_py[i][j][0])) *
+                        std::pow(J[i][j][0], -1.0) * P[i][j][0] * Gamma;
+                    h_Phi_py_dP[j][i][0] =
+                        std::pow(B[i][j][0], -4.0) * std::pow(J[i][j][0], -1.0) *
+                        ((-2.0) * B[i][j][0] * Bny[i][j][0] * B_px[i][j][0] * gcovyz[i][j][0] * P[i][j][0] * Gamma +
+                         2.0 * std::pow(Bny[i][j][0], 3.0) *
+                             (((-1.0) * gcovxy_py[i][j][0] + gcovyy_px[i][j][0]) * gcovyz[i][j][0] -
+                              gcovyy[i][j][0] * gcovyz_px[i][j][0] + gcovxy[i][j][0] * gcovyz_py[i][j][0]) *
+                             P[i][j][0] * Gamma +
+                         std::pow(B[i][j][0], 2.0) * (2.0 * Bny[i][j][0] * gcovyz_px[i][j][0] * P[i][j][0] * Gamma +
+                                                      gcovyz[i][j][0] * (Bny[i][j][0] * P_px[i][j][0] +
+                                                                         2.0 * Bny_px[i][j][0] * P[i][j][0] * Gamma)));
+                    h_Phi_pz_dP[j][i][0] =
+                        std::pow(B[i][j][0], -3.0) * std::pow(J[i][j][0], -1.0) *
+                        (2.0 * B[i][j][0] * (Bny_py[i][j][0] * gcovxy[i][j][0] - Bny_px[i][j][0] * gcovyy[i][j][0]) *
+                             P[i][j][0] * Gamma -
+                         Bny[i][j][0] * (2.0 * B_py[i][j][0] * gcovxy[i][j][0] * P[i][j][0] * Gamma -
+                                         2.0 * B_px[i][j][0] * gcovyy[i][j][0] * P[i][j][0] * Gamma +
+                                         B[i][j][0] * (gcovyy[i][j][0] * P_px[i][j][0] +
+                                                       2.0 * ((-1.0) * gcovxy_py[i][j][0] + gcovyy_px[i][j][0]) *
+                                                           P[i][j][0] * Gamma)));
+
+                    h_Phi2dP[j][i][0 * 3 + 0] = h_Phi_px_dP[j][i][0];
+                    h_Phi2dP[j][i][0 * 3 + 1] = h_Phi_py_dP[j][i][0];
+                    h_Phi2dP[j][i][0 * 3 + 2] = h_Phi_pz_dP[j][i][0];
 
                     // Equilibrium Density and Temperature
 
@@ -3418,6 +3510,41 @@ class HybridModel {
                         std::pow(B[i][j][0], -3.0) * Bny[i][j][0] *
                         (std::pow(gcovxy[i][j][0], 2.0) + (-1.0) * gcovxx[i][j][0] * gcovyy[i][j][0]) *
                         std::pow(J[i][j][0], -2.0);
+
+                    // Single Fluid Pressure
+
+                    h_dPPhi_dP[j][i][0 * 9 + 0] =
+                        -2.0 * std::pow(B[i][j][0], -3.0) *
+                        (B[i][j][0] * Bny_py[i][j][0] * gcovyz[i][j][0] +
+                         Bny[i][j][0] * ((-1.0) * B_py[i][j][0] * gcovyz[i][j][0] + B[i][j][0] * gcovyz_py[i][j][0])) *
+                        std::pow(J[i][j][0], -1.0) * Gamma;
+                    h_dPPhi_dP[j][i][0 * 9 + 1] =
+                        2.0 * std::pow(B[i][j][0], -4.0) *
+                        (std::pow(B[i][j][0], 2.0) * Bny_px[i][j][0] * gcovyz[i][j][0] +
+                         B[i][j][0] * Bny[i][j][0] *
+                             ((-1.0) * B_px[i][j][0] * gcovyz[i][j][0] + B[i][j][0] * gcovyz_px[i][j][0]) +
+                         std::pow(Bny[i][j][0], 3.0) *
+                             (((-1.0) * gcovxy_py[i][j][0] + gcovyy_px[i][j][0]) * gcovyz[i][j][0] -
+                              gcovyy[i][j][0] * gcovyz_px[i][j][0] + gcovxy[i][j][0] * gcovyz_py[i][j][0])) *
+                        std::pow(J[i][j][0], -1.0) * Gamma;
+                    h_dPPhi_dP[j][i][0 * 9 + 2] =
+                        2.0 * std::pow(B[i][j][0], -3.0) *
+                        (B[i][j][0] * (Bny_py[i][j][0] * gcovxy[i][j][0] - Bny_px[i][j][0] * gcovyy[i][j][0]) +
+                         Bny[i][j][0] * ((-1.0) * B_py[i][j][0] * gcovxy[i][j][0] + B_px[i][j][0] * gcovyy[i][j][0] +
+                                         B[i][j][0] * (gcovxy_py[i][j][0] - gcovyy_px[i][j][0]))) *
+                        std::pow(J[i][j][0], -1.0) * Gamma;
+                    h_dPPhi_dP[j][i][0 * 9 + 3] =
+                        std::pow(B[i][j][0], -2.0) * Bny[i][j][0] * gcovyz[i][j][0] * std::pow(J[i][j][0], -1.0);
+                    h_dPPhi_dP[j][i][0 * 9 + 4] =
+                        -1.0 * std::pow(B[i][j][0], -2.0) * Bny[i][j][0] * gcovyy[i][j][0] * std::pow(J[i][j][0], -1.0);
+                    h_dPPhi_dP[j][i][0 * 9 + 5] =
+                        -1.0 * std::pow(B[i][j][0], -2.0) * Bny[i][j][0] * gcovyz[i][j][0] * std::pow(J[i][j][0], -1.0);
+                    h_dPPhi_dP[j][i][0 * 9 + 6] =
+                        std::pow(B[i][j][0], -2.0) * Bny[i][j][0] * gcovxy[i][j][0] * std::pow(J[i][j][0], -1.0);
+                    h_dPPhi_dP[j][i][0 * 9 + 7] =
+                        std::pow(B[i][j][0], -2.0) * Bny[i][j][0] * gcovyy[i][j][0] * std::pow(J[i][j][0], -1.0);
+                    h_dPPhi_dP[j][i][0 * 9 + 8] =
+                        -1.0 * std::pow(B[i][j][0], -2.0) * Bny[i][j][0] * gcovxy[i][j][0] * std::pow(J[i][j][0], -1.0);
                 }
             }
 
@@ -3800,6 +3927,47 @@ class HybridModel {
                         h_PhidTedNe2dTe[j][i][k * 6 + 3] = h_dTe_pz_dTe[j][i][k];
                         h_PhidTedNe2dTe[j][i][k * 6 + 4] = h_dNe_py_dTe[j][i][k];
                         h_PhidTedNe2dTe[j][i][k * 6 + 5] = h_dNe_pz_dTe[j][i][k];
+
+                        // Single Fluid Pressure
+
+                        h_Phi_dP[j][i][k] = 0.0;
+                        h_Phi_px_dP[j][i][k] =
+                            2.0 * std::pow(B[i][j][k], -3.0) *
+                            (B[i][j][k] * (Bny_pz[i][j][k] * gcovyy[i][j][k] - Bny_py[i][j][k] * gcovyz[i][j][k]) +
+                             Bny[i][j][k] *
+                                 ((-1.0) * B_pz[i][j][k] * gcovyy[i][j][k] + B_py[i][j][k] * gcovyz[i][j][k] +
+                                  B[i][j][k] * (gcovyy_pz[i][j][k] - gcovyz_py[i][j][k]))) *
+                            std::pow(J[i][j][k], -1.0) * P[i][j][k] * Gamma;
+                        h_Phi_py_dP[j][i][k] =
+                            std::pow(B[i][j][k], -4.0) * std::pow(J[i][j][k], -1.0) *
+                            (2.0 * B[i][j][k] * Bny[i][j][k] *
+                                 (B_pz[i][j][k] * gcovxy[i][j][k] - B_px[i][j][k] * gcovyz[i][j][k]) * P[i][j][k] *
+                                 Gamma +
+                             2.0 * std::pow(Bny[i][j][k], 3.0) *
+                                 (((-1.0) * gcovxy_py[i][j][k] + gcovyy_px[i][j][k]) * gcovyz[i][j][k] +
+                                  gcovyy[i][j][k] * (gcovxy_pz[i][j][k] - gcovyz_px[i][j][k]) +
+                                  gcovxy[i][j][k] * ((-1.0) * gcovyy_pz[i][j][k] + gcovyz_py[i][j][k])) *
+                                 P[i][j][k] * Gamma +
+                             std::pow(B[i][j][k], 2.0) *
+                                 ((-2.0) * Bny_pz[i][j][k] * gcovxy[i][j][k] * P[i][j][k] * Gamma +
+                                  2.0 * Bny_px[i][j][k] * gcovyz[i][j][k] * P[i][j][k] * Gamma +
+                                  Bny[i][j][k] *
+                                      (gcovyz[i][j][k] * P_px[i][j][k] +
+                                       2.0 * ((-1.0) * gcovxy_pz[i][j][k] + gcovyz_px[i][j][k]) * P[i][j][k] * Gamma)));
+                        h_Phi_pz_dP[j][i][k] =
+                            std::pow(B[i][j][k], -3.0) * std::pow(J[i][j][k], -1.0) *
+                            (2.0 * B[i][j][k] *
+                                 (Bny_py[i][j][k] * gcovxy[i][j][k] - Bny_px[i][j][k] * gcovyy[i][j][k]) * P[i][j][k] *
+                                 Gamma -
+                             Bny[i][j][k] * (2.0 * B_py[i][j][k] * gcovxy[i][j][k] * P[i][j][k] * Gamma -
+                                             2.0 * B_px[i][j][k] * gcovyy[i][j][k] * P[i][j][k] * Gamma +
+                                             B[i][j][k] * (gcovyy[i][j][k] * P_px[i][j][k] +
+                                                           2.0 * ((-1.0) * gcovxy_py[i][j][k] + gcovyy_px[i][j][k]) *
+                                                               P[i][j][k] * Gamma)));
+
+                        h_Phi2dP[j][i][k * 3 + 0] = h_Phi_px_dP[j][i][k];
+                        h_Phi2dP[j][i][k * 3 + 1] = h_Phi_py_dP[j][i][k];
+                        h_Phi2dP[j][i][k * 3 + 2] = h_Phi_pz_dP[j][i][k];
 
                         // Equilibrium Density and Temperature
 
@@ -4188,6 +4356,47 @@ class HybridModel {
                             std::pow(B[i][j][k], -3.0) * Bny[i][j][k] *
                             (std::pow(gcovxy[i][j][k], 2.0) + (-1.0) * gcovxx[i][j][k] * gcovyy[i][j][k]) *
                             std::pow(J[i][j][k], -2.0);
+
+                        // Single Fluid Pressure
+
+                        h_dPPhi_dP[j][i][k * 9 + 0] =
+                            2.0 * std::pow(B[i][j][k], -3.0) *
+                            (B[i][j][k] * (Bny_pz[i][j][k] * gcovyy[i][j][k] - Bny_py[i][j][k] * gcovyz[i][j][k]) +
+                             Bny[i][j][k] *
+                                 ((-1.0) * B_pz[i][j][k] * gcovyy[i][j][k] + B_py[i][j][k] * gcovyz[i][j][k] +
+                                  B[i][j][k] * (gcovyy_pz[i][j][k] - gcovyz_py[i][j][k]))) *
+                            std::pow(J[i][j][k], -1.0) * Gamma;
+                        h_dPPhi_dP[j][i][k * 9 + 1] =
+                            -2.0 * std::pow(B[i][j][k], -4.0) *
+                            (B[i][j][k] * Bny[i][j][k] *
+                                 ((-1.0) * B_pz[i][j][k] * gcovxy[i][j][k] + B_px[i][j][k] * gcovyz[i][j][k]) +
+                             std::pow(B[i][j][k], 2.0) *
+                                 (Bny_pz[i][j][k] * gcovxy[i][j][k] - Bny_px[i][j][k] * gcovyz[i][j][k] +
+                                  Bny[i][j][k] * (gcovxy_pz[i][j][k] - gcovyz_px[i][j][k])) +
+                             std::pow(Bny[i][j][k], 3.0) *
+                                 ((gcovxy_py[i][j][k] - gcovyy_px[i][j][k]) * gcovyz[i][j][k] +
+                                  gcovyy[i][j][k] * ((-1.0) * gcovxy_pz[i][j][k] + gcovyz_px[i][j][k]) +
+                                  gcovxy[i][j][k] * (gcovyy_pz[i][j][k] - gcovyz_py[i][j][k]))) *
+                            std::pow(J[i][j][k], -1.0) * Gamma;
+                        h_dPPhi_dP[j][i][k * 9 + 2] =
+                            2.0 * std::pow(B[i][j][k], -3.0) *
+                            (B[i][j][k] * (Bny_py[i][j][k] * gcovxy[i][j][k] - Bny_px[i][j][k] * gcovyy[i][j][k]) +
+                             Bny[i][j][k] *
+                                 ((-1.0) * B_py[i][j][k] * gcovxy[i][j][k] + B_px[i][j][k] * gcovyy[i][j][k] +
+                                  B[i][j][k] * (gcovxy_py[i][j][k] - gcovyy_px[i][j][k]))) *
+                            std::pow(J[i][j][k], -1.0) * Gamma;
+                        h_dPPhi_dP[j][i][k * 9 + 3] =
+                            std::pow(B[i][j][k], -2.0) * Bny[i][j][k] * gcovyz[i][j][k] * std::pow(J[i][j][k], -1.0);
+                        h_dPPhi_dP[j][i][k * 9 + 4] = -1.0 * std::pow(B[i][j][k], -2.0) * Bny[i][j][k] *
+                                                      gcovyy[i][j][k] * std::pow(J[i][j][k], -1.0);
+                        h_dPPhi_dP[j][i][k * 9 + 5] = -1.0 * std::pow(B[i][j][k], -2.0) * Bny[i][j][k] *
+                                                      gcovyz[i][j][k] * std::pow(J[i][j][k], -1.0);
+                        h_dPPhi_dP[j][i][k * 9 + 6] =
+                            std::pow(B[i][j][k], -2.0) * Bny[i][j][k] * gcovxy[i][j][k] * std::pow(J[i][j][k], -1.0);
+                        h_dPPhi_dP[j][i][k * 9 + 7] =
+                            std::pow(B[i][j][k], -2.0) * Bny[i][j][k] * gcovyy[i][j][k] * std::pow(J[i][j][k], -1.0);
+                        h_dPPhi_dP[j][i][k * 9 + 8] = -1.0 * std::pow(B[i][j][k], -2.0) * Bny[i][j][k] *
+                                                      gcovxy[i][j][k] * std::pow(J[i][j][k], -1.0);
                     }
                 }
             }
