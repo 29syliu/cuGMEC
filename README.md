@@ -1,6 +1,10 @@
 # cuGMEC
 
 <p align="center">
+  <img src="docs/images/NCSX_RBM.png" alt="NCSX visualization" width="640">
+</p>
+
+<p align="center">
   <b>cuGMEC: A High-Performance Code for Gyrokinetic-MHD Hybrid Simulation on GPUs with CUDA C++</b>
 </p>
 
