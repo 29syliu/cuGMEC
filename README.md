@@ -1,10 +1,6 @@
 # cuGMEC
 
 <p align="center">
-  <img src="docs/images/NCSX_RBM.png" alt="NCSX visualization" width="640">
-</p>
-
-<p align="center">
   <b>cuGMEC: A High-Performance Code for Gyrokinetic-MHD Hybrid Simulation on GPUs with CUDA C++</b>
 </p>
 
@@ -13,6 +9,10 @@
   <img src="https://img.shields.io/badge/CUDA-76B900?style=flat&logo=nvidia&logoColor=white" alt="CUDA">
   <img src="https://img.shields.io/badge/C++-00599C?style=flat&logo=cplusplus&logoColor=white" alt="C++">
   <img src="https://img.shields.io/badge/License-GPLv3-blue" alt="GPLv3">
+</p>
+
+<p align="center">
+  <img src="docs/images/NCSX_RBM.png" alt="NCSX visualization" width="640">
 </p>
 
 ---
