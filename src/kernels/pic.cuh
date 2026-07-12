@@ -238,7 +238,7 @@ __global__ void DriftAlignedRK4(picReal* __restrict__ pic1d, picReal* __restrict
         }
 
         qId = i * qStride;
-        tileId = (j * cellNx + i) * tileStride;
+        tileId = (j * cellNx + i) * tileStride2D;
         cellId = j * gridNx * gridNzPlusGhost + i * gridNzPlusGhost + k;
         illegal = 0;
 
@@ -469,10 +469,11 @@ __global__ void DriftAlignedRK4(picReal* __restrict__ pic1d, picReal* __restrict
                 k = __float2int_rd(lk);
             }
 
+            dx = li - i;
             dy = lj - j;
             dz = lk - k;
             qId = i * qStride;
-            tileId = (j * cellNx + i) * tileStride;
+            tileId = (j * cellNx + i) * tileStride2D;
             cellId = j * gridNx * gridNzPlusGhost + i * gridNzPlusGhost + k;
         };
 
@@ -541,7 +542,7 @@ __global__ void DriftAlignedRK4(picReal* __restrict__ pic1d, picReal* __restrict
 
         dy = lj - j;
         dz = lk - k;
-        tileId = (j * cellNx + i) * tileStride;
+        tileId = (j * cellNx + i) * tileStride2D;
         cellId = j * cellNxz + i * cellNz + k;
 
         for (int index = 0; index < 2; index++)
@@ -702,7 +703,7 @@ __global__ void GyroAlignedRK4(picReal* __restrict__ pic1d, picReal* __restrict_
         }
 
         qId = i * qStride;
-        tileId = (j * cellNx + i) * tileStride;
+        tileId = (j * cellNx + i) * tileStride2D;
         cellId = j * gridNx * gridNzPlusGhost + i * gridNzPlusGhost + k;
         illegal = 0;
 
@@ -843,14 +844,14 @@ __global__ void GyroAlignedRK4(picReal* __restrict__ pic1d, picReal* __restrict_
                 angle = acosf(gconxy / sqrtf(gconxx * gconyy));
 
             if (i == gridNx - 2) {
-                tileId = (j * cellNx + i - 1) * tileStride + 64;
+                tileId = (j * cellNx + i - 1) * tileStride2D + 64;
                 FieldGather1d2d<4>(tileId, coes, pic2d, R1, Z1);
                 if constexpr (std::is_same_v<picReal, double>)
                     gyroDx = radius / sqrt((R1 - R0) * (R1 - R0) + (Z1 - Z0) * (Z1 - Z0)) * picGridDx;
                 else
                     gyroDx = radius / sqrtf((R1 - R0) * (R1 - R0) + (Z1 - Z0) * (Z1 - Z0)) * picGridDx;
             } else {
-                tileId = (j * cellNx + i + 1) * tileStride + 64;
+                tileId = (j * cellNx + i + 1) * tileStride2D + 64;
                 FieldGather1d2d<4>(tileId, coes, pic2d, R1, Z1);
                 if constexpr (std::is_same_v<picReal, double>)
                     gyroDx = radius / sqrt((R1 - R0) * (R1 - R0) + (Z1 - Z0) * (Z1 - Z0)) * picGridDx;
@@ -858,15 +859,13 @@ __global__ void GyroAlignedRK4(picReal* __restrict__ pic1d, picReal* __restrict_
                     gyroDx = radius / sqrtf((R1 - R0) * (R1 - R0) + (Z1 - Z0) * (Z1 - Z0)) * picGridDx;
             }
 
-            tileId = ((j + 1) * cellNx + i) * tileStride + 64;
+            tileId = ((j + 1) * cellNx + i) * tileStride2D + 64;
             FieldGather1d2d<4>(tileId, coes, pic2d, R1, Z1);
             if constexpr (std::is_same_v<picReal, double>)
                 gyroDy = radius / sqrt((R1 - R0) * (R1 - R0) + (Z1 - Z0) * (Z1 - Z0)) * picGridDy;
             else
                 gyroDy = radius / sqrtf((R1 - R0) * (R1 - R0) + (Z1 - Z0) * (Z1 - Z0)) * picGridDy;
 
-            R0 = B_px;
-            Z0 = B_py;
             avecxdxA = 0;
             avecydyA = 0;
             aveczdzA = 0;
@@ -1004,7 +1003,7 @@ __global__ void GyroAlignedRK4(picReal* __restrict__ pic1d, picReal* __restrict_
                 ddt[1] = invBstar * (vec1[3] * Bstary - avedyPhi - mu2e * dyB);
                 ddt[2] = invBstar * (vec1[3] * Bstarz - avedzPhi - mu2e * dzB);
                 ddt[3] = -invM2e * invBstar *
-                         (Bstarx * (avePhipx + aveAptbx + mu2e * R0) + Bstary * (avePhipy + aveAptby + mu2e * Z0) +
+                         (Bstarx * (avePhipx + aveAptbx + mu2e * B_px) + Bstary * (avePhipy + aveAptby + mu2e * B_py) +
                           Bstarz * (avePhipz + aveAptbz));
 
                 dxdt1 = ddt[0] - dxdt1;
@@ -1017,13 +1016,13 @@ __global__ void GyroAlignedRK4(picReal* __restrict__ pic1d, picReal* __restrict_
                 ddt[0] = invBstar * (vec1[3] * Bstarx - mu2e * dxB);
                 ddt[1] = invBstar * (vec1[3] * Bstary - mu2e * dyB);
                 ddt[2] = invBstar * (vec1[3] * Bstarz - mu2e * dzB);
-                ddt[3] = -invM2e * invBstar * mu2e * (Bstarx * R0 + Bstary * Z0);
+                ddt[3] = -invM2e * invBstar * mu2e * (Bstarx * B_px + Bstary * B_py);
 
                 dxdt1 = invBstar * (vec1[3] * avecxdxA - avedxPhi);
                 dydt1 = invBstar * (vec1[3] * avecydyA - avedyPhi);
                 dvdt1 = -invM2e * invBstar *
                         (Bstarx * (avePhipx + aveAptbx) + Bstary * (avePhipy + aveAptby) +
-                         Bstarz * (avePhipz + aveAptbz) + mu2e * (avecxdxA * R0 + avecydyA * Z0));
+                         Bstarz * (avePhipz + aveAptbz) + mu2e * (avecxdxA * B_px + avecydyA * B_py));
             }
 
             dfdt_XVpara();
@@ -1075,10 +1074,11 @@ __global__ void GyroAlignedRK4(picReal* __restrict__ pic1d, picReal* __restrict_
                 k = __float2int_rd(lk);
             }
 
+            dx = li - i;
             dy = lj - j;
             dz = lk - k;
             qId = i * qStride;
-            tileId = (j * cellNx + i) * tileStride;
+            tileId = (j * cellNx + i) * tileStride2D;
             cellId = j * gridNx * gridNzPlusGhost + i * gridNzPlusGhost + k;
         };
 
@@ -1155,9 +1155,9 @@ __global__ void GyroAlignedRK4(picReal* __restrict__ pic1d, picReal* __restrict_
         for (int index = 0; index < 4; index++)
             coes[index] *= (hy[index] + sy[index] * dy);
 
-        tileId = (j * cellNx + i) * tileStride + 4;
+        tileId = (j * cellNx + i) * tileStride2D + 4;
         FieldGather1d2d<4>(tileId, coes, pic2d, B);
-        tileId = (j * cellNx + i) * tileStride + 52;
+        tileId = (j * cellNx + i) * tileStride2D + 52;
         FieldGather1d2d<4>(tileId, coes, pic2d, gconxx, gconxy, gconyy, R0, Z0);
 
         if constexpr (std::is_same_v<picReal, double>)
@@ -1171,14 +1171,14 @@ __global__ void GyroAlignedRK4(picReal* __restrict__ pic1d, picReal* __restrict_
             angle = acosf(gconxy / sqrtf(gconxx * gconyy));
 
         if (i == gridNx - 2) {
-            tileId = (j * cellNx + i - 1) * tileStride + 64;
+            tileId = (j * cellNx + i - 1) * tileStride2D + 64;
             FieldGather1d2d<4>(tileId, coes, pic2d, R1, Z1);
             if constexpr (std::is_same_v<picReal, double>)
                 gyroDx = radius / sqrt((R1 - R0) * (R1 - R0) + (Z1 - Z0) * (Z1 - Z0)) * picGridDx;
             else
                 gyroDx = radius / sqrtf((R1 - R0) * (R1 - R0) + (Z1 - Z0) * (Z1 - Z0)) * picGridDx;
         } else {
-            tileId = (j * cellNx + i + 1) * tileStride + 64;
+            tileId = (j * cellNx + i + 1) * tileStride2D + 64;
             FieldGather1d2d<4>(tileId, coes, pic2d, R1, Z1);
             if constexpr (std::is_same_v<picReal, double>)
                 gyroDx = radius / sqrt((R1 - R0) * (R1 - R0) + (Z1 - Z0) * (Z1 - Z0)) * picGridDx;
@@ -1186,7 +1186,7 @@ __global__ void GyroAlignedRK4(picReal* __restrict__ pic1d, picReal* __restrict_
                 gyroDx = radius / sqrtf((R1 - R0) * (R1 - R0) + (Z1 - Z0) * (Z1 - Z0)) * picGridDx;
         }
 
-        tileId = ((j + 1) * cellNx + i) * tileStride + 64;
+        tileId = ((j + 1) * cellNx + i) * tileStride2D + 64;
         FieldGather1d2d<4>(tileId, coes, pic2d, R1, Z1);
         if constexpr (std::is_same_v<picReal, double>)
             gyroDy = radius / sqrt((R1 - R0) * (R1 - R0) + (Z1 - Z0) * (Z1 - Z0)) * picGridDy;
@@ -1253,7 +1253,7 @@ __global__ void GyroAlignedRK4(picReal* __restrict__ pic1d, picReal* __restrict_
 
             dy = lj - j;
             dz = lk - k;
-            tileId = (j * cellNx + i) * tileStride;
+            tileId = (j * cellNx + i) * tileStride2D;
 
             for (int index = 0; index < 2; index++)
                 coes[index + 2] = coes[index];
@@ -1269,6 +1269,1198 @@ __global__ void GyroAlignedRK4(picReal* __restrict__ pic1d, picReal* __restrict_
 
             for (int index = 0; index < 8; index++)
                 coes[index] *= (hz[index] + sz[index] * dz);
+
+            if (i == 0) {
+
+                for (int index = 0; index < 4; index++)
+                    coes[2 * index] = 0;
+            } else if (i == gridNx - 2) {
+
+                for (int index = 0; index < 4; index++)
+                    coes[2 * index + 1] = 0;
+            }
+
+            k = (k - gridGhost + gridNz) % gridNz;
+            qId = j * gridNxz + i * gridNz + k;
+            qId += (picId % depositBufferNums) * gridNyPlusGhost * gridNxz;
+
+            i = gridNz;
+            j = gridNxz;
+            k = (k + 1 + gridNz) % gridNz - k;
+
+            atomicAdd(&dP_mid[qId], static_cast<mhdReal>(coes[0] * disP));
+            atomicAdd(&dP_mid[qId + i], static_cast<mhdReal>(coes[1] * disP));
+            atomicAdd(&dP_mid[qId + j], static_cast<mhdReal>(coes[2] * disP));
+            atomicAdd(&dP_mid[qId + i + j], static_cast<mhdReal>(coes[3] * disP));
+            atomicAdd(&dP_mid[qId + k], static_cast<mhdReal>(coes[4] * disP));
+            atomicAdd(&dP_mid[qId + i + k], static_cast<mhdReal>(coes[5] * disP));
+            atomicAdd(&dP_mid[qId + j + k], static_cast<mhdReal>(coes[6] * disP));
+            atomicAdd(&dP_mid[qId + i + j + k], static_cast<mhdReal>(coes[7] * disP));
+
+            if constexpr (std::is_same_v<QNeutrality, trueType>) {
+                picReal disN =
+                    vec2[4] / J * partConst * pitchB0 * pitchB0 / 2 / mu0 / (mp * va * va) * l0 * l0 * l0 / gyroNums;
+
+                atomicAdd(&dN_mid[qId], static_cast<mhdReal>(coes[0] * disN));
+                atomicAdd(&dN_mid[qId + i], static_cast<mhdReal>(coes[1] * disN));
+                atomicAdd(&dN_mid[qId + j], static_cast<mhdReal>(coes[2] * disN));
+                atomicAdd(&dN_mid[qId + i + j], static_cast<mhdReal>(coes[3] * disN));
+                atomicAdd(&dN_mid[qId + k], static_cast<mhdReal>(coes[4] * disN));
+                atomicAdd(&dN_mid[qId + i + k], static_cast<mhdReal>(coes[5] * disN));
+                atomicAdd(&dN_mid[qId + j + k], static_cast<mhdReal>(coes[6] * disN));
+                atomicAdd(&dN_mid[qId + i + j + k], static_cast<mhdReal>(coes[7] * disN));
+            }
+        }
+
+        pic_keys_in[picId] = cellId;
+        pic_values_in[picId + 0 * picDev] = vec2[0];
+        pic_values_in[picId + 1 * picDev] = vec2[1];
+        pic_values_in[picId + 2 * picDev] = vec2[2];
+        pic_values_in[picId + 3 * picDev] = vec2[3];
+        pic_values_in[picId + 4 * picDev] = vec2[4];
+    }
+}
+
+template <int ratioDt, picType particle, disType distribution, typename nonlinear, typename QNeutrality,
+          typename mhdReal, typename picReal>
+__global__ void DriftStraightRK4(picReal* __restrict__ pic1d, picReal* __restrict__ pic2d, picReal* __restrict__ pic3d,
+                                 int* __restrict__ pic_keys_in, picReal* __restrict__ pic_values_in,
+                                 mhdReal* __restrict__ dP_mid, mhdReal* __restrict__ dN_mid) {
+
+    int illegal;
+    int i, j, k;
+    int qId, tileId, cellId, picId;
+
+    picReal flag;
+    picReal li, lj, lk;
+    picReal coes[8] = {};
+
+    picReal dx, dy, dz, disP, mu;
+    picReal ddt[5] = {};
+    picReal vec0[5] = {};
+    picReal vec1[5] = {};
+    picReal vec2[5] = {};
+
+    picReal q, q_px, J, J_px, J_py, J_pz, B, B_px, B_py, B_pz;
+    picReal gcovxy, gcovxz, gcovyy, gcovyz, gcovzz;
+    picReal gcovxy_py, gcovxy_pz, gcovxz_py, gcovxz_pz;
+    picReal gcovyy_px, gcovyy_pz, gcovyz_px, gcovyz_py, gcovyz_pz, gcovzz_px, gcovzz_py;
+    picReal APhiApt[8] = {};
+
+    picReal bx, by, bz;
+    picReal bxr, byr, bzr;
+    picReal rho, bcony;
+    picReal cx, cy, cz;
+    picReal m2e, mu2e;
+    picReal dxy, dxz, dyz;
+    picReal dxB, dyB, dzB;
+    picReal Bstarx, Bstary, Bstarz, Bstar;
+    picReal invJ, invB, invQ, invRho, invBstar, invM2e, bconyOverJ;
+    picReal lnbconyx, lnbconyy, lnbconyz;
+    picReal na, na_px, nb, nb_px, ni, ni_px;
+    picReal ta, ta_px, tb, tb_px, ti, ti_px;
+    picReal V, E, cdwdt;
+
+    picReal dvdt1, dxdt1, dydt1, dzdt1;
+    picReal dxPhi, dyPhi, dzPhi;
+    picReal cxdxA, cydyA, czdzA;
+
+    const picReal partMass = (particle == Ion) ? IonMass : (particle == Alpha) ? AlphaMass : BeamMass;
+    const picReal partChar = (particle == Ion) ? IonChar : (particle == Alpha) ? AlphaChar : BeamChar;
+    const picReal partVb = (particle == Ion) ? IonVb : (particle == Alpha) ? AlphaVb : BeamVb;
+    const picReal partDeltaV = (particle == Ion) ? IonDeltaV : (particle == Alpha) ? AlphaDeltaV : BeamDeltaV;
+    const picReal partLambda0 = (particle == Ion) ? IonLambda0 : (particle == Alpha) ? AlphaLambda0 : BeamLambda0;
+    const picReal partDeltaLambda2 = (particle == Ion)     ? IonDeltaLambda2
+                                     : (particle == Alpha) ? AlphaDeltaLambda2
+                                                           : BeamDeltaLambda2;
+    const picReal partConst = (particle == Ion) ? IonConst : (particle == Alpha) ? AlphaConst : BeamConst;
+
+    for (int id = 0; id < pptNums; id++) {
+
+        picId = blockIdx.x * blockDim.x * pptNums + id * blockDim.x + threadIdx.x;
+        vec0[0] = pic_values_in[picId + 0 * picDev];
+        vec0[1] = pic_values_in[picId + 1 * picDev];
+        vec0[2] = pic_values_in[picId + 2 * picDev];
+        vec0[3] = pic_values_in[picId + 3 * picDev];
+        vec0[4] = pic_values_in[picId + 4 * picDev];
+        disP = pic_values_in[picId + 5 * picDev];
+        mu = pic_values_in[picId + 6 * picDev];
+
+        li = (vec0[0] - xbeg) / picGridDx;
+        lj = (vec0[1] - ybeg) / picGridDy;
+        lk = (vec0[2] - zbeg) / picGridDz;
+
+        if constexpr (std::is_same_v<picReal, double>) {
+            i = __double2int_rd(li);
+            j = __double2int_rd(lj);
+            k = __double2int_rd(lk);
+        } else {
+            i = __float2int_rd(li);
+            j = __float2int_rd(lj);
+            k = __float2int_rd(lk);
+        }
+
+        dx = li - i;
+        dy = lj - j;
+        dz = lk - k;
+
+        for (int index = 0; index < 5; index++) {
+            vec1[index] = vec0[index];
+            vec2[index] = vec0[index];
+        }
+
+        qId = i * qStride;
+        tileId = (j * cellNxz + i * cellNz + k) * tileStride3D;
+        cellId = j * gridNx * gridNzPlusGhost + i * gridNzPlusGhost + k;
+        illegal = 0;
+
+        auto dfdt_XVpara = [&]() {
+            picReal& n = (particle == Ion ? ni : (particle == Alpha ? na : nb));
+            picReal& n_px = (particle == Ion ? ni_px : (particle == Alpha ? na_px : nb_px));
+            picReal& t = (particle == Ion ? ti : (particle == Alpha ? ta : tb));
+            picReal& t_px = (particle == Ion ? ti_px : (particle == Alpha ? ta_px : tb_px));
+
+            if constexpr (distribution == Maxwell) {
+
+                cdwdt = mp * va * va / (t * kev);
+
+                ddt[4] = (-n_px / n + 3 * t_px / (2 * t) + (mu * B_px - t_px / t * E) * cdwdt) * dxdt1;
+                ddt[4] += mu * B_py * cdwdt * dydt1;
+                ddt[4] += mu * B_pz * cdwdt * dzdt1;
+                ddt[4] += partMass * vec1[3] * cdwdt * dvdt1;
+
+            } else {
+
+                cdwdt = 3 * V / (2 * E * V + partMass * t * t * t);
+
+                ddt[4] = (-n_px / n + mu * B_px * cdwdt) * dxdt1;
+                ddt[4] += mu * B_py * cdwdt * dydt1;
+                ddt[4] += mu * B_pz * cdwdt * dzdt1;
+                ddt[4] += partMass * vec1[3] * cdwdt * dvdt1;
+
+                ddt[4] += 3 * t * t / (V * V * V + t * t * t) * t_px * dxdt1;
+
+                if constexpr (distribution == Slowing0) {
+
+                    cdwdt = 0;
+
+                } else if constexpr (distribution == Slowing1) {
+
+                    if constexpr (std::is_same_v<picReal, double>)
+                        cdwdt = 2 * exp(-pow((partVb - V) / partDeltaV, 2.0)) /
+                                (partMass * V * partDeltaV * sqrt(pi) * (1 + erf((partVb - V) / partDeltaV)));
+                    else
+                        cdwdt = 2 * expf(-powf((partVb - V) / partDeltaV, 2.0f)) /
+                                (partMass * V * partDeltaV * sqrtf(pi) * (1 + erff((partVb - V) / partDeltaV)));
+
+                } else if constexpr (distribution == Slowing2) {
+
+                    cdwdt = 2 * mu * (partLambda0 * E - mu) / (partDeltaLambda2 * E * E * E);
+
+                } else if constexpr (distribution == Slowing3) {
+
+                    cdwdt = 2 * mu * (partLambda0 * E - mu) / (partDeltaLambda2 * E * E * E);
+
+                    if constexpr (std::is_same_v<picReal, double>)
+                        cdwdt += 2 * exp(-pow((partVb - V) / partDeltaV, 2.0)) /
+                                 (partMass * V * partDeltaV * sqrt(pi) * (1 + erf((partVb - V) / partDeltaV)));
+                    else
+                        cdwdt += 2 * expf(-powf((partVb - V) / partDeltaV, 2.0f)) /
+                                 (partMass * V * partDeltaV * sqrtf(pi) * (1 + erff((partVb - V) / partDeltaV)));
+                }
+
+                ddt[4] += mu * B_px * cdwdt * dxdt1;
+                ddt[4] += mu * B_py * cdwdt * dydt1;
+                ddt[4] += mu * B_pz * cdwdt * dzdt1;
+                ddt[4] += partMass * vec1[3] * cdwdt * dvdt1;
+            }
+
+            if constexpr (std::is_same_v<nonlinear, trueType>)
+                ddt[4] *= (disP - vec1[4]);
+            else
+                ddt[4] *= disP;
+        };
+
+        auto interpRK4 = [&]() {
+            for (int index = 0; index < 2; index++)
+                coes[index] = (hx[index] + sx[index] * dx);
+            FieldGather1d2d<2>(qId, coes, pic1d, q, q_px, na, na_px, nb, nb_px, ni, ni_px, ta, ta_px, tb, tb_px, ti,
+                               ti_px);
+
+            for (int index = 0; index < 8; index++)
+                coes[index] =
+                    (hx[index] + sx[index] * dx) * (hy[index] + sy[index] * dy) * (hz[index] + sz[index] * dz);
+
+            FieldGather1d2d<8>(tileId, coes, pic2d, J, B, J_px, J_py, J_pz, B_px, B_py, B_pz, gcovxy, gcovxz, gcovyy,
+                               gcovyz, gcovzz, gcovxy_py, gcovxy_pz, gcovxz_py, gcovxz_pz, gcovyy_px, gcovyy_pz,
+                               gcovyz_px, gcovyz_py, gcovyz_pz, gcovzz_px, gcovzz_py);
+
+            m2e = cm * partMass / partChar;
+            mu2e = cm * mu / partChar;
+            E = partMass * vec1[3] * vec1[3] / 2 + mu * B;
+            if constexpr (std::is_same_v<picReal, double>)
+                V = sqrt(2.0 * E / partMass);
+            else
+                V = sqrtf(2.0f * E / partMass);
+
+            rho = rho0 + vec1[0] * drho;
+            bcony = 2 * psitmax * drho * rho / (q * J * B);
+
+            invJ = 1 / J;
+            invB = 1 / B;
+            invQ = 1 / q;
+            invRho = 1 / rho;
+            invM2e = 1 / m2e;
+            bconyOverJ = bcony * invJ;
+
+            bxr = gcovxy + q * gcovxz;
+            byr = gcovyy + q * gcovyz;
+            bzr = gcovyz + q * gcovzz;
+
+            bx = bcony * bxr;
+            by = bcony * byr;
+            bz = bcony * bzr;
+
+            lnbconyx = drho * invRho - q_px * invQ - J_px * invJ - B_px * invB;
+            lnbconyy = -J_py * invJ - B_py * invB;
+            lnbconyz = -J_pz * invJ - B_pz * invB;
+
+            cx = bconyOverJ * (gcovyz_py + q * gcovzz_py - gcovyy_pz - q * gcovyz_pz + bzr * lnbconyy - byr * lnbconyz);
+            cy = bconyOverJ * (gcovxy_pz + q * gcovxz_pz - gcovyz_px - q_px * gcovzz - q * gcovzz_px + bxr * lnbconyz -
+                               bzr * lnbconyx);
+            cz = bconyOverJ * (gcovyy_px + q_px * gcovyz + q * gcovyz_px - gcovxy_py - q * gcovxz_py + byr * lnbconyx -
+                               bxr * lnbconyy);
+
+            dxy = bconyOverJ * bzr;
+            dxz = bconyOverJ * byr;
+            dyz = bconyOverJ * bxr;
+
+            dxB = dxy * B_py - dxz * B_pz;
+            dyB = dyz * B_pz - dxy * B_px;
+            dzB = dxz * B_px - dyz * B_py;
+
+            Bstarx = cx * m2e * vec1[3];
+            Bstary = cy * m2e * vec1[3] + B * bcony;
+            Bstarz = cz * m2e * vec1[3] + q * B * bcony;
+
+            vec1[2] -= q * vec1[1];
+            if constexpr (std::is_same_v<picReal, double>)
+                vec1[2] = vec1[2] - floor((vec1[2] - zori) / zrange) * zrange;
+            else
+                vec1[2] = vec1[2] - floorf((vec1[2] - zori) / zrange) * zrange;
+
+            lk = (vec1[2] - zbeg) / picGridDz;
+
+            if constexpr (std::is_same_v<picReal, double>)
+                k = __double2int_rd(lk);
+            else
+                k = __float2int_rd(lk);
+
+            dz = lk - k;
+            cellId = j * gridNx * gridNzPlusGhost + i * gridNzPlusGhost + k;
+
+            for (int index = 0; index < 8; index++)
+                coes[index] =
+                    (hx[index] + sx[index] * dx) * (hy[index] + sy[index] * dy) * (hz[index] + sz[index] * dz);
+
+            for (int index = 0; index < 8; index++)
+                APhiApt[index] = 0;
+
+            FieldGather3d(cellId, coes, pic3d, APhiApt);
+
+            APhiApt[1] -= q_px * vec1[1] * APhiApt[3];
+            APhiApt[2] -= q * APhiApt[3];
+            APhiApt[4] -= q_px * vec1[1] * APhiApt[6];
+            APhiApt[5] -= q * APhiApt[6];
+
+            cxdxA = cx * APhiApt[0] + dxy * APhiApt[2] - dxz * APhiApt[3];
+            cydyA = cy * APhiApt[0] + dyz * APhiApt[3] - dxy * APhiApt[1];
+            czdzA = cz * APhiApt[0] + dxz * APhiApt[1] - dyz * APhiApt[2];
+
+            dxPhi = dxy * APhiApt[5] - dxz * APhiApt[6];
+            dyPhi = dyz * APhiApt[6] - dxy * APhiApt[4];
+            dzPhi = dxz * APhiApt[4] - dyz * APhiApt[5];
+
+            if constexpr (std::is_same_v<nonlinear, trueType>) {
+
+                Bstar = Bstarx * bx + Bstary * by + Bstarz * bz;
+                invBstar = 1 / Bstar;
+                dxdt1 = invBstar * (vec1[3] * Bstarx - mu2e * dxB);
+                dydt1 = invBstar * (vec1[3] * Bstary - mu2e * dyB);
+                dzdt1 = invBstar * (vec1[3] * Bstarz - mu2e * dzB);
+                dvdt1 = -invM2e * invBstar * mu2e * (Bstarx * B_px + Bstary * B_py + Bstarz * B_pz);
+
+                Bstarx += cxdxA;
+                Bstary += cydyA;
+                Bstarz += czdzA;
+
+                Bstar = Bstarx * bx + Bstary * by + Bstarz * bz;
+                invBstar = 1 / Bstar;
+
+                ddt[0] = invBstar * (vec1[3] * Bstarx - dxPhi - mu2e * dxB);
+                ddt[1] = invBstar * (vec1[3] * Bstary - dyPhi - mu2e * dyB);
+                ddt[2] = invBstar * (vec1[3] * Bstarz - dzPhi - mu2e * dzB);
+                ddt[3] = -invM2e * (APhiApt[7] + invBstar * (Bstarx * (APhiApt[4] + mu2e * B_px) +
+                                                             Bstary * (APhiApt[5] + mu2e * B_py) +
+                                                             Bstarz * (APhiApt[6] + mu2e * B_pz)));
+
+                dxdt1 = ddt[0] - dxdt1;
+                dydt1 = ddt[1] - dydt1;
+                dzdt1 = ddt[2] - dzdt1;
+                dvdt1 = ddt[3] - dvdt1;
+            } else {
+                Bstar = Bstarx * bx + Bstary * by + Bstarz * bz;
+                invBstar = 1 / Bstar;
+
+                ddt[0] = invBstar * (vec1[3] * Bstarx - mu2e * dxB);
+                ddt[1] = invBstar * (vec1[3] * Bstary - mu2e * dyB);
+                ddt[2] = invBstar * (vec1[3] * Bstarz - mu2e * dzB);
+                ddt[3] = -invM2e * invBstar * mu2e * (Bstarx * B_px + Bstary * B_py + Bstarz * B_pz);
+
+                dxdt1 = invBstar * (vec1[3] * cxdxA - dxPhi);
+                dydt1 = invBstar * (vec1[3] * cydyA - dyPhi);
+                dzdt1 = invBstar * (vec1[3] * czdzA - dzPhi);
+                dvdt1 = -invM2e *
+                        (APhiApt[7] + invBstar * (Bstarx * APhiApt[4] + Bstary * APhiApt[5] + Bstarz * APhiApt[6] +
+                                                  mu2e * (cxdxA * B_px + cydyA * B_py + czdzA * B_pz)));
+            }
+
+            dfdt_XVpara();
+        };
+
+        auto advanceRK4 = [&](picReal bRK, picReal cRK) {
+            for (int index = 0; index < 5; index++)
+                vec2[index] += ddt[index] * picGridDt * ratioDt * bRK;
+
+            flag = vec0[0] + ddt[0] * picGridDt * ratioDt * cRK;
+            if (flag < xbeg || flag >= xend)
+                illegal = 1;
+            if (!illegal)
+                for (int index = 0; index < 5; index++)
+                    vec1[index] = vec0[index] + ddt[index] * picGridDt * ratioDt * cRK;
+            else
+                for (int index = 0; index < 5; index++)
+                    vec1[index] = vec0[index];
+
+            if constexpr (std::is_same_v<picReal, double>) {
+                vec1[1] = vec1[1] - floor((vec1[1] - yori) / yrange) * yrange;
+                vec1[2] = vec1[2] - floor((vec1[2] - zori) / zrange) * zrange;
+            } else {
+                vec1[1] = vec1[1] - floorf((vec1[1] - yori) / yrange) * yrange;
+                vec1[2] = vec1[2] - floorf((vec1[2] - zori) / zrange) * zrange;
+            }
+
+            li = (vec1[0] - xbeg) / picGridDx;
+            lj = (vec1[1] - ybeg) / picGridDy;
+            lk = (vec1[2] - zbeg) / picGridDz;
+
+            if constexpr (std::is_same_v<picReal, double>) {
+                i = __double2int_rd(li);
+                j = __double2int_rd(lj);
+                k = __double2int_rd(lk);
+            } else {
+                i = __float2int_rd(li);
+                j = __float2int_rd(lj);
+                k = __float2int_rd(lk);
+            }
+
+            dx = li - i;
+            dy = lj - j;
+            dz = lk - k;
+            qId = i * qStride;
+            tileId = (j * cellNxz + i * cellNz + k) * tileStride3D;
+            cellId = j * gridNx * gridNzPlusGhost + i * gridNzPlusGhost + k;
+        };
+
+        /*--------------------------------------1st RK4---------------------------------------*/
+
+        interpRK4();
+        advanceRK4(picReal(1) / 6, picReal(1) / 2);
+
+        /*--------------------------------------2nd RK4---------------------------------------*/
+
+        interpRK4();
+        advanceRK4(picReal(1) / 3, picReal(1) / 2);
+
+        /*--------------------------------------3rd RK4---------------------------------------*/
+
+        interpRK4();
+        advanceRK4(picReal(1) / 3, picReal(1));
+
+        /*--------------------------------------4th RK4---------------------------------------*/
+
+        interpRK4();
+
+        for (int index = 0; index < 5; index++)
+            vec2[index] += ddt[index] * picGridDt * ratioDt / 6;
+
+        if (vec2[0] < xbeg || vec2[0] >= xend)
+            illegal = 1;
+        if (illegal) {
+            for (int index = 0; index < 5; index++)
+                vec2[index] = vec0[index];
+            vec2[1] = -vec0[1];
+            vec2[4] = 0;
+        }
+
+        if constexpr (std::is_same_v<picReal, double>) {
+            vec2[1] = vec2[1] - floor((vec2[1] - yori) / yrange) * yrange;
+            vec2[2] = vec2[2] - floor((vec2[2] - zori) / zrange) * zrange;
+        } else {
+            vec2[1] = vec2[1] - floorf((vec2[1] - yori) / yrange) * yrange;
+            vec2[2] = vec2[2] - floorf((vec2[2] - zori) / zrange) * zrange;
+        }
+
+        li = (vec2[0] - xbeg) / picGridDx;
+        if constexpr (std::is_same_v<picReal, double>)
+            i = __double2int_rd(li);
+        else
+            i = __float2int_rd(li);
+        dx = li - i;
+        qId = i * qStride;
+        coes[0] = hx[0] + sx[0] * dx;
+        coes[1] = hx[1] + sx[1] * dx;
+        FieldGather1d2d<2>(qId, coes, pic1d, q);
+
+        lj = (vec2[1] - ybeg) / picGridDy;
+        lk = (vec2[2] - zbeg) / picGridDz;
+
+        if constexpr (std::is_same_v<picReal, double>) {
+            j = __double2int_rd(lj);
+            k = __double2int_rd(lk);
+        } else {
+            j = __float2int_rd(lj);
+            k = __float2int_rd(lk);
+        }
+
+        dy = lj - j;
+        dz = lk - k;
+        tileId = (j * cellNxz + i * cellNz + k) * tileStride3D;
+        cellId = j * gridNx * gridNzPlusGhost + i * gridNzPlusGhost + k;
+
+        for (int index = 0; index < 8; index++)
+            coes[index] = (hx[index] + sx[index] * dx) * (hy[index] + sy[index] * dy) * (hz[index] + sz[index] * dz);
+
+        FieldGather1d2d<8>(tileId, coes, pic2d, J, B);
+
+        disP = (partMass * vec2[3] * vec2[3] + mu * B) * vec2[4] / J * partConst / 2;
+
+        flag = vec2[2] - q * vec2[1];
+        if constexpr (std::is_same_v<picReal, double>)
+            flag = flag - floor((flag - zori) / zrange) * zrange;
+        else
+            flag = flag - floorf((flag - zori) / zrange) * zrange;
+
+        lk = (flag - zbeg) / picGridDz;
+        if constexpr (std::is_same_v<picReal, double>)
+            k = __double2int_rd(lk);
+        else
+            k = __float2int_rd(lk);
+        dz = lk - k;
+
+        for (int index = 0; index < 8; index++)
+            coes[index] = (hx[index] + sx[index] * dx) * (hy[index] + sy[index] * dy) * (hz[index] + sz[index] * dz);
+
+        if (i == 0) {
+
+            for (int index = 0; index < 4; index++)
+                coes[2 * index] = 0;
+        } else if (i == gridNx - 2) {
+
+            for (int index = 0; index < 4; index++)
+                coes[2 * index + 1] = 0;
+        }
+
+        k = (k - gridGhost + gridNz) % gridNz;
+        qId = j * gridNxz + i * gridNz + k;
+        qId += (picId % depositBufferNums) * gridNyPlusGhost * gridNxz;
+
+        i = gridNz;
+        j = gridNxz;
+        k = (k + 1 + gridNz) % gridNz - k;
+
+        atomicAdd(&dP_mid[qId], static_cast<mhdReal>(coes[0] * disP));
+        atomicAdd(&dP_mid[qId + i], static_cast<mhdReal>(coes[1] * disP));
+        atomicAdd(&dP_mid[qId + j], static_cast<mhdReal>(coes[2] * disP));
+        atomicAdd(&dP_mid[qId + i + j], static_cast<mhdReal>(coes[3] * disP));
+        atomicAdd(&dP_mid[qId + k], static_cast<mhdReal>(coes[4] * disP));
+        atomicAdd(&dP_mid[qId + i + k], static_cast<mhdReal>(coes[5] * disP));
+        atomicAdd(&dP_mid[qId + j + k], static_cast<mhdReal>(coes[6] * disP));
+        atomicAdd(&dP_mid[qId + i + j + k], static_cast<mhdReal>(coes[7] * disP));
+
+        if constexpr (std::is_same_v<QNeutrality, trueType>) {
+            picReal disN = vec2[4] / J * partConst * pitchB0 * pitchB0 / 2 / mu0 / (mp * va * va) * l0 * l0 * l0;
+
+            atomicAdd(&dN_mid[qId], static_cast<mhdReal>(coes[0] * disN));
+            atomicAdd(&dN_mid[qId + i], static_cast<mhdReal>(coes[1] * disN));
+            atomicAdd(&dN_mid[qId + j], static_cast<mhdReal>(coes[2] * disN));
+            atomicAdd(&dN_mid[qId + i + j], static_cast<mhdReal>(coes[3] * disN));
+            atomicAdd(&dN_mid[qId + k], static_cast<mhdReal>(coes[4] * disN));
+            atomicAdd(&dN_mid[qId + i + k], static_cast<mhdReal>(coes[5] * disN));
+            atomicAdd(&dN_mid[qId + j + k], static_cast<mhdReal>(coes[6] * disN));
+            atomicAdd(&dN_mid[qId + i + j + k], static_cast<mhdReal>(coes[7] * disN));
+        }
+
+        pic_keys_in[picId] = cellId;
+        pic_values_in[picId + 0 * picDev] = vec2[0];
+        pic_values_in[picId + 1 * picDev] = vec2[1];
+        pic_values_in[picId + 2 * picDev] = vec2[2];
+        pic_values_in[picId + 3 * picDev] = vec2[3];
+        pic_values_in[picId + 4 * picDev] = vec2[4];
+    }
+}
+
+template <int ratioDt, int gyroNums, picType particle, disType distribution, typename nonlinear, typename QNeutrality,
+          typename mhdReal, typename picReal>
+__global__ void GyroStraightRK4(picReal* __restrict__ pic1d, picReal* __restrict__ pic2d, picReal* __restrict__ pic3d,
+                                int* __restrict__ pic_keys_in, picReal* __restrict__ pic_values_in,
+                                mhdReal* __restrict__ dP_mid, mhdReal* __restrict__ dN_mid) {
+
+    int illegal;
+    int i, j, k;
+    int qId, tileId, cellId, picId;
+
+    picReal flag;
+    picReal li, lj, lk;
+    picReal coes[8] = {};
+
+    picReal dx, dy, dz, disP, mu;
+    picReal ddt[5] = {};
+    picReal vec0[5] = {};
+    picReal vec1[5] = {};
+    picReal vec2[5] = {};
+
+    picReal q, q_px, J, J_px, J_py, J_pz, B, B_px, B_py, B_pz;
+    picReal gcovxy, gcovxz, gcovyy, gcovyz, gcovzz;
+    picReal gcovxy_py, gcovxy_pz, gcovxz_py, gcovxz_pz;
+    picReal gcovyy_px, gcovyy_pz, gcovyz_px, gcovyz_py, gcovyz_pz, gcovzz_px, gcovzz_py;
+    picReal APhiApt[8] = {};
+
+    picReal bx, by, bz;
+    picReal bxr, byr, bzr;
+    picReal rho, bcony;
+    picReal cx, cy, cz;
+    picReal m2e, mu2e;
+    picReal dxy, dxz, dyz;
+    picReal dxB, dyB, dzB;
+    picReal Bstarx, Bstary, Bstarz, Bstar;
+    picReal invJ, invB, invQ, invRho, invBstar, invM2e, bconyOverJ;
+    picReal lnbconyx, lnbconyy, lnbconyz;
+    picReal na, na_px, nb, nb_px, ni, ni_px;
+    picReal ta, ta_px, tb, tb_px, ti, ti_px;
+    picReal V, E, cdwdt;
+
+    picReal gyroDx, gyroDy;
+    picReal gyroX, gyroY, gyroZ;
+    picReal gconxx, gconxy, gconyy;
+    picReal R0, Z0, R1, Z1, angle, radius;
+    picReal halfAngle, sinAngle, sinHalfAngle, cosHalfAngle, invSinAngle, gyroTheta, sinA, cosA;
+    picReal avecxdxA, avecydyA, aveczdzA;
+    picReal avedxPhi, avedyPhi, avedzPhi;
+    picReal avePhipx, avePhipy, avePhipz;
+    picReal aveAptbx, aveAptby, aveAptbz;
+    picReal dvdt1, dxdt1, dydt1, dzdt1;
+
+    const picReal partMass = (particle == Ion) ? IonMass : (particle == Alpha) ? AlphaMass : BeamMass;
+    const picReal partChar = (particle == Ion) ? IonChar : (particle == Alpha) ? AlphaChar : BeamChar;
+    const picReal partVb = (particle == Ion) ? IonVb : (particle == Alpha) ? AlphaVb : BeamVb;
+    const picReal partDeltaV = (particle == Ion) ? IonDeltaV : (particle == Alpha) ? AlphaDeltaV : BeamDeltaV;
+    const picReal partLambda0 = (particle == Ion) ? IonLambda0 : (particle == Alpha) ? AlphaLambda0 : BeamLambda0;
+    const picReal partDeltaLambda2 = (particle == Ion)     ? IonDeltaLambda2
+                                     : (particle == Alpha) ? AlphaDeltaLambda2
+                                                           : BeamDeltaLambda2;
+    const picReal partConst = (particle == Ion) ? IonConst : (particle == Alpha) ? AlphaConst : BeamConst;
+
+    for (int id = 0; id < pptNums; id++) {
+
+        picId = blockIdx.x * blockDim.x * pptNums + id * blockDim.x + threadIdx.x;
+        vec0[0] = pic_values_in[picId + 0 * picDev];
+        vec0[1] = pic_values_in[picId + 1 * picDev];
+        vec0[2] = pic_values_in[picId + 2 * picDev];
+        vec0[3] = pic_values_in[picId + 3 * picDev];
+        vec0[4] = pic_values_in[picId + 4 * picDev];
+        disP = pic_values_in[picId + 5 * picDev];
+        mu = pic_values_in[picId + 6 * picDev];
+
+        li = (vec0[0] - xbeg) / picGridDx;
+        lj = (vec0[1] - ybeg) / picGridDy;
+        lk = (vec0[2] - zbeg) / picGridDz;
+
+        if constexpr (std::is_same_v<picReal, double>) {
+            i = __double2int_rd(li);
+            j = __double2int_rd(lj);
+            k = __double2int_rd(lk);
+        } else {
+            i = __float2int_rd(li);
+            j = __float2int_rd(lj);
+            k = __float2int_rd(lk);
+        }
+
+        dx = li - i;
+        dy = lj - j;
+        dz = lk - k;
+
+        for (int index = 0; index < 5; index++) {
+            vec1[index] = vec0[index];
+            vec2[index] = vec0[index];
+        }
+
+        qId = i * qStride;
+        tileId = (j * cellNxz + i * cellNz + k) * tileStride3D;
+        cellId = j * gridNx * gridNzPlusGhost + i * gridNzPlusGhost + k;
+        illegal = 0;
+
+        auto dfdt_XVpara = [&]() {
+            picReal& n = (particle == Ion ? ni : (particle == Alpha ? na : nb));
+            picReal& n_px = (particle == Ion ? ni_px : (particle == Alpha ? na_px : nb_px));
+            picReal& t = (particle == Ion ? ti : (particle == Alpha ? ta : tb));
+            picReal& t_px = (particle == Ion ? ti_px : (particle == Alpha ? ta_px : tb_px));
+
+            if constexpr (distribution == Maxwell) {
+
+                cdwdt = mp * va * va / (t * kev);
+
+                ddt[4] = (-n_px / n + 3 * t_px / (2 * t) + (mu * B_px - t_px / t * E) * cdwdt) * dxdt1;
+                ddt[4] += mu * B_py * cdwdt * dydt1;
+                ddt[4] += mu * B_pz * cdwdt * dzdt1;
+                ddt[4] += partMass * vec1[3] * cdwdt * dvdt1;
+
+            } else {
+
+                cdwdt = 3 * V / (2 * E * V + partMass * t * t * t);
+
+                ddt[4] = (-n_px / n + mu * B_px * cdwdt) * dxdt1;
+                ddt[4] += mu * B_py * cdwdt * dydt1;
+                ddt[4] += mu * B_pz * cdwdt * dzdt1;
+                ddt[4] += partMass * vec1[3] * cdwdt * dvdt1;
+
+                ddt[4] += 3 * t * t / (V * V * V + t * t * t) * t_px * dxdt1;
+
+                if constexpr (distribution == Slowing0) {
+
+                    cdwdt = 0;
+
+                } else if constexpr (distribution == Slowing1) {
+
+                    if constexpr (std::is_same_v<picReal, double>)
+                        cdwdt = 2 * exp(-pow((partVb - V) / partDeltaV, 2.0)) /
+                                (partMass * V * partDeltaV * sqrt(pi) * (1 + erf((partVb - V) / partDeltaV)));
+                    else
+                        cdwdt = 2 * expf(-powf((partVb - V) / partDeltaV, 2.0f)) /
+                                (partMass * V * partDeltaV * sqrtf(pi) * (1 + erff((partVb - V) / partDeltaV)));
+
+                } else if constexpr (distribution == Slowing2) {
+
+                    cdwdt = 2 * mu * (partLambda0 * E - mu) / (partDeltaLambda2 * E * E * E);
+
+                } else if constexpr (distribution == Slowing3) {
+
+                    cdwdt = 2 * mu * (partLambda0 * E - mu) / (partDeltaLambda2 * E * E * E);
+
+                    if constexpr (std::is_same_v<picReal, double>)
+                        cdwdt += 2 * exp(-pow((partVb - V) / partDeltaV, 2.0)) /
+                                 (partMass * V * partDeltaV * sqrt(pi) * (1 + erf((partVb - V) / partDeltaV)));
+                    else
+                        cdwdt += 2 * expf(-powf((partVb - V) / partDeltaV, 2.0f)) /
+                                 (partMass * V * partDeltaV * sqrtf(pi) * (1 + erff((partVb - V) / partDeltaV)));
+                }
+
+                ddt[4] += mu * B_px * cdwdt * dxdt1;
+                ddt[4] += mu * B_py * cdwdt * dydt1;
+                ddt[4] += mu * B_pz * cdwdt * dzdt1;
+                ddt[4] += partMass * vec1[3] * cdwdt * dvdt1;
+            }
+
+            if constexpr (std::is_same_v<nonlinear, trueType>)
+                ddt[4] *= (disP - vec1[4]);
+            else
+                ddt[4] *= disP;
+        };
+
+        auto interpRK4 = [&]() {
+            for (int index = 0; index < 2; index++)
+                coes[index] = (hx[index] + sx[index] * dx);
+            FieldGather1d2d<2>(qId, coes, pic1d, q, q_px, na, na_px, nb, nb_px, ni, ni_px, ta, ta_px, tb, tb_px, ti,
+                               ti_px);
+
+            for (int index = 0; index < 8; index++)
+                coes[index] =
+                    (hx[index] + sx[index] * dx) * (hy[index] + sy[index] * dy) * (hz[index] + sz[index] * dz);
+
+            FieldGather1d2d<8>(tileId, coes, pic2d, J, B, J_px, J_py, J_pz, B_px, B_py, B_pz, gcovxy, gcovxz, gcovyy,
+                               gcovyz, gcovzz, gcovxy_py, gcovxy_pz, gcovxz_py, gcovxz_pz, gcovyy_px, gcovyy_pz,
+                               gcovyz_px, gcovyz_py, gcovyz_pz, gcovzz_px, gcovzz_py, gconxx, gconxy, gconyy, R0, Z0);
+
+            m2e = cm * partMass / partChar;
+            mu2e = cm * mu / partChar;
+            E = partMass * vec1[3] * vec1[3] / 2 + mu * B;
+            if constexpr (std::is_same_v<picReal, double>) {
+                radius = cm / partChar * sqrt(2.0 * mu * partMass / B);
+                V = sqrt(2.0 * E / partMass);
+            } else {
+                radius = cm / partChar * sqrtf(2.0f * mu * partMass / B);
+                V = sqrtf(2.0f * E / partMass);
+            }
+
+            rho = rho0 + vec1[0] * drho;
+            bcony = 2 * psitmax * drho * rho / (q * J * B);
+
+            invJ = 1 / J;
+            invB = 1 / B;
+            invQ = 1 / q;
+            invRho = 1 / rho;
+            invM2e = 1 / m2e;
+            bconyOverJ = bcony * invJ;
+
+            bxr = gcovxy + q * gcovxz;
+            byr = gcovyy + q * gcovyz;
+            bzr = gcovyz + q * gcovzz;
+
+            bx = bcony * bxr;
+            by = bcony * byr;
+            bz = bcony * bzr;
+
+            lnbconyx = drho * invRho - q_px * invQ - J_px * invJ - B_px * invB;
+            lnbconyy = -J_py * invJ - B_py * invB;
+            lnbconyz = -J_pz * invJ - B_pz * invB;
+
+            cx = bconyOverJ * (gcovyz_py + q * gcovzz_py - gcovyy_pz - q * gcovyz_pz + bzr * lnbconyy - byr * lnbconyz);
+            cy = bconyOverJ * (gcovxy_pz + q * gcovxz_pz - gcovyz_px - q_px * gcovzz - q * gcovzz_px + bxr * lnbconyz -
+                               bzr * lnbconyx);
+            cz = bconyOverJ * (gcovyy_px + q_px * gcovyz + q * gcovyz_px - gcovxy_py - q * gcovxz_py + byr * lnbconyx -
+                               bxr * lnbconyy);
+
+            dxy = bconyOverJ * bzr;
+            dxz = bconyOverJ * byr;
+            dyz = bconyOverJ * bxr;
+
+            dxB = dxy * B_py - dxz * B_pz;
+            dyB = dyz * B_pz - dxy * B_px;
+            dzB = dxz * B_px - dyz * B_py;
+
+            Bstarx = cx * m2e * vec1[3];
+            Bstary = cy * m2e * vec1[3] + B * bcony;
+            Bstarz = cz * m2e * vec1[3] + q * B * bcony;
+
+            Bstar = Bstarx * bx + Bstary * by + Bstarz * bz;
+
+            if constexpr (std::is_same_v<nonlinear, trueType>) {
+
+                invBstar = 1 / Bstar;
+                dxdt1 = invBstar * (vec1[3] * Bstarx - mu2e * dxB);
+                dydt1 = invBstar * (vec1[3] * Bstary - mu2e * dyB);
+                dzdt1 = invBstar * (vec1[3] * Bstarz - mu2e * dzB);
+                dvdt1 = -invM2e * invBstar * mu2e * (Bstarx * B_px + Bstary * B_py + Bstarz * B_pz);
+            }
+
+            if constexpr (std::is_same_v<picReal, double>)
+                angle = acos(gconxy / sqrt(gconxx * gconyy));
+            else
+                angle = acosf(gconxy / sqrtf(gconxx * gconyy));
+
+            if (i == gridNx - 2) {
+                tileId = (j * cellNxz + (i - 1) * cellNz + k) * tileStride3D + 216;
+                FieldGather1d2d<8>(tileId, coes, pic2d, R1, Z1);
+                if constexpr (std::is_same_v<picReal, double>)
+                    gyroDx = radius / sqrt((R1 - R0) * (R1 - R0) + (Z1 - Z0) * (Z1 - Z0)) * picGridDx;
+                else
+                    gyroDx = radius / sqrtf((R1 - R0) * (R1 - R0) + (Z1 - Z0) * (Z1 - Z0)) * picGridDx;
+            } else {
+                tileId = (j * cellNxz + (i + 1) * cellNz + k) * tileStride3D + 216;
+                FieldGather1d2d<8>(tileId, coes, pic2d, R1, Z1);
+                if constexpr (std::is_same_v<picReal, double>)
+                    gyroDx = radius / sqrt((R1 - R0) * (R1 - R0) + (Z1 - Z0) * (Z1 - Z0)) * picGridDx;
+                else
+                    gyroDx = radius / sqrtf((R1 - R0) * (R1 - R0) + (Z1 - Z0) * (Z1 - Z0)) * picGridDx;
+            }
+
+            tileId = ((j + 1) * cellNxz + i * cellNz + k) * tileStride3D + 216;
+            FieldGather1d2d<8>(tileId, coes, pic2d, R1, Z1);
+            if constexpr (std::is_same_v<picReal, double>)
+                gyroDy = radius / sqrt((R1 - R0) * (R1 - R0) + (Z1 - Z0) * (Z1 - Z0)) * picGridDy;
+            else
+                gyroDy = radius / sqrtf((R1 - R0) * (R1 - R0) + (Z1 - Z0) * (Z1 - Z0)) * picGridDy;
+
+            avecxdxA = 0;
+            avecydyA = 0;
+            aveczdzA = 0;
+            avedxPhi = 0;
+            avedyPhi = 0;
+            avedzPhi = 0;
+            avePhipx = 0;
+            avePhipy = 0;
+            avePhipz = 0;
+            aveAptbx = 0;
+            aveAptby = 0;
+            aveAptbz = 0;
+
+            halfAngle = angle / 2;
+            if constexpr (std::is_same_v<picReal, double>) {
+                sincos(halfAngle, &sinHalfAngle, &cosHalfAngle);
+                sinAngle = sin(angle);
+            } else {
+                sincosf(halfAngle, &sinHalfAngle, &cosHalfAngle);
+                sinAngle = sinf(angle);
+            }
+            invSinAngle = 1 / sinAngle;
+            gyroTheta = 2 * pi / gyroNums;
+
+            for (int gyroId = 0; gyroId < gyroNums; gyroId++) {
+
+                if constexpr (std::is_same_v<picReal, double>)
+                    sincos(gyroId * gyroTheta, &sinA, &cosA);
+                else
+                    sincosf(gyroId * gyroTheta, &sinA, &cosA);
+
+                gyroX = vec1[0] + (sinA * cosHalfAngle + cosA * sinHalfAngle) * invSinAngle * gyroDx;
+                gyroY = vec1[1] + (sinA * cosHalfAngle - cosA * sinHalfAngle) * invSinAngle * gyroDy;
+
+                if (gyroX < 0 || gyroX >= 1)
+                    continue;
+
+                li = (gyroX - xbeg) / picGridDx;
+                if constexpr (std::is_same_v<picReal, double>)
+                    i = __double2int_rd(li);
+                else
+                    i = __float2int_rd(li);
+                dx = li - i;
+                qId = i * qStride;
+                coes[0] = hx[0] + sx[0] * dx;
+                coes[1] = hx[1] + sx[1] * dx;
+                FieldGather1d2d<2>(qId, coes, pic1d, q, q_px);
+
+                if constexpr (std::is_same_v<picReal, double>)
+                    gyroY = gyroY - floor((gyroY - yori) / yrange) * yrange;
+                else
+                    gyroY = gyroY - floorf((gyroY - yori) / yrange) * yrange;
+
+                gyroZ = vec1[2] - q * gyroY;
+                if constexpr (std::is_same_v<picReal, double>)
+                    gyroZ = gyroZ - floor((gyroZ - zori) / zrange) * zrange;
+                else
+                    gyroZ = gyroZ - floorf((gyroZ - zori) / zrange) * zrange;
+
+                lj = (gyroY - ybeg) / picGridDy;
+                lk = (gyroZ - zbeg) / picGridDz;
+
+                if constexpr (std::is_same_v<picReal, double>) {
+                    j = __double2int_rd(lj);
+                    k = __double2int_rd(lk);
+                } else {
+                    j = __float2int_rd(lj);
+                    k = __float2int_rd(lk);
+                }
+
+                dy = lj - j;
+                dz = lk - k;
+                cellId = j * gridNx * gridNzPlusGhost + i * gridNzPlusGhost + k;
+
+                for (int index = 0; index < 8; index++)
+                    coes[index] =
+                        (hx[index] + sx[index] * dx) * (hy[index] + sy[index] * dy) * (hz[index] + sz[index] * dz);
+
+                for (int index = 0; index < 8; index++)
+                    APhiApt[index] = 0;
+
+                FieldGather3d(cellId, coes, pic3d, APhiApt);
+
+                APhiApt[1] -= q_px * gyroY * APhiApt[3];
+                APhiApt[2] -= q * APhiApt[3];
+                APhiApt[4] -= q_px * gyroY * APhiApt[6];
+                APhiApt[5] -= q * APhiApt[6];
+
+                avecxdxA += cx * APhiApt[0] + dxy * APhiApt[2] - dxz * APhiApt[3];
+                avecydyA += cy * APhiApt[0] + dyz * APhiApt[3] - dxy * APhiApt[1];
+                aveczdzA += cz * APhiApt[0] + dxz * APhiApt[1] - dyz * APhiApt[2];
+
+                avedxPhi += dxy * APhiApt[5] - dxz * APhiApt[6];
+                avedyPhi += dyz * APhiApt[6] - dxy * APhiApt[4];
+                avedzPhi += dxz * APhiApt[4] - dyz * APhiApt[5];
+
+                avePhipx += APhiApt[4];
+                avePhipy += APhiApt[5];
+                avePhipz += APhiApt[6];
+
+                aveAptbx += APhiApt[7] * bx;
+                aveAptby += APhiApt[7] * by;
+                aveAptbz += APhiApt[7] * bz;
+            }
+
+            avecxdxA /= gyroNums;
+            avecydyA /= gyroNums;
+            aveczdzA /= gyroNums;
+
+            avedxPhi /= gyroNums;
+            avedyPhi /= gyroNums;
+            avedzPhi /= gyroNums;
+
+            avePhipx /= gyroNums;
+            avePhipy /= gyroNums;
+            avePhipz /= gyroNums;
+
+            aveAptbx /= gyroNums;
+            aveAptby /= gyroNums;
+            aveAptbz /= gyroNums;
+
+            if constexpr (std::is_same_v<nonlinear, trueType>) {
+                Bstarx += avecxdxA;
+                Bstary += avecydyA;
+                Bstarz += aveczdzA;
+
+                Bstar = Bstarx * bx + Bstary * by + Bstarz * bz;
+                invBstar = 1 / Bstar;
+
+                ddt[0] = invBstar * (vec1[3] * Bstarx - avedxPhi - mu2e * dxB);
+                ddt[1] = invBstar * (vec1[3] * Bstary - avedyPhi - mu2e * dyB);
+                ddt[2] = invBstar * (vec1[3] * Bstarz - avedzPhi - mu2e * dzB);
+                ddt[3] = -invM2e * invBstar *
+                         (Bstarx * (avePhipx + aveAptbx + mu2e * B_px) + Bstary * (avePhipy + aveAptby + mu2e * B_py) +
+                          Bstarz * (avePhipz + aveAptbz + mu2e * B_pz));
+
+                dxdt1 = ddt[0] - dxdt1;
+                dydt1 = ddt[1] - dydt1;
+                dzdt1 = ddt[2] - dzdt1;
+                dvdt1 = ddt[3] - dvdt1;
+            } else {
+                Bstar = Bstarx * bx + Bstary * by + Bstarz * bz;
+                invBstar = 1 / Bstar;
+
+                ddt[0] = invBstar * (vec1[3] * Bstarx - mu2e * dxB);
+                ddt[1] = invBstar * (vec1[3] * Bstary - mu2e * dyB);
+                ddt[2] = invBstar * (vec1[3] * Bstarz - mu2e * dzB);
+                ddt[3] = -invM2e * invBstar * mu2e * (Bstarx * B_px + Bstary * B_py + Bstarz * B_pz);
+
+                dxdt1 = invBstar * (vec1[3] * avecxdxA - avedxPhi);
+                dydt1 = invBstar * (vec1[3] * avecydyA - avedyPhi);
+                dzdt1 = invBstar * (vec1[3] * aveczdzA - avedzPhi);
+                dvdt1 = -invM2e * invBstar *
+                        (Bstarx * (avePhipx + aveAptbx) + Bstary * (avePhipy + aveAptby) +
+                         Bstarz * (avePhipz + aveAptbz) + mu2e * (avecxdxA * B_px + avecydyA * B_py + aveczdzA * B_pz));
+            }
+
+            dfdt_XVpara();
+        };
+
+        auto advanceRK4 = [&](picReal bRK, picReal cRK) {
+            for (int index = 0; index < 5; index++)
+                vec2[index] += ddt[index] * picGridDt * ratioDt * bRK;
+
+            flag = vec0[0] + ddt[0] * picGridDt * ratioDt * cRK;
+            if (flag < xbeg || flag >= xend)
+                illegal = 1;
+            if (!illegal)
+                for (int index = 0; index < 5; index++)
+                    vec1[index] = vec0[index] + ddt[index] * picGridDt * ratioDt * cRK;
+            else
+                for (int index = 0; index < 5; index++)
+                    vec1[index] = vec0[index];
+
+            if constexpr (std::is_same_v<picReal, double>) {
+                vec1[1] = vec1[1] - floor((vec1[1] - yori) / yrange) * yrange;
+                vec1[2] = vec1[2] - floor((vec1[2] - zori) / zrange) * zrange;
+            } else {
+                vec1[1] = vec1[1] - floorf((vec1[1] - yori) / yrange) * yrange;
+                vec1[2] = vec1[2] - floorf((vec1[2] - zori) / zrange) * zrange;
+            }
+
+            li = (vec1[0] - xbeg) / picGridDx;
+            lj = (vec1[1] - ybeg) / picGridDy;
+            lk = (vec1[2] - zbeg) / picGridDz;
+
+            if constexpr (std::is_same_v<picReal, double>) {
+                i = __double2int_rd(li);
+                j = __double2int_rd(lj);
+                k = __double2int_rd(lk);
+            } else {
+                i = __float2int_rd(li);
+                j = __float2int_rd(lj);
+                k = __float2int_rd(lk);
+            }
+
+            dx = li - i;
+            dy = lj - j;
+            dz = lk - k;
+            qId = i * qStride;
+            tileId = (j * cellNxz + i * cellNz + k) * tileStride3D;
+            cellId = j * gridNx * gridNzPlusGhost + i * gridNzPlusGhost + k;
+        };
+
+        /*--------------------------------------1st RK4---------------------------------------*/
+
+        interpRK4();
+        advanceRK4(picReal(1) / 6, picReal(1) / 2);
+
+        /*--------------------------------------2nd RK4---------------------------------------*/
+
+        interpRK4();
+        advanceRK4(picReal(1) / 3, picReal(1) / 2);
+
+        /*--------------------------------------3rd RK4---------------------------------------*/
+
+        interpRK4();
+        advanceRK4(picReal(1) / 3, picReal(1));
+
+        /*--------------------------------------4th RK4---------------------------------------*/
+
+        interpRK4();
+
+        for (int index = 0; index < 5; index++)
+            vec2[index] += ddt[index] * picGridDt * ratioDt / 6;
+
+        if (vec2[0] < xbeg || vec2[0] >= xend)
+            illegal = 1;
+        if (illegal) {
+            for (int index = 0; index < 5; index++)
+                vec2[index] = vec0[index];
+            vec2[1] = -vec0[1];
+            vec2[4] = 0;
+        }
+
+        if constexpr (std::is_same_v<picReal, double>) {
+            vec2[1] = vec2[1] - floor((vec2[1] - yori) / yrange) * yrange;
+            vec2[2] = vec2[2] - floor((vec2[2] - zori) / zrange) * zrange;
+        } else {
+            vec2[1] = vec2[1] - floorf((vec2[1] - yori) / yrange) * yrange;
+            vec2[2] = vec2[2] - floorf((vec2[2] - zori) / zrange) * zrange;
+        }
+
+        li = (vec2[0] - xbeg) / picGridDx;
+        lj = (vec2[1] - ybeg) / picGridDy;
+        lk = (vec2[2] - zbeg) / picGridDz;
+
+        if constexpr (std::is_same_v<picReal, double>) {
+            i = __double2int_rd(li);
+            j = __double2int_rd(lj);
+            k = __double2int_rd(lk);
+        } else {
+            i = __float2int_rd(li);
+            j = __float2int_rd(lj);
+            k = __float2int_rd(lk);
+        }
+
+        dx = li - i;
+        dy = lj - j;
+        dz = lk - k;
+        tileId = (j * cellNxz + i * cellNz + k) * tileStride3D;
+        cellId = j * gridNx * gridNzPlusGhost + i * gridNzPlusGhost + k;
+
+        for (int index = 0; index < 8; index++)
+            coes[index] = (hx[index] + sx[index] * dx) * (hy[index] + sy[index] * dy) * (hz[index] + sz[index] * dz);
+
+        tileId = (j * cellNxz + i * cellNz + k) * tileStride3D + 8;
+        FieldGather1d2d<8>(tileId, coes, pic2d, B);
+        tileId = (j * cellNxz + i * cellNz + k) * tileStride3D + 192;
+        FieldGather1d2d<8>(tileId, coes, pic2d, gconxx, gconxy, gconyy, R0, Z0);
+
+        if constexpr (std::is_same_v<picReal, double>)
+            radius = cm / partChar * sqrt(2.0 * mu * partMass / B);
+        else
+            radius = cm / partChar * sqrtf(2.0f * mu * partMass / B);
+
+        if constexpr (std::is_same_v<picReal, double>)
+            angle = acos(gconxy / sqrt(gconxx * gconyy));
+        else
+            angle = acosf(gconxy / sqrtf(gconxx * gconyy));
+
+        if (i == gridNx - 2) {
+            tileId = (j * cellNxz + (i - 1) * cellNz + k) * tileStride3D + 216;
+            FieldGather1d2d<8>(tileId, coes, pic2d, R1, Z1);
+            if constexpr (std::is_same_v<picReal, double>)
+                gyroDx = radius / sqrt((R1 - R0) * (R1 - R0) + (Z1 - Z0) * (Z1 - Z0)) * picGridDx;
+            else
+                gyroDx = radius / sqrtf((R1 - R0) * (R1 - R0) + (Z1 - Z0) * (Z1 - Z0)) * picGridDx;
+        } else {
+            tileId = (j * cellNxz + (i + 1) * cellNz + k) * tileStride3D + 216;
+            FieldGather1d2d<8>(tileId, coes, pic2d, R1, Z1);
+            if constexpr (std::is_same_v<picReal, double>)
+                gyroDx = radius / sqrt((R1 - R0) * (R1 - R0) + (Z1 - Z0) * (Z1 - Z0)) * picGridDx;
+            else
+                gyroDx = radius / sqrtf((R1 - R0) * (R1 - R0) + (Z1 - Z0) * (Z1 - Z0)) * picGridDx;
+        }
+
+        tileId = ((j + 1) * cellNxz + i * cellNz + k) * tileStride3D + 216;
+        FieldGather1d2d<8>(tileId, coes, pic2d, R1, Z1);
+        if constexpr (std::is_same_v<picReal, double>)
+            gyroDy = radius / sqrt((R1 - R0) * (R1 - R0) + (Z1 - Z0) * (Z1 - Z0)) * picGridDy;
+        else
+            gyroDy = radius / sqrtf((R1 - R0) * (R1 - R0) + (Z1 - Z0) * (Z1 - Z0)) * picGridDy;
+
+        halfAngle = angle / 2;
+        if constexpr (std::is_same_v<picReal, double>) {
+            sincos(halfAngle, &sinHalfAngle, &cosHalfAngle);
+            sinAngle = sin(angle);
+        } else {
+            sincosf(halfAngle, &sinHalfAngle, &cosHalfAngle);
+            sinAngle = sinf(angle);
+        }
+        invSinAngle = 1 / sinAngle;
+        gyroTheta = 2 * pi / gyroNums;
+
+        for (int gyroId = 0; gyroId < gyroNums; gyroId++) {
+
+            if constexpr (std::is_same_v<picReal, double>)
+                sincos(gyroId * gyroTheta, &sinA, &cosA);
+            else
+                sincosf(gyroId * gyroTheta, &sinA, &cosA);
+
+            gyroX = vec2[0] + (sinA * cosHalfAngle + cosA * sinHalfAngle) * invSinAngle * gyroDx;
+            gyroY = vec2[1] + (sinA * cosHalfAngle - cosA * sinHalfAngle) * invSinAngle * gyroDy;
+
+            if (gyroX < 0 || gyroX >= 1)
+                continue;
+
+            if constexpr (std::is_same_v<picReal, double>)
+                gyroY = gyroY - floor((gyroY - yori) / yrange) * yrange;
+            else
+                gyroY = gyroY - floorf((gyroY - yori) / yrange) * yrange;
+
+            li = (gyroX - xbeg) / picGridDx;
+            lj = (gyroY - ybeg) / picGridDy;
+            lk = (vec2[2] - zbeg) / picGridDz;
+
+            if constexpr (std::is_same_v<picReal, double>) {
+                i = __double2int_rd(li);
+                j = __double2int_rd(lj);
+                k = __double2int_rd(lk);
+            } else {
+                i = __float2int_rd(li);
+                j = __float2int_rd(lj);
+                k = __float2int_rd(lk);
+            }
+
+            dx = li - i;
+            dy = lj - j;
+            dz = lk - k;
+            qId = i * qStride;
+            coes[0] = hx[0] + sx[0] * dx;
+            coes[1] = hx[1] + sx[1] * dx;
+            FieldGather1d2d<2>(qId, coes, pic1d, q);
+
+            tileId = (j * cellNxz + i * cellNz + k) * tileStride3D;
+            for (int index = 0; index < 8; index++)
+                coes[index] =
+                    (hx[index] + sx[index] * dx) * (hy[index] + sy[index] * dy) * (hz[index] + sz[index] * dz);
+
+            FieldGather1d2d<8>(tileId, coes, pic2d, J, B);
+
+            disP = (partMass * vec2[3] * vec2[3] + mu * B) * vec2[4] / J * partConst / 2 / gyroNums;
+
+            gyroZ = vec2[2] - q * gyroY;
+            if constexpr (std::is_same_v<picReal, double>)
+                gyroZ = gyroZ - floor((gyroZ - zori) / zrange) * zrange;
+            else
+                gyroZ = gyroZ - floorf((gyroZ - zori) / zrange) * zrange;
+
+            lk = (gyroZ - zbeg) / picGridDz;
+            if constexpr (std::is_same_v<picReal, double>)
+                k = __double2int_rd(lk);
+            else
+                k = __float2int_rd(lk);
+            dz = lk - k;
+
+            for (int index = 0; index < 8; index++)
+                coes[index] =
+                    (hx[index] + sx[index] * dx) * (hy[index] + sy[index] * dy) * (hz[index] + sz[index] * dz);
 
             if (i == 0) {
 
@@ -1355,7 +2547,7 @@ __global__ void PICDiagDensity(picReal* __restrict__ pic2d, int* __restrict__ pi
         dx = li - i;
         dy = lj - j;
 
-        tileId = (j * cellNx + i) * tileStride;
+        tileId = (j * cellNx + i) * tileStride2D;
 
         /*------------------------------------Diag Density------------------------------------*/
 
@@ -1460,9 +2652,9 @@ __global__ void PICDiagPhaseDeltaF(picReal* __restrict__ pic1d, picReal* __restr
         for (int index = 0; index < 4; index++)
             coes[index] *= (hy[index] + sy[index] * dy);
 
-        tileId = (j * cellNx + i) * tileStride;
+        tileId = (j * cellNx + i) * tileStride2D;
         FieldGather1d2d<4>(tileId, coes, pic2d, J, B);
-        tileId = (j * cellNx + i) * tileStride + 32;
+        tileId = (j * cellNx + i) * tileStride2D + 32;
         FieldGather1d2d<4>(tileId, coes, pic2d, gcovyz);
 
         /*----------------------------(E, Pphi, Lambda) of marker-----------------------------*/
@@ -1575,7 +2767,7 @@ __global__ void PICDiagPitchDeltaF(picReal* __restrict__ pic1d, picReal* __restr
         for (int index = 0; index < 4; index++)
             coes[index] = (hx[index] + sx[index] * dx) * (hy[index] + sy[index] * dy);
 
-        tileId = (j * cellNx + i) * tileStride;
+        tileId = (j * cellNx + i) * tileStride2D;
         FieldGather1d2d<4>(tileId, coes, pic2d, J, B);
 
         /*-----------------------------(vpara, vperp) of marker-------------------------------*/
@@ -1725,9 +2917,9 @@ __global__ void PICDiagPhasePower(picReal* __restrict__ pic1d, picReal* __restri
         for (int index = 0; index < 4; index++)
             coes[index] *= (hy[index] + sy[index] * dy);
 
-        tileId = (j * cellNx + i) * tileStride;
+        tileId = (j * cellNx + i) * tileStride2D;
         FieldGather1d2d<4>(tileId, coes, pic2d, J, B);
-        tileId = (j * cellNx + i) * tileStride + 32;
+        tileId = (j * cellNx + i) * tileStride2D + 32;
         FieldGather1d2d<4>(tileId, coes, pic2d, gcovyz);
 
         E = partMass * vp * vp / 2 + mu * B;
@@ -1777,7 +2969,7 @@ __global__ void PICDiagPhasePower(picReal* __restrict__ pic1d, picReal* __restri
         dz = lk - k;
 
         qId = i * qStride;
-        tileId = (j * cellNx + i) * tileStride;
+        tileId = (j * cellNx + i) * tileStride2D;
         cellId = j * gridNx * gridNzPlusGhost + i * gridNzPlusGhost + k;
 
         for (int index = 0; index < 2; index++)
@@ -1867,14 +3059,14 @@ __global__ void PICDiagPhasePower(picReal* __restrict__ pic1d, picReal* __restri
                 angle = acosf(gconxy / sqrtf(gconxx * gconyy));
 
             if (i == gridNx - 2) {
-                tileId = (j * cellNx + i - 1) * tileStride + 64;
+                tileId = (j * cellNx + i - 1) * tileStride2D + 64;
                 FieldGather1d2d<4>(tileId, coes, pic2d, R1, Z1);
                 if constexpr (std::is_same_v<picReal, double>)
                     gyroDx = radius / sqrt((R1 - R0) * (R1 - R0) + (Z1 - Z0) * (Z1 - Z0)) * picGridDx;
                 else
                     gyroDx = radius / sqrtf((R1 - R0) * (R1 - R0) + (Z1 - Z0) * (Z1 - Z0)) * picGridDx;
             } else {
-                tileId = (j * cellNx + i + 1) * tileStride + 64;
+                tileId = (j * cellNx + i + 1) * tileStride2D + 64;
                 FieldGather1d2d<4>(tileId, coes, pic2d, R1, Z1);
                 if constexpr (std::is_same_v<picReal, double>)
                     gyroDx = radius / sqrt((R1 - R0) * (R1 - R0) + (Z1 - Z0) * (Z1 - Z0)) * picGridDx;
@@ -1882,7 +3074,7 @@ __global__ void PICDiagPhasePower(picReal* __restrict__ pic1d, picReal* __restri
                     gyroDx = radius / sqrtf((R1 - R0) * (R1 - R0) + (Z1 - Z0) * (Z1 - Z0)) * picGridDx;
             }
 
-            tileId = ((j + 1) * cellNx + i) * tileStride + 64;
+            tileId = ((j + 1) * cellNx + i) * tileStride2D + 64;
             FieldGather1d2d<4>(tileId, coes, pic2d, R1, Z1);
             if constexpr (std::is_same_v<picReal, double>)
                 gyroDy = radius / sqrt((R1 - R0) * (R1 - R0) + (Z1 - Z0) * (Z1 - Z0)) * picGridDy;
@@ -2132,7 +3324,7 @@ __global__ void PICDiagPitchPower(picReal* __restrict__ pic1d, picReal* __restri
         for (int index = 0; index < 4; index++)
             coes[index] = (hx[index] + sx[index] * dx) * (hy[index] + sy[index] * dy);
 
-        tileId = (j * cellNx + i) * tileStride;
+        tileId = (j * cellNx + i) * tileStride2D;
         FieldGather1d2d<4>(tileId, coes, pic2d, J, B);
 
         vpara = vp;
@@ -2178,7 +3370,7 @@ __global__ void PICDiagPitchPower(picReal* __restrict__ pic1d, picReal* __restri
         dz = lk - k;
 
         qId = i * qStride;
-        tileId = (j * cellNx + i) * tileStride;
+        tileId = (j * cellNx + i) * tileStride2D;
         cellId = j * gridNx * gridNzPlusGhost + i * gridNzPlusGhost + k;
 
         for (int index = 0; index < 2; index++)
@@ -2268,14 +3460,14 @@ __global__ void PICDiagPitchPower(picReal* __restrict__ pic1d, picReal* __restri
                 angle = acosf(gconxy / sqrtf(gconxx * gconyy));
 
             if (i == gridNx - 2) {
-                tileId = (j * cellNx + i - 1) * tileStride + 64;
+                tileId = (j * cellNx + i - 1) * tileStride2D + 64;
                 FieldGather1d2d<4>(tileId, coes, pic2d, R1, Z1);
                 if constexpr (std::is_same_v<picReal, double>)
                     gyroDx = radius / sqrt((R1 - R0) * (R1 - R0) + (Z1 - Z0) * (Z1 - Z0)) * picGridDx;
                 else
                     gyroDx = radius / sqrtf((R1 - R0) * (R1 - R0) + (Z1 - Z0) * (Z1 - Z0)) * picGridDx;
             } else {
-                tileId = (j * cellNx + i + 1) * tileStride + 64;
+                tileId = (j * cellNx + i + 1) * tileStride2D + 64;
                 FieldGather1d2d<4>(tileId, coes, pic2d, R1, Z1);
                 if constexpr (std::is_same_v<picReal, double>)
                     gyroDx = radius / sqrt((R1 - R0) * (R1 - R0) + (Z1 - Z0) * (Z1 - Z0)) * picGridDx;
@@ -2283,7 +3475,7 @@ __global__ void PICDiagPitchPower(picReal* __restrict__ pic1d, picReal* __restri
                     gyroDx = radius / sqrtf((R1 - R0) * (R1 - R0) + (Z1 - Z0) * (Z1 - Z0)) * picGridDx;
             }
 
-            tileId = ((j + 1) * cellNx + i) * tileStride + 64;
+            tileId = ((j + 1) * cellNx + i) * tileStride2D + 64;
             FieldGather1d2d<4>(tileId, coes, pic2d, R1, Z1);
             if constexpr (std::is_same_v<picReal, double>)
                 gyroDy = radius / sqrt((R1 - R0) * (R1 - R0) + (Z1 - Z0) * (Z1 - Z0)) * picGridDy;
@@ -2522,7 +3714,7 @@ __global__ void PICDiagDiffusivity(picReal* __restrict__ pic1d, picReal* __restr
         dz = lk - k;
 
         qId = i * qStride;
-        tileId = (j * cellNx + i) * tileStride;
+        tileId = (j * cellNx + i) * tileStride2D;
         cellId = j * gridNx * gridNzPlusGhost + i * gridNzPlusGhost + k;
 
         auto interpRK4 = [&]() {
@@ -2612,14 +3804,14 @@ __global__ void PICDiagDiffusivity(picReal* __restrict__ pic1d, picReal* __restr
                 angle = acosf(gconxy / sqrtf(gconxx * gconyy));
 
             if (i == gridNx - 2) {
-                tileId = (j * cellNx + i - 1) * tileStride + 64;
+                tileId = (j * cellNx + i - 1) * tileStride2D + 64;
                 FieldGather1d2d<4>(tileId, coes, pic2d, R1, Z1);
                 if constexpr (std::is_same_v<picReal, double>)
                     gyroDx = radius / sqrt((R1 - R0) * (R1 - R0) + (Z1 - Z0) * (Z1 - Z0)) * picGridDx;
                 else
                     gyroDx = radius / sqrtf((R1 - R0) * (R1 - R0) + (Z1 - Z0) * (Z1 - Z0)) * picGridDx;
             } else {
-                tileId = (j * cellNx + i + 1) * tileStride + 64;
+                tileId = (j * cellNx + i + 1) * tileStride2D + 64;
                 FieldGather1d2d<4>(tileId, coes, pic2d, R1, Z1);
                 if constexpr (std::is_same_v<picReal, double>)
                     gyroDx = radius / sqrt((R1 - R0) * (R1 - R0) + (Z1 - Z0) * (Z1 - Z0)) * picGridDx;
@@ -2627,15 +3819,13 @@ __global__ void PICDiagDiffusivity(picReal* __restrict__ pic1d, picReal* __restr
                     gyroDx = radius / sqrtf((R1 - R0) * (R1 - R0) + (Z1 - Z0) * (Z1 - Z0)) * picGridDx;
             }
 
-            tileId = ((j + 1) * cellNx + i) * tileStride + 64;
+            tileId = ((j + 1) * cellNx + i) * tileStride2D + 64;
             FieldGather1d2d<4>(tileId, coes, pic2d, R1, Z1);
             if constexpr (std::is_same_v<picReal, double>)
                 gyroDy = radius / sqrt((R1 - R0) * (R1 - R0) + (Z1 - Z0) * (Z1 - Z0)) * picGridDy;
             else
                 gyroDy = radius / sqrtf((R1 - R0) * (R1 - R0) + (Z1 - Z0) * (Z1 - Z0)) * picGridDy;
 
-            R0 = B_px;
-            Z0 = B_py;
             avecxdxA = 0;
             avecydyA = 0;
             aveczdzA = 0;
@@ -2799,9 +3989,9 @@ __global__ void PICDiagDiffusivity(picReal* __restrict__ pic1d, picReal* __restr
         for (int index = 0; index < 4; index++)
             coes[index] = (hx[index] + sx[index] * dx) * (hy[index] + sy[index] * dy);
 
-        tileId = (j * cellNx + i) * tileStride;
+        tileId = (j * cellNx + i) * tileStride2D;
         FieldGather1d2d<4>(tileId, coes, pic2d, J);
-        tileId = (j * cellNx + i) * tileStride + 52;
+        tileId = (j * cellNx + i) * tileStride2D + 52;
         FieldGather1d2d<4>(tileId, coes, pic2d, gconxx);
 
         dis = -vec0[4] / J * partConst * pitchB0 * pitchB0 / 2 / mu0 / (mp * va * va) / (gridNy * gridNz) * dxdt * va /
@@ -2903,7 +4093,7 @@ __global__ void PICDiagOrbit(picReal* __restrict__ pic1d, picReal* __restrict__ 
         dy = lj - j;
 
         qId = i * qStride;
-        tileId = (j * cellNx + i) * tileStride;
+        tileId = (j * cellNx + i) * tileStride2D;
         illegal = 0;
 
         coes[0] = hx[0] + sx[0] * dx;
@@ -2998,7 +4188,7 @@ __global__ void PICDiagOrbit(picReal* __restrict__ pic1d, picReal* __restrict__ 
             dx = li - i;
             dy = lj - j;
             qId = i * qStride;
-            tileId = (j * cellNx + i) * tileStride;
+            tileId = (j * cellNx + i) * tileStride2D;
         };
 
         /*--------------------------------------1st RK4---------------------------------------*/
@@ -3087,7 +4277,7 @@ __global__ void PICDiagOrbit(picReal* __restrict__ pic1d, picReal* __restrict__ 
 
         dy = lj - j;
         qId = i * qStride + 28;
-        tileId = (j * cellNx + i) * tileStride;
+        tileId = (j * cellNx + i) * tileStride2D;
 
         FieldGather1d2d<2>(qId, coes, pic1d, psip);
 
@@ -3097,7 +4287,7 @@ __global__ void PICDiagOrbit(picReal* __restrict__ pic1d, picReal* __restrict__ 
             coes[index] *= (hy[index] + sy[index] * dy);
 
         FieldGather1d2d<4>(tileId, coes, pic2d, J, B);
-        tileId = (j * cellNx + i) * tileStride + 32;
+        tileId = (j * cellNx + i) * tileStride2D + 32;
         FieldGather1d2d<4>(tileId, coes, pic2d, gcovyz);
 
         E = partMass * vec2[3] * vec2[3] / 2 + mu * B;

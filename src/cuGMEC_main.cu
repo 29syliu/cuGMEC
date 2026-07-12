@@ -861,14 +861,25 @@ int main(int argc, char* argv[]) {
                          int** keys_in, picReal** values_in, mhdReal** globalP, mhdReal** globalN) {
         if constexpr (allTrue<Guards...>) {
             forEachDev([&](int i) {
-                if constexpr (std::is_same_v<ifFLRPIC, trueType>)
-                    GyroAlignedRK4<ratioDt, gyroNums, particle, distribution, ifNonlinearPIC, ifQNeutrality, mhdReal,
-                                   picReal><<<PICGridSize, PICBlockSize, 0, 0>>>(
-                        pic1d[i], pic2d[i], pic3d[i], keys_in[i], values_in[i], globalP[i], globalN[i]);
-                else
-                    DriftAlignedRK4<ratioDt, particle, distribution, ifNonlinearPIC, ifQNeutrality, mhdReal, picReal>
-                        <<<PICGridSize, PICBlockSize, 0, 0>>>(pic1d[i], pic2d[i], pic3d[i], keys_in[i], values_in[i],
-                                                              globalP[i], globalN[i]);
+                if constexpr (NFP == 1) {
+                    if constexpr (std::is_same_v<ifFLRPIC, trueType>)
+                        GyroAlignedRK4<ratioDt, gyroNums, particle, distribution, ifNonlinearPIC, ifQNeutrality,
+                                       mhdReal, picReal><<<PICGridSize, PICBlockSize, 0, 0>>>(
+                            pic1d[i], pic2d[i], pic3d[i], keys_in[i], values_in[i], globalP[i], globalN[i]);
+                    else
+                        DriftAlignedRK4<ratioDt, particle, distribution, ifNonlinearPIC, ifQNeutrality, mhdReal,
+                                        picReal><<<PICGridSize, PICBlockSize, 0, 0>>>(
+                            pic1d[i], pic2d[i], pic3d[i], keys_in[i], values_in[i], globalP[i], globalN[i]);
+                } else {
+                    if constexpr (std::is_same_v<ifFLRPIC, trueType>)
+                        GyroStraightRK4<ratioDt, gyroNums, particle, distribution, ifNonlinearPIC, ifQNeutrality,
+                                        mhdReal, picReal><<<PICGridSize, PICBlockSize, 0, 0>>>(
+                            pic1d[i], pic2d[i], pic3d[i], keys_in[i], values_in[i], globalP[i], globalN[i]);
+                    else
+                        DriftStraightRK4<ratioDt, particle, distribution, ifNonlinearPIC, ifQNeutrality, mhdReal,
+                                         picReal><<<PICGridSize, PICBlockSize, 0, 0>>>(
+                            pic1d[i], pic2d[i], pic3d[i], keys_in[i], values_in[i], globalP[i], globalN[i]);
+                }
             });
         }
     };

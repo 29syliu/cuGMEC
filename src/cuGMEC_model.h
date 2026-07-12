@@ -2701,6 +2701,21 @@ class HybridModel {
                 loadPICStraight(index, 68, i, j, k, Z);
             }
         } else {
+
+            double*** J_py_straight;
+            double*** B_py_straight;
+
+            B2HAllocator.allocateHostArrays(gridNx, gridNy, equilNz, J_py_straight, B_py_straight);
+
+            for (int i = 0; i < gridNx; i++) {
+                for (int j = 0; j < gridNy; j++) {
+                    for (int k = 0; k < equilNz; k++) {
+                        J_py_straight[i][j][k] = J_py[i][j][k] - q[i][0][0] * J_pz[i][j][k];
+                        B_py_straight[i][j][k] = B_py[i][j][k] - q[i][0][0] * B_pz[i][j][k];
+                    }
+                }
+            }
+
             for (int index = 0; index < cellNy * cellNxz; index++) {
 
                 int i = (index / cellNz) % cellNx;
@@ -2710,10 +2725,10 @@ class HybridModel {
                 loadPICStraight(index, 0, i, j, k, J);
                 loadPICStraight(index, 8, i, j, k, B);
                 loadPICStraight(index, 16, i, j, k, J_px);
-                loadPICStraight(index, 24, i, j, k, J_py);
+                loadPICStraight(index, 24, i, j, k, J_py_straight);
                 loadPICStraight(index, 32, i, j, k, J_pz);
                 loadPICStraight(index, 40, i, j, k, B_px);
-                loadPICStraight(index, 48, i, j, k, B_py);
+                loadPICStraight(index, 48, i, j, k, B_py_straight);
                 loadPICStraight(index, 56, i, j, k, B_pz);
 
                 loadPICAligned(index, 64, i, j, k, SFAcovxy);
@@ -2739,6 +2754,8 @@ class HybridModel {
                 loadPICStraight(index, 216, i, j, k, R);
                 loadPICStraight(index, 224, i, j, k, Z);
             }
+
+            B2HAllocator.releaseHostArrays(J_py_straight, B_py_straight);
         }
 
         if (hostId == 0) {
