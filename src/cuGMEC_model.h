@@ -272,7 +272,8 @@ class HybridModel {
 	double*** Va; double*** Va_px; double*** Va_py; double*** Va_pz;
 	double*** Rho; double*** Rho_px; double*** Rho_py; double*** Rho_pz;
 	double*** JpB; double*** JpB_px; double*** JpB_py; double*** JpB_pz;
-	double*** R; double*** Z;
+	double*** R; double*** R_px; double*** R_py; double*** R_pz;
+	double*** Z; double*** Z_px; double*** Z_py; double*** Z_pz;
 
 	double*** gconxx; double*** gconxx_px; double*** gconxx_py; double*** gconxx_pz;
 	double*** gconxy; double*** gconxy_px; double*** gconxy_py; double*** gconxy_pz;
@@ -879,11 +880,12 @@ class HybridModel {
                         Allocator H2DAllocator;
                         for (int i = 0; i < devNums; i++) {
                             CUDACHECK(cudaSetDevice(localId * devNums + i));
-                            H2DAllocator.hostToDevice(cellNx * 30, 0, 0, d_pic1d[i], h_pic1d[0]);
+                            H2DAllocator.hostToDevice(cellNx * qStride, 0, 0, d_pic1d[i], h_pic1d[0]);
                             if (NFP == 1)
-                                H2DAllocator.hostToDevice(cellNy * cellNx * 72, 0, 0, d_pic2d[i], h_pic2d[0]);
+                                H2DAllocator.hostToDevice(cellNy * cellNx * tileStride2D, 0, 0, d_pic2d[i], h_pic2d[0]);
                             else
-                                H2DAllocator.hostToDevice(cellNy * cellNxz * 232, 0, 0, d_pic2d[i], h_pic2d[0]);
+                                H2DAllocator.hostToDevice(cellNy * cellNxz * tileStride3D, 0, 0, d_pic2d[i],
+                                                          h_pic2d[0]);
                         }
 
                         if (hostId == 0)
@@ -1011,12 +1013,12 @@ class HybridModel {
             gridNx, gridNy, equilNz, q, q_px, psip, psip_px, Ni, Ni_px, Ti, Ti_px, Pi, Pi_px, Ne, Ne_px, Te, Te_px, Pe,
             Pe_px, Na, Na_px, Ta, Ta_px, Nb, Nb_px, Tb, Tb_px, B, B_px, B_py, B_pz, B_px2, B_pxy, B_pxz, B_py2, B_pyz,
             B_pz2, J, J_px, J_py, J_pz, Bny, Bny_px, Bny_py, Bny_pz, Va, Va_px, Va_py, Va_pz, Rho, Rho_px, Rho_py,
-            Rho_pz, JpB, JpB_px, JpB_py, JpB_pz, R, Z, gconxx, gconxx_px, gconxx_py, gconxx_pz, gconxy, gconxy_px,
-            gconxy_py, gconxy_pz, gconyy, gconyy_px, gconyy_py, gconyy_pz, gconxz, gconxz_px, gconxz_py, gconxz_pz,
-            gconyz, gconyz_px, gconyz_py, gconyz_pz, gconzz, gconzz_px, gconzz_py, gconzz_pz, gcovxx, gcovxx_px,
-            gcovxx_py, gcovxx_pz, gcovxy, gcovxy_px, gcovxy_py, gcovxy_pz, gcovyy, gcovyy_px, gcovyy_py, gcovyy_pz,
-            gcovxz, gcovxz_px, gcovxz_py, gcovxz_pz, gcovyz, gcovyz_px, gcovyz_py, gcovyz_pz, gcovzz, gcovzz_px,
-            gcovzz_py, gcovzz_pz);
+            Rho_pz, JpB, JpB_px, JpB_py, JpB_pz, R, R_px, R_py, R_pz, Z, Z_px, Z_py, Z_pz, gconxx, gconxx_px, gconxx_py,
+            gconxx_pz, gconxy, gconxy_px, gconxy_py, gconxy_pz, gconyy, gconyy_px, gconyy_py, gconyy_pz, gconxz,
+            gconxz_px, gconxz_py, gconxz_pz, gconyz, gconyz_px, gconyz_py, gconyz_pz, gconzz, gconzz_px, gconzz_py,
+            gconzz_pz, gcovxx, gcovxx_px, gcovxx_py, gcovxx_pz, gcovxy, gcovxy_px, gcovxy_py, gcovxy_pz, gcovyy,
+            gcovyy_px, gcovyy_py, gcovyy_pz, gcovxz, gcovxz_px, gcovxz_py, gcovxz_pz, gcovyz, gcovyz_px, gcovyz_py,
+            gcovyz_pz, gcovzz, gcovzz_px, gcovzz_py, gcovzz_pz);
 
         HostAllocator.allocateHostArrays(
             gridNx, gridNyPlusGhost, equilNz, SFAconxx, SFAconxx_px, SFAconxx_py, SFAconxx_pz, SFAconxy, SFAconxy_px,
@@ -1105,11 +1107,11 @@ class HybridModel {
             HostAllocator.allocateHostArrays(devNums, (size_t)picDev * 7, h_Beam_values);
         }
 
-        HostAllocator.allocateHostArrays(cellNx, 30, h_pic1d);
+        HostAllocator.allocateHostArrays(cellNx, qStride, h_pic1d);
         if (NFP == 1)
-            HostAllocator.allocateHostArrays(cellNy * cellNx, 72, h_pic2d);
+            HostAllocator.allocateHostArrays(cellNy * cellNx, tileStride2D, h_pic2d);
         else
-            HostAllocator.allocateHostArrays(cellNy * cellNxz, 232, h_pic2d);
+            HostAllocator.allocateHostArrays(cellNy * cellNxz, tileStride3D, h_pic2d);
         HostAllocator.allocateHostArrays(gridNyPlusGhost, gridNx * gridNzPlusGhost * 8, h_pic3d);
 
         HostAllocator.allocateHostArrays(gridNyPlusGhost, gridNx, gridNz, h_globalPi, h_globalPa, h_globalPb,
@@ -1206,11 +1208,12 @@ class HybridModel {
             q, q_px, psip, psip_px, Ni, Ni_px, Ti, Ti_px, Pi, Pi_px, Ne, Ne_px, Te, Te_px, Pe, Pe_px, Na, Na_px, Ta,
             Ta_px, Nb, Nb_px, Tb, Tb_px, B, B_px, B_py, B_pz, B_px2, B_pxy, B_pxz, B_py2, B_pyz, B_pz2, J, J_px, J_py,
             J_pz, Bny, Bny_px, Bny_py, Bny_pz, Va, Va_px, Va_py, Va_pz, Rho, Rho_px, Rho_py, Rho_pz, JpB, JpB_px,
-            JpB_py, JpB_pz, R, Z, gconxx, gconxx_px, gconxx_py, gconxx_pz, gconxy, gconxy_px, gconxy_py, gconxy_pz,
-            gconyy, gconyy_px, gconyy_py, gconyy_pz, gconxz, gconxz_px, gconxz_py, gconxz_pz, gconyz, gconyz_px,
-            gconyz_py, gconyz_pz, gconzz, gconzz_px, gconzz_py, gconzz_pz, gcovxx, gcovxx_px, gcovxx_py, gcovxx_pz,
-            gcovxy, gcovxy_px, gcovxy_py, gcovxy_pz, gcovyy, gcovyy_px, gcovyy_py, gcovyy_pz, gcovxz, gcovxz_px,
-            gcovxz_py, gcovxz_pz, gcovyz, gcovyz_px, gcovyz_py, gcovyz_pz, gcovzz, gcovzz_px, gcovzz_py, gcovzz_pz);
+            JpB_py, JpB_pz, R, R_px, R_py, R_pz, Z, Z_px, Z_py, Z_pz, gconxx, gconxx_px, gconxx_py, gconxx_pz, gconxy,
+            gconxy_px, gconxy_py, gconxy_pz, gconyy, gconyy_px, gconyy_py, gconyy_pz, gconxz, gconxz_px, gconxz_py,
+            gconxz_pz, gconyz, gconyz_px, gconyz_py, gconyz_pz, gconzz, gconzz_px, gconzz_py, gconzz_pz, gcovxx,
+            gcovxx_px, gcovxx_py, gcovxx_pz, gcovxy, gcovxy_px, gcovxy_py, gcovxy_pz, gcovyy, gcovyy_px, gcovyy_py,
+            gcovyy_pz, gcovxz, gcovxz_px, gcovxz_py, gcovxz_pz, gcovyz, gcovyz_px, gcovyz_py, gcovyz_pz, gcovzz,
+            gcovzz_px, gcovzz_py, gcovzz_pz);
 
         HostAllocator.releaseHostArrays(
             SFAconxx, SFAconxx_px, SFAconxx_py, SFAconxx_pz, SFAconxy, SFAconxy_px, SFAconxy_py, SFAconxy_pz, SFAconyy,
@@ -1371,11 +1374,11 @@ class HybridModel {
                                                  d_Beam_values_out);
         }
 
-        DeviceAllocator.allocateDeviceArrays(localId, devNums, cellNx * 30, d_pic1d);
+        DeviceAllocator.allocateDeviceArrays(localId, devNums, cellNx * qStride, d_pic1d);
         if (NFP == 1)
-            DeviceAllocator.allocateDeviceArrays(localId, devNums, cellNy * cellNx * 72, d_pic2d);
+            DeviceAllocator.allocateDeviceArrays(localId, devNums, cellNy * cellNx * tileStride2D, d_pic2d);
         else
-            DeviceAllocator.allocateDeviceArrays(localId, devNums, cellNy * cellNxz * 232, d_pic2d);
+            DeviceAllocator.allocateDeviceArrays(localId, devNums, cellNy * cellNxz * tileStride3D, d_pic2d);
         DeviceAllocator.allocateDeviceArrays(localId, devNums, gridNyPlusGhost * gridNx * gridNzPlusGhost * 8, d_pic3d);
 
         DeviceAllocator.allocateDeviceArrays(localId, devNums, gridNyPlusGhost * gridNxz, d_globalA, d_globalPhi,
@@ -1962,11 +1965,11 @@ class HybridModel {
                                           h_Beam_values[0]);
             }
 
-            H2DAllocator.hostToDevice(cellNx * 30, 0, 0, d_pic1d[i], h_pic1d[0]);
+            H2DAllocator.hostToDevice(cellNx * qStride, 0, 0, d_pic1d[i], h_pic1d[0]);
             if (NFP == 1)
-                H2DAllocator.hostToDevice(cellNy * cellNx * 72, 0, 0, d_pic2d[i], h_pic2d[0]);
+                H2DAllocator.hostToDevice(cellNy * cellNx * tileStride2D, 0, 0, d_pic2d[i], h_pic2d[0]);
             else
-                H2DAllocator.hostToDevice(cellNy * cellNxz * 232, 0, 0, d_pic2d[i], h_pic2d[0]);
+                H2DAllocator.hostToDevice(cellNy * cellNxz * tileStride3D, 0, 0, d_pic2d[i], h_pic2d[0]);
             H2DAllocator.hostToDevice(gridNyPlusGhost * gridNx * gridNzPlusGhost * 8, 0, 0, d_pic3d[i], h_pic3d[0]);
 
             H2DAllocator.hostToDevice(gridNyPlusGhost * gridNxz, 0, 0, d_globalPi[i], h_dPe[0][0], d_globalPa[i],
@@ -2601,7 +2604,7 @@ class HybridModel {
             gcovxy_py, gcovxy_pz, gcovyy, gcovyy_px, gcovyy_py, gcovyy_pz, gcovxz, gcovxz_px, gcovxz_py, gcovxz_pz,
             gcovyz, gcovyz_px, gcovyz_py, gcovyz_pz, gcovzz, gcovzz_px, gcovzz_py, gcovzz_pz, J, J_px, J_py, J_pz, Bny,
             Bny_px, Bny_py, Bny_pz, JpB, JpB_px, JpB_py, JpB_pz, Rho, Rho_px, Rho_py, Rho_pz, Va, Va_px, Va_py, Va_pz,
-            R, Z, B, B_px, B_py, B_pz, B_px2, B_pxy, B_pxz, B_py2, B_pyz, B_pz2);
+            R, R_px, R_py, R_pz, Z, Z_px, Z_py, Z_pz, B, B_px, B_py, B_pz, B_px2, B_pxy, B_pxz, B_py2, B_pyz, B_pz2);
 
         auto loadPICProfile = [&](int index, int offset, double***& field) {
             h_pic1d[index][offset + 0] = field[index][0][0];
@@ -2673,6 +2676,30 @@ class HybridModel {
         }
 
         if (NFP == 1) {
+
+            double*** gyroLr;
+            double*** gyroLphi;
+            double*** gyroAr;
+            double*** gyroAphi;
+
+            B2HAllocator.allocateHostArrays(gridNx, gridNy, equilNz, gyroLr, gyroLphi, gyroAr, gyroAphi);
+
+            for (int i = 0; i < gridNx; i++) {
+                for (int j = 0; j < gridNy; j++) {
+                    for (int k = 0; k < equilNz; k++) {
+                        const double grr = R_px[i][j][k] * R_px[i][j][k] + Z_px[i][j][k] * Z_px[i][j][k];
+                        const double grt = R_px[i][j][k] * R_py[i][j][k] + Z_px[i][j][k] * Z_py[i][j][k];
+                        const double gtt = R_py[i][j][k] * R_py[i][j][k] + Z_py[i][j][k] * Z_py[i][j][k];
+                        const double R2 = R[i][j][k] * R[i][j][k];
+
+                        gyroLr[i][j][k] = std::sqrt(grr - grt * grt / gtt);
+                        gyroLphi[i][j][k] = std::sqrt(R2 + q[i][0][0] * q[i][0][0] * R2 * R2 / gtt);
+                        gyroAr[i][j][k] = grt / gtt;
+                        gyroAphi[i][j][k] = q[i][0][0] * R2 / gtt;
+                    }
+                }
+            }
+
             for (int index = 0; index < cellNy * cellNx; index++) {
 
                 int i = index % cellNx;
@@ -2693,13 +2720,14 @@ class HybridModel {
                 loadPICAligned(index, 40, i, j, k, SFAcovyy_px);
                 loadPICAligned(index, 44, i, j, k, SFAcovyz_px);
                 loadPICAligned(index, 48, i, j, k, SFAcovyz_py);
-                loadPICAligned(index, 52, i, j, k, SFAconxx);
-                loadPICAligned(index, 56, i, j, k, SFAconxy);
-                loadPICAligned(index, 60, i, j, k, SFAconyy);
 
-                loadPICStraight(index, 64, i, j, k, R);
-                loadPICStraight(index, 68, i, j, k, Z);
+                loadPICStraight(index, 52, i, j, k, gyroLr);
+                loadPICStraight(index, 56, i, j, k, gyroLphi);
+                loadPICStraight(index, 60, i, j, k, gyroAr);
+                loadPICStraight(index, 64, i, j, k, gyroAphi);
             }
+
+            B2HAllocator.releaseHostArrays(gyroLr, gyroLphi, gyroAr, gyroAphi);
         } else {
 
             double*** J_py_straight;
@@ -2747,12 +2775,14 @@ class HybridModel {
                 loadPICAligned(index, 168, i, j, k, SFAcovyz_pz);
                 loadPICAligned(index, 176, i, j, k, SFAcovzz_px);
                 loadPICAligned(index, 184, i, j, k, SFAcovzz_py);
-                loadPICAligned(index, 192, i, j, k, SFAconxx);
-                loadPICAligned(index, 200, i, j, k, SFAconxy);
-                loadPICAligned(index, 208, i, j, k, SFAconyy);
+                loadPICAligned(index, 192, i, j, k, SFAcovxx);
 
-                loadPICStraight(index, 216, i, j, k, R);
-                loadPICStraight(index, 224, i, j, k, Z);
+                loadPICStraight(index, 200, i, j, k, R_py);
+                loadPICStraight(index, 208, i, j, k, Z_py);
+                loadPICStraight(index, 216, i, j, k, R_pz);
+                loadPICStraight(index, 224, i, j, k, Z_pz);
+                loadPICStraight(index, 232, i, j, k, R);
+                loadPICStraight(index, 240, i, j, k, Z);
             }
 
             B2HAllocator.releaseHostArrays(J_py_straight, B_py_straight);

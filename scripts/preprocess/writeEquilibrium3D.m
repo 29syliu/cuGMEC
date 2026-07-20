@@ -205,9 +205,9 @@ Va_out = mbind_cell_col(output_,Va_out)';
 
 %% RZ
 
-transfer2xy_RZ = @(f1, f2, f0) {f1/f0, f2/f0};
+transfer2xy_RZ = @(f, df_drho, df_dtheta, df_dphi, f0) {f/f0, df_drho.*Drho/f0, df_dtheta/f0, df_dphi/f0};
 
-RZ_out = transfer2xy_RZ(R, Z, L0);
+RZ_out = [transfer2xy_RZ(R, dR_drho, dR_dtheta, dR_dphi, L0), transfer2xy_RZ(Z, dZ_drho, dZ_dtheta, dZ_dphi, L0)];
 RZ_out = mbind_cell_col(output_,RZ_out)';
 
 %% B

@@ -58,8 +58,8 @@ const picReal picGridDt = dt;
 /*-----------------------------PIC Parameter-----------------------------*/
 
 const int qStride = 30;
-const int tileStride2D = 72;
-const int tileStride3D = 232;
+const int tileStride2D = 68;
+const int tileStride3D = 248;
 
 const int picHost = gridNx * gridNy * gridNz / hostNums * ppcNums;
 const int picDev = gridNx * gridNy * gridNz / hostNums / devNums * ppcNums;
