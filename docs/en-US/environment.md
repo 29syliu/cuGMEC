@@ -8,10 +8,10 @@ This document describes how to install the dependencies required by cuGMEC, conf
 |---|---|---|
 | CUDA Toolkit | CUDA 12.x | <https://developer.nvidia.com/cuda-toolkit> |
 | NCCL | Compatible with CUDA 12.x | <https://developer.nvidia.com/nccl> |
-| cuDSS | Compatible with CUDA 12.x | <https://docs.nvidia.com/cuda/cudss/> |
+| cuDSS | 0.8.0 | <https://docs.nvidia.com/cuda/cudss/> |
 | Intel MPI | Linux Offline Installer | <https://www.intel.cn/content/www/cn/zh/developer/tools/oneapi/mpi-library-download.html> |
 
-The example versions used in this document are CUDA 12.6, NCCL 2.23.4, cuDSS 0.4.0.2, and Intel MPI 2021.14.1.7. Newer versions may be used, but CUDA, NCCL, cuDSS, the GPU driver, and Intel MPI must be mutually compatible.
+The example versions used in this document are CUDA 12.6, NCCL 2.23.4, cuDSS 0.8.0, and Intel MPI 2021.14.1.7. cuDSS must use version 0.8.0. CUDA, NCCL, the GPU driver, and Intel MPI must be mutually compatible.
 
 ## 2. Install CUDA and Set Environment Variables
 
@@ -49,11 +49,11 @@ Download a local installer or archive package from the NCCL website that matches
 
 ## 4. Install cuDSS and Set Environment Variables
 
-Download a Linux archive package from the cuDSS website that matches CUDA 12.x, and copy it to the target cluster. The following example uses cuDSS 0.4.0.2:
+Download the cuDSS 0.8.0 Linux archive package from the cuDSS website, and copy it to the target cluster. The following example uses cuDSS 0.8.0:
 
 <pre style="background:#f6f8fa;border-radius:4px;padding:12px;overflow:auto;color:#000;"><code><span style="color:#008000;font-style:italic;"># Extract and rename</span>
-<span style="color:#0000ff;">tar xvf</span> libcudss-linux-x86_64-0.4.0.2_cuda12-archive.tar.xz
-<span style="color:#0000ff;">mv</span> libcudss-linux-x86_64-0.4.0.2_cuda12-archive cudss
+<span style="color:#0000ff;">tar xvf</span> libcudss-linux-x86_64-0.8.0.10_cuda12-archive.tar.xz
+<span style="color:#0000ff;">mv</span> libcudss-linux-x86_64-0.8.0.10_cuda12-archive cudss
 
 <span style="color:#008000;font-style:italic;"># Edit the environment variable file</span>
 <span style="color:#0000ff;">vim</span> ~/.bashrc
@@ -103,7 +103,7 @@ Common GPU architecture examples:
 
 | GPU | `ARCH` |
 |---|---|
-| NVIDIA A100 | `sm_80` |
-| NVIDIA A800 | `sm_80` |
-| NVIDIA RTX 4090 | `sm_89` |
-| NVIDIA H100 | `sm_90` |
+| A100, A800 | `sm_80` |
+| H100 | `sm_90` |
+| RTX4090 | `sm_89` |
+| RTX5090, RTX PRO 6000 | `sm_120` |

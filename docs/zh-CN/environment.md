@@ -8,10 +8,10 @@
 |---|---|---|
 | CUDA Toolkit | CUDA 12.x | <https://developer.nvidia.com/cuda-toolkit> |
 | NCCL | 与 CUDA 12.x 匹配 | <https://developer.nvidia.com/nccl> |
-| cuDSS | 与 CUDA 12.x 匹配 | <https://docs.nvidia.com/cuda/cudss/> |
+| cuDSS | 0.8.0 | <https://docs.nvidia.com/cuda/cudss/> |
 | Intel MPI | Linux Offline Installer | <https://www.intel.cn/content/www/cn/zh/developer/tools/oneapi/mpi-library-download.html> |
 
-本文示例版本为 CUDA 12.6、NCCL 2.23.4、cuDSS 0.4.0.2、Intel MPI 2021.14.1.7。实际使用时可更新版本，但需要保证 CUDA、NCCL、cuDSS、GPU 驱动和 Intel MPI 彼此兼容。
+本文示例版本为 CUDA 12.6、NCCL 2.23.4、cuDSS 0.8.0、Intel MPI 2021.14.1.7。cuDSS 需要使用 0.8.0，CUDA、NCCL、GPU 驱动和 Intel MPI 需要彼此兼容。
 
 ## 2. 安装 CUDA 并设置环境变量
 
@@ -49,11 +49,11 @@
 
 ## 4. 安装 cuDSS 并设置环境变量
 
-从 cuDSS 官网下载与 CUDA 12.x 匹配的 Linux archive package，并复制到目标集群。以下以 cuDSS 0.4.0.2 为例：
+从 cuDSS 官网下载 0.8.0 的 Linux archive package，并复制到目标集群。以下以 cuDSS 0.8.0 为例：
 
 <pre style="background:#f6f8fa;border-radius:4px;padding:12px;overflow:auto;color:#000;"><code><span style="color:#008000;font-style:italic;"># 解压并重命名</span>
-<span style="color:#0000ff;">tar xvf</span> libcudss-linux-x86_64-0.4.0.2_cuda12-archive.tar.xz
-<span style="color:#0000ff;">mv</span> libcudss-linux-x86_64-0.4.0.2_cuda12-archive cudss
+<span style="color:#0000ff;">tar xvf</span> libcudss-linux-x86_64-0.8.0.10_cuda12-archive.tar.xz
+<span style="color:#0000ff;">mv</span> libcudss-linux-x86_64-0.8.0.10_cuda12-archive cudss
 
 <span style="color:#008000;font-style:italic;"># 编辑环境变量文件</span>
 <span style="color:#0000ff;">vim</span> ~/.bashrc
@@ -103,7 +103,7 @@
 
 | GPU | `ARCH` |
 |---|---|
-| NVIDIA A100 | `sm_80` |
-| NVIDIA A800 | `sm_80` |
-| NVIDIA RTX 4090 | `sm_89` |
-| NVIDIA H100 | `sm_90` |
+| A100, A800 | `sm_80` |
+| H100 | `sm_90` |
+| RTX4090 | `sm_89` |
+| RTX5090, RTX PRO 6000 | `sm_120` |
