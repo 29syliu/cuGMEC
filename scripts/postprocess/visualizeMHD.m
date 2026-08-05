@@ -2565,7 +2565,7 @@ end
 function renderLinePlot(axHandle, plotData, opt)
     delete(allchild(axHandle));
     applyLinePlotColorOrder(axHandle);
-    plot(axHandle, plotData.xVec, plotData.yVec, 'LineWidth', 1.5);
+    lineHandles = plot(axHandle, plotData.xVec, plotData.yVec, 'LineWidth', 1.5);
     box(axHandle, 'on');
     applyLinePlotAxesStyle(axHandle, opt.axisFontSize);
 
@@ -2597,7 +2597,7 @@ function renderLinePlot(axHandle, plotData, opt)
             'FontName', 'Times New Roman', 'FontSize', opt.titleFontSize);
     end
     if ~isempty(plotData.legendText)
-        legend(axHandle, plotData.legendText, 'Interpreter', 'latex', ...
+        legend(lineHandles, plotData.legendText, 'Interpreter', 'latex', ...
             'FontName', 'Times New Roman', 'FontSize', opt.axisFontSize, 'Location', 'best');
     end
 end
