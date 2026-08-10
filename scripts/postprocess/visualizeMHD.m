@@ -249,46 +249,34 @@ axisFontSize  : 坐标轴字号。
 %}
 mhdWorkspace.phaseFrequency = runMHDPhaseFrequencyPlot(mhdData, meta, mhdInput, mhdPhaseFrequencyOpt);
 
-%% 可视化 phase 方法二维频率强度图
+%% 可视化等高线频率诊断
 
-mhdPhaseFrequencyMapOpt = struct( ...
+mhdContourFrequencyOpt = struct( ...
     'enabled', meta.switch.ifDiagAmplitude, ...
-    'timeAxis', 'ms', ...
-    'radialIndex', 20, ...
     'modeN', meta.physicalNAll(1), ...
-    'phaseStep', 2000, ...
-    'smoothWindow', 1, ...
-    'amplitudeFloor', 0, ...
-    'frequencyRangeHz', [], ...
-    'frequencyBins', 256, ...
-    'frequencySmoothingBins', 3, ...
-    'intensityPower', 2, ...
-    'normalizeIntensity', true, ...
-    'logIntensity', false, ...
-    'interactive', 2, ...
+    'timeIndexRange', [], ...
+    'frequencyUnit', 'omegaA', ...
+    'contourLevels', linspace(0.2, 1, 10), ...
+    'showContourLine', true, ...
+    'yLim', [0 1], ...
+    'yTicks', 0:0.2:0.8, ...
     'titleFontSize', 14, ...
     'labelFontSize', 14, ...
     'axisFontSize', 12);
 %{
-enabled               : 是否绘图。
-timeAxis              : 'ta', 'ms' 或 'steps'。
-radialIndex           : 固定径向索引（1 到 gridNx）。
-modeN                 : 真实物理环向模数 n；[] 表示全部有效 n；示例 [6 18 36]。
-phaseStep             : 相位差分间隔，单位为诊断点数。
-smoothWindow          : phase 频率曲线平滑窗口；1 表示不平滑。
-amplitudeFloor        : 信号幅度低于该值时不沉积强度。
-frequencyRangeHz      : 频率轴范围，单位 Hz；[] 表示自动范围。
-frequencyBins         : 频率方向 bin 数量。
-frequencySmoothingBins: 频率方向强度平滑 bin 数；1 表示不平滑。
-intensityPower        : 频率 bin 权重使用 abs(signal)^intensityPower。
-normalizeIntensity    : true 时每个时间列归一化，颜色表示该频率占比。
-logIntensity          : true 时颜色绘制 log10 强度。
-interactive           : 0 不交互；1 滑块释放后更新；2 拖动滑块时连续更新。
-titleFontSize         : 标题字号。
-labelFontSize         : 坐标轴标签字号。
-axisFontSize          : 坐标轴字号。
+enabled       : 是否绘图。
+modeN         : 真实物理环向模数 n；一次绘制一个 n；示例 6。
+timeIndexRange: 参与 FFT 的诊断时间索引范围；[] 表示全部时间；示例 [1000 5000]。
+frequencyUnit : 'omegaA' 表示 omega/omega_A；'kHz' 表示 f/kHz。
+contourLevels : 归一化 FFT 强度等值级别；示例 linspace(0.2, 1, 10)。
+showContourLine: 是否显示等高线边界；false 时只显示填色色块。
+yLim          : [] 表示自动范围；单位跟随 frequencyUnit；示例 [0 1]。
+yTicks        : [] 表示自动刻度；单位跟随 frequencyUnit；示例 0:0.2:0.8。
+titleFontSize : 标题字号。
+labelFontSize : 坐标轴标签字号。
+axisFontSize  : 坐标轴字号。
 %}
-mhdWorkspace.phaseFrequencyMap = runMHDPhaseFrequencyMapPlot(mhdData, meta, mhdInput, mhdPhaseFrequencyMapOpt);
+mhdWorkspace.contourFrequency = runMHDContourFrequencyPlot(mhdData, meta, mhdInput, mhdContourFrequencyOpt);
 
 %% 可视化单点 Phi 信号
 
@@ -1096,23 +1084,20 @@ function workspace = runMHDPhaseFrequencyPlot(mhdData, meta, mhdInput, opt)
         meta.tDiag, meta.diagSteps, meta.modeIndexAll, meta.physicalNAll, mhdInput.L0, mhdInput.VA0, opt, dynamicUpdate));
 end
 
-function workspace = runMHDPhaseFrequencyMapPlot(mhdData, meta, mhdInput, opt)
+function workspace = runMHDContourFrequencyPlot(mhdData, meta, mhdInput, opt)
 
     workspace = struct('options', opt);
     if ~opt.enabled
-        logSkipped('phase frequency map', '绘图开关为 false');
+        logSkipped('contour frequency plot', '绘图开关为 false');
         return;
     end
-    if ~hasMHDDataFields(mhdData, {'RealMode', 'ImagMode'})
-        logSkipped('phase frequency map', '未读取 RealMode 或 ImagMode 数据');
+    if ~hasMHDDataFields(mhdData, {'amplitude', 'RealMode'})
+        logSkipped('contour frequency plot', '未读取 amplitude 或 RealMode 数据');
         return;
     end
 
-    runInteractivePlot(opt.interactive, ...
-        @() plotPhaseFrequencyMap(mhdData.RealMode, mhdData.ImagMode, meta.xGrid, meta.tDiag, meta.diagSteps, ...
-        meta.modeIndexAll, meta.physicalNAll, mhdInput.L0, mhdInput.VA0, opt), ...
-        @(dynamicUpdate) plotPhaseFrequencyMapInteractive(mhdData.RealMode, mhdData.ImagMode, meta.xGrid, ...
-        meta.tDiag, meta.diagSteps, meta.modeIndexAll, meta.physicalNAll, mhdInput.L0, mhdInput.VA0, opt, dynamicUpdate));
+    plotContourFrequency(mhdData.amplitude, mhdData.RealMode, meta.xGrid, meta.tDiag, ...
+        meta.modeIndexAll, meta.physicalNAll, mhdInput.L0, mhdInput.VA0, opt);
 end
 
 function workspace = runMHDSingleSignalPlot(mhdData, meta, mhdInput, opt)
@@ -2078,240 +2063,89 @@ function [xData, phaseFrequencyHz, xLabelText, toroidalModeN, radialX] = ...
     end
 end
 
-function plotPhaseFrequencyMap(RealMode, ImagMode, xGrid, tDiag, diagSteps, ...
+function plotContourFrequency(amplitude, RealMode, xGrid, tDiag, ...
     modeIndexAll, physicalNAll, L0, VA0, opt)
 
-    plotData = calculatePhaseFrequencyMapData(RealMode, ImagMode, xGrid, tDiag, diagSteps, ...
+    plotData = calculateContourFrequencyData(amplitude, RealMode, xGrid, tDiag, ...
         modeIndexAll, physicalNAll, L0, VA0, opt);
     drawFrequencyMap(plotData, opt);
 
-    fprintf('[plot] phase frequency map: x=%.6g, radialIndex=%d, n=[%s]\n', ...
-        plotData.radialX, plotData.radialIndex, formatNumberList(plotData.toroidalModeN));
+    fprintf('[plot] contour frequency: n=%d, timeIndexRange=[%d %d], frequencyUnit=%s\n', ...
+        plotData.toroidalModeN, plotData.timeIndexRange(1), plotData.timeIndexRange(2), plotData.frequencyUnit);
 end
 
-function plotPhaseFrequencyMapInteractive(RealMode, ImagMode, xGrid, tDiag, diagSteps, ...
-    modeIndexAll, physicalNAll, L0, VA0, opt, dynamicUpdate)
-
-    nTime = size(RealMode, 1);
-    nRadial = size(RealMode, 2);
-    radialIndex0 = parseIndex(opt.radialIndex, nRadial, 'radialIndex');
-    controls = [ ...
-        integerSliderControl('radialIndex', 'radialIndex', radialIndex0, 1, nRadial), ...
-        integerSliderControl('phaseStep', 'phaseStep', opt.phaseStep, 1, nTime - 1), ...
-        integerSliderControl('smoothWindow', 'smoothWindow', opt.smoothWindow, 1, max(1, min(1001, nTime - 1))), ...
-        integerSliderControl('frequencyBins', 'frequencyBins', opt.frequencyBins, 16, 2048)];
-    plotInteractiveFrequencyMapWithSliders('Phase Frequency Intensity Map', controls, dynamicUpdate, opt, @computePlotData);
-
-    function data = computePlotData(values)
-        tempOpt = opt;
-        tempOpt.radialIndex = values.radialIndex;
-        tempOpt.phaseStep = values.phaseStep;
-        tempOpt.smoothWindow = values.smoothWindow;
-        tempOpt.frequencyBins = values.frequencyBins;
-        data = calculatePhaseFrequencyMapData(RealMode, ImagMode, xGrid, tDiag, diagSteps, ...
-            modeIndexAll, physicalNAll, L0, VA0, tempOpt);
-    end
-end
-
-function plotData = calculatePhaseFrequencyMapData(RealMode, ImagMode, xGrid, tDiag, diagSteps, ...
+function plotData = calculateContourFrequencyData(amplitude, RealMode, xGrid, tDiag, ...
     modeIndexAll, physicalNAll, L0, VA0, opt)
 
-    [xData, phaseFrequencyHz, xLabelText, toroidalModeN, radialX, intensity] = ...
-        calculatePhaseFrequencyAndIntensity(RealMode, ImagMode, xGrid, tDiag, diagSteps, ...
-        modeIndexAll, physicalNAll, L0, VA0, opt);
-    [frequencyVec, intensityMap] = depositPhaseFrequencyIntensity(phaseFrequencyHz, intensity, opt);
-    [intensityMap, colorbarLabel] = scalePhaseFrequencyIntensity(intensityMap, opt);
-    titleText = '$\mathrm{Phase\;frequency\;fraction}$';
-    if isfield(opt, 'normalizeIntensity') && ~isempty(opt.normalizeIntensity) && ~opt.normalizeIntensity
-        titleText = '$\mathrm{Phase\;frequency\;intensity}$';
-    end
-
-    plotData = frequencyMapPlotData(xData, frequencyVec, intensityMap, xLabelText, ...
-        '$f/\mathrm{Hz}$', colorbarLabel, ...
-        titleText, ...
-        sprintf('x = %.6g, radialIndex = %d, n = [%s], phaseStep = %d, smoothWindow = %d', ...
-        radialX, parseIndex(opt.radialIndex, size(RealMode, 2), 'radialIndex'), ...
-        formatNumberList(toroidalModeN), opt.phaseStep, opt.smoothWindow));
-    plotData.radialX = radialX;
-    plotData.radialIndex = parseIndex(opt.radialIndex, size(RealMode, 2), 'radialIndex');
-    plotData.toroidalModeN = toroidalModeN;
-end
-
-function [xData, phaseFrequencyHz, xLabelText, toroidalModeN, radialX, intensity] = ...
-    calculatePhaseFrequencyAndIntensity(RealMode, ImagMode, xGrid, tDiag, diagSteps, ...
-        modeIndexAll, physicalNAll, L0, VA0, opt)
-
     nTime = size(RealMode, 1);
-    assert(isequal(size(RealMode), size(ImagMode)), 'RealMode 和 ImagMode 尺寸必须一致。');
+    assert(isequal(size(amplitude), size(RealMode)), 'amplitude 和 RealMode 尺寸必须一致。');
     assert(numel(tDiag) == nTime, 'tDiag 长度必须匹配 RealMode 时间维度。');
-    assert(nTime >= 2, '相位频率图至少需要两个诊断时间点。');
+    assert(nTime >= 2, '等高线频率诊断至少需要两个诊断时间点。');
 
-    [modeIndex, toroidalModeN] = parseModeN(opt.modeN, modeIndexAll, physicalNAll, 'Phase frequency map');
+    [modeIndex, toroidalModeN] = parseModeN(opt.modeN, modeIndexAll, physicalNAll, 'Contour frequency');
+    assert(isscalar(modeIndex), 'Contour frequency modeN 一次只能选择一个物理环向模数。');
+
     nRadial = size(RealMode, 2);
     assert(numel(xGrid) == nRadial, 'xGrid 长度必须匹配 RealMode 径向维度。');
-    radialIdx = parseIndex(opt.radialIndex, nRadial, 'radialIndex');
-    radialX = xGrid(radialIdx);
-
-    phaseStep = opt.phaseStep;
-    assert(isscalar(phaseStep) && phaseStep == floor(phaseStep) && phaseStep >= 1 && phaseStep <= nTime - 1, ...
-        'phaseStep 必须是 [1, %d] 内的整数。', nTime - 1);
-
-    smoothWindow = opt.smoothWindow;
-    if isempty(smoothWindow)
-        smoothWindow = 1;
-    end
-    assert(isscalar(smoothWindow) && smoothWindow == floor(smoothWindow) && smoothWindow >= 1, ...
-        'smoothWindow 必须是正整数。');
-
-    amplitudeFloor = opt.amplitudeFloor;
-    if isempty(amplitudeFloor)
-        amplitudeFloor = 0;
-    end
-    assert(isscalar(amplitudeFloor) && amplitudeFloor >= 0, 'amplitudeFloor 必须非负。');
-
-    intensityPower = opt.intensityPower;
-    if isempty(intensityPower)
-        intensityPower = 2;
-    end
-    assert(isscalar(intensityPower) && isfinite(intensityPower) && intensityPower > 0, ...
-        'intensityPower 必须为正数。');
-
-    dtPhysical = (tDiag(2) - tDiag(1)) * L0 / VA0;
-    startIndex = (1:(nTime - phaseStep))';
-    endIndex = startIndex + phaseStep;
     [~, modeIdx] = ismember(modeIndex, modeIndexAll);
-    phaseFrequencyHz = nan(numel(startIndex), numel(modeIndex));
-    intensity = nan(numel(startIndex), numel(modeIndex));
 
-    for iMode = 1:numel(modeIdx)
-        signal = RealMode(:, radialIdx, modeIdx(iMode)) + 1i * ImagMode(:, radialIdx, modeIdx(iMode));
-        signal = signal(:);
-        phase = unwrap(angle(signal));
-
-        phaseFrequencyHz(:, iMode) = -(phase(endIndex) - phase(startIndex)) / (2 * pi * dtPhysical * phaseStep);
-        intensity(:, iMode) = 0.5 * (abs(signal(startIndex)) .^ intensityPower + abs(signal(endIndex)) .^ intensityPower);
-
-        if amplitudeFloor > 0
-            lowAmplitude = abs(signal(startIndex)) < amplitudeFloor | abs(signal(endIndex)) < amplitudeFloor;
-            phaseFrequencyHz(lowAmplitude, iMode) = NaN;
-            intensity(lowAmplitude, iMode) = NaN;
-        end
-
-        effectiveSmoothWindow = min(smoothWindow, numel(startIndex));
-        if effectiveSmoothWindow > 1
-            phaseFrequencyHz(:, iMode) = smoothdata(phaseFrequencyHz(:, iMode), 'movmean', effectiveSmoothWindow);
-        end
+    timeIndexRange = opt.timeIndexRange;
+    if isempty(timeIndexRange)
+        timeIndex = 1:nTime;
+    else
+        timeIndexRange = sort(reshape(double(timeIndexRange), 1, []));
+        assert(numel(timeIndexRange) == 2 && all(isfinite(timeIndexRange)) && all(timeIndexRange == floor(timeIndexRange)), ...
+            'Contour frequency timeIndexRange 必须为两个有限整数。');
+        assert(timeIndexRange(1) >= 1 && timeIndexRange(2) <= nTime && timeIndexRange(2) > timeIndexRange(1), ...
+            'Contour frequency timeIndexRange 必须位于 [1, %d] 且至少包含两个时间点。', nTime);
+        timeIndex = timeIndexRange(1):timeIndexRange(2);
     end
 
-    switch char(lower(opt.timeAxis))
-        case {'ta', 'alfven', 'alfven_time'}
-            xData = 0.5 * (tDiag(startIndex) + tDiag(endIndex));
-            xLabelText = '$t_a$';
-        case {'ms', 'millisecond', 'milliseconds'}
-            xData = 0.5 * (tDiag(startIndex) + tDiag(endIndex)) * L0 / VA0 * 1000;
-            xLabelText = '$t/\mathrm{ms}$';
-        case {'steps', 'step'}
-            xData = ((startIndex - 1) + phaseStep / 2) * diagSteps;
-            xLabelText = '$\mathrm{steps}$';
+    amplitude2D = amplitude(timeIndex, :, modeIdx);
+    field2D = RealMode(timeIndex, :, modeIdx);
+    tDiag = tDiag(timeIndex);
+    nTime = numel(timeIndex);
+
+    fieldRMax = max(amplitude2D, [], 2);
+    fieldRMax(fieldRMax == 0) = NaN;
+    normalizedField = bsxfun(@rdivide, field2D, fieldRMax);
+    normalizedField(~isfinite(normalizedField)) = 0;
+
+    spectrum = abs(fft(normalizedField / nTime, [], 1));
+    nFrequency = floor(nTime / 2) + 1;
+    frequencyIntensity = spectrum(1:nFrequency, :);
+    if mod(nTime, 2) == 0 && nFrequency > 2
+        frequencyIntensity(2:end - 1, :) = 2 * frequencyIntensity(2:end - 1, :);
+    elseif mod(nTime, 2) == 1 && nFrequency > 1
+        frequencyIntensity(2:end, :) = 2 * frequencyIntensity(2:end, :);
+    end
+
+    globalMax = max(frequencyIntensity(:));
+    if globalMax > 0
+        frequencyIntensity = frequencyIntensity ./ globalMax;
+    end
+
+    omegaVec = (0:nFrequency - 1)' / ((tDiag(2) - tDiag(1)) * nTime) * 2 * pi;
+    switch char(lower(opt.frequencyUnit))
+        case {'omegaa', 'omega_a', 'normalized'}
+            frequencyVec = omegaVec;
+            yLabelText = '$\omega/\omega_A$';
+            frequencyUnit = 'omegaA';
+        case {'khz'}
+            frequencyVec = omegaVec * VA0 / L0 / (2 * pi) / 1000;
+            yLabelText = '$f/\mathrm{kHz}$';
+            frequencyUnit = 'kHz';
         otherwise
-            error('未知 phase frequency map 时间轴：%s。可选 ''ta''、''ms'' 或 ''steps''。', opt.timeAxis);
-    end
-end
-
-function [frequencyVec, intensityMap] = depositPhaseFrequencyIntensity(phaseFrequencyHz, intensity, opt)
-
-    nFrequency = opt.frequencyBins;
-    assert(isscalar(nFrequency) && nFrequency == floor(nFrequency) && nFrequency >= 2, ...
-        'frequencyBins 必须是不小于 2 的整数。');
-
-    frequencyRange = phaseFrequencyMapRange(phaseFrequencyHz, opt);
-    frequencyEdges = linspace(frequencyRange(1), frequencyRange(2), nFrequency + 1);
-    frequencyVec = 0.5 * (frequencyEdges(1:end - 1) + frequencyEdges(2:end));
-    intensityMap = zeros(nFrequency, size(phaseFrequencyHz, 1));
-
-    for iMode = 1:size(phaseFrequencyHz, 2)
-        freq = phaseFrequencyHz(:, iMode);
-        modeIntensity = intensity(:, iMode);
-        valid = isfinite(freq) & isfinite(modeIntensity) & modeIntensity > 0 & ...
-            freq >= frequencyRange(1) & freq <= frequencyRange(2);
-        timeIndex = find(valid);
-        if isempty(timeIndex)
-            continue;
-        end
-
-        binIndex = floor((freq(valid) - frequencyRange(1)) / diff(frequencyRange) * nFrequency) + 1;
-        binIndex = min(max(binIndex, 1), nFrequency);
-        for iPoint = 1:numel(timeIndex)
-            intensityMap(binIndex(iPoint), timeIndex(iPoint)) = ...
-                intensityMap(binIndex(iPoint), timeIndex(iPoint)) + modeIntensity(timeIndex(iPoint));
-        end
+            error('未知 frequencyUnit：%s。可选 ''omegaA'' 或 ''kHz''。', opt.frequencyUnit);
     end
 
-    smoothBins = opt.frequencySmoothingBins;
-    if isempty(smoothBins)
-        smoothBins = 1;
-    end
-    assert(isscalar(smoothBins) && smoothBins == floor(smoothBins) && smoothBins >= 1, ...
-        'frequencySmoothingBins 必须是正整数。');
-    if smoothBins > 1
-        intensityMap = smoothdata(intensityMap, 1, 'movmean', smoothBins);
-    end
-    intensityMap(intensityMap <= 0) = NaN;
-end
-
-function frequencyRange = phaseFrequencyMapRange(phaseFrequencyHz, opt)
-
-    if isfield(opt, 'frequencyRangeHz') && ~isempty(opt.frequencyRangeHz)
-        frequencyRange = sort(reshape(double(opt.frequencyRangeHz), 1, []));
-        assert(numel(frequencyRange) == 2 && all(isfinite(frequencyRange)) && frequencyRange(1) < frequencyRange(2), ...
-            'frequencyRangeHz 必须为有限的 [min max]。');
-        return;
-    end
-
-    finiteFrequency = phaseFrequencyHz(isfinite(phaseFrequencyHz));
-    if isempty(finiteFrequency)
-        frequencyRange = [-1, 1];
-        return;
-    end
-
-    frequencyRange = [min(finiteFrequency), max(finiteFrequency)];
-    if frequencyRange(1) == frequencyRange(2)
-        padding = max(1, 0.05 * abs(frequencyRange(1)));
-    else
-        padding = 0.05 * diff(frequencyRange);
-    end
-    frequencyRange = frequencyRange + [-padding, padding];
-end
-
-function [intensityMap, colorbarLabel] = scalePhaseFrequencyIntensity(intensityMap, opt)
-
-    normalizeIntensity = true;
-    if isfield(opt, 'normalizeIntensity') && ~isempty(opt.normalizeIntensity)
-        normalizeIntensity = logical(opt.normalizeIntensity);
-    end
-
-    if normalizeIntensity
-        finiteIntensity = intensityMap;
-        finiteIntensity(~isfinite(finiteIntensity)) = 0;
-        columnSum = sum(finiteIntensity, 1);
-        validColumn = columnSum > 0;
-        intensityMap = nan(size(intensityMap));
-        intensityMap(:, validColumn) = bsxfun(@rdivide, finiteIntensity(:, validColumn), columnSum(validColumn));
-        intensityMap(intensityMap <= 0) = NaN;
-    end
-
-    if isfield(opt, 'logIntensity') && opt.logIntensity
-        intensityMap = log10(intensityMap);
-        if normalizeIntensity
-            colorbarLabel = '$\log_{10}\mathrm{fraction}$';
-        else
-            colorbarLabel = '$\log_{10} I$';
-        end
-    elseif normalizeIntensity
-        colorbarLabel = '$\mathrm{fraction}$';
-    else
-        colorbarLabel = '$I$';
-    end
+    plotData = frequencyMapPlotData(xGrid(:).', frequencyVec, frequencyIntensity, '$r/a$', ...
+        yLabelText, '$I/I_{\mathrm{max}}$', '$\mathrm{Frequency\;contour}$', ...
+        sprintf('n = %d, timeIndexRange = [%d %d], frequencyUnit = %s', ...
+        toroidalModeN, timeIndex(1), timeIndex(end), frequencyUnit));
+    plotData.toroidalModeN = toroidalModeN;
+    plotData.timeIndexRange = [timeIndex(1), timeIndex(end)];
+    plotData.frequencyUnit = frequencyUnit;
 end
 
 function plotSingleSignal(singlePointPhi, xGrid, tDiag, diagSteps, L0, VA0, opt)
@@ -2528,7 +2362,15 @@ function renderFrequencyMap(axHandle, plotData, opt)
     delete(findall(figHandle, 'Type', 'ColorBar'));
     delete(allchild(axHandle));
 
-    imagesc(axHandle, plotData.xVec, plotData.yVec, plotData.Z);
+    if isfield(opt, 'contourLevels') && ~isempty(opt.contourLevels)
+        if isfield(opt, 'showContourLine') && ~opt.showContourLine
+            contourf(axHandle, plotData.xVec, plotData.yVec, plotData.Z, opt.contourLevels, 'LineStyle', 'none');
+        else
+            contourf(axHandle, plotData.xVec, plotData.yVec, plotData.Z, opt.contourLevels);
+        end
+    else
+        imagesc(axHandle, plotData.xVec, plotData.yVec, plotData.Z);
+    end
     set(axHandle, 'YDir', 'normal');
     colormap(axHandle, jet(256));
     cb = colorbar(axHandle);
@@ -2538,7 +2380,9 @@ function renderFrequencyMap(axHandle, plotData, opt)
         'FontName', 'Times New Roman', 'FontSize', opt.labelFontSize);
 
     finiteZ = plotData.Z(isfinite(plotData.Z));
-    if isempty(finiteZ)
+    if isfield(opt, 'contourLevels') && ~isempty(opt.contourLevels)
+        clim(axHandle, [min(opt.contourLevels), max(opt.contourLevels)]);
+    elseif isempty(finiteZ)
         clim(axHandle, [0, 1]);
     elseif min(finiteZ) == max(finiteZ)
         centerValue = finiteZ(1);
@@ -2550,6 +2394,11 @@ function renderFrequencyMap(axHandle, plotData, opt)
 
     if isfield(opt, 'frequencyRangeHz') && ~isempty(opt.frequencyRangeHz)
         ylim(axHandle, sort(opt.frequencyRangeHz));
+    elseif isfield(opt, 'yLim') && ~isempty(opt.yLim)
+        ylim(axHandle, opt.yLim);
+    end
+    if isfield(opt, 'yTicks') && ~isempty(opt.yTicks)
+        yticks(axHandle, opt.yTicks);
     end
 
     box(axHandle, 'on');
@@ -2677,72 +2526,6 @@ function plotInteractiveLineWithSliders(figName, controls, dynamicUpdate, opt, c
 
         data = computePlotData(values);
         renderLinePlot(axHandle, data, opt);
-        set(statusText, 'String', data.status);
-    end
-end
-
-function plotInteractiveFrequencyMapWithSliders(figName, controls, dynamicUpdate, opt, computePlotData)
-    figHandle = figure('Name', figName, 'Color', 'w', 'Position', [120, 80, 980, 700]);
-    nControl = numel(controls);
-    controlBottom = 0.035;
-    controlSpacing = 0.045;
-    statusBottom = controlBottom + controlSpacing * max(nControl, 1) + 0.010;
-    axesBottom = statusBottom + 0.105;
-    axHandle = axes('Parent', figHandle, 'Units', 'normalized', ...
-        'Position', [0.10, axesBottom, 0.78, 0.93 - axesBottom]);
-    statusText = uicontrol(figHandle, 'Style', 'text', 'Units', 'normalized', ...
-        'Position', [0.10, statusBottom, 0.86, 0.035], 'BackgroundColor', 'w', ...
-        'HorizontalAlignment', 'left', 'FontName', 'Times New Roman', 'FontSize', opt.axisFontSize);
-    sliderLabels = gobjects(nControl, 1);
-    sliders = gobjects(nControl, 1);
-
-    for iControl = 1:nControl
-        yPos = controlBottom + controlSpacing * (nControl - iControl);
-        sliderLabels(iControl) = uicontrol(figHandle, 'Style', 'text', 'Units', 'normalized', ...
-            'Position', [0.10, yPos - 0.01, 0.19, 0.035], ...
-            'String', sliderLabelText(controls(iControl), controls(iControl).value), ...
-            'BackgroundColor', 'w', 'HorizontalAlignment', 'left', ...
-            'FontName', 'Times New Roman', 'FontSize', opt.axisFontSize);
-        sliders(iControl) = uicontrol(figHandle, 'Style', 'slider', 'Units', 'normalized', ...
-            'Position', [0.30, yPos, 0.61, 0.025], 'Min', controls(iControl).min, ...
-            'Max', controls(iControl).max, 'Value', controls(iControl).value, ...
-            'SliderStep', sliderStepForControl(controls(iControl)), ...
-            'Callback', @refreshPlot);
-    end
-
-    if dynamicUpdate
-        dynamicListeners = {};
-        try
-            for iControl = 1:nControl
-                dynamicListeners{end + 1} = addlistener(sliders(iControl), 'ContinuousValueChange', @refreshPlot); %#ok<AGROW>
-            end
-            setappdata(figHandle, 'dynamicSliderListeners', dynamicListeners);
-        catch
-            warning('visualizeMHD:DynamicSliderUnavailable', ...
-                '动态滑块更新不可用，将使用回调更新。');
-            dynamicUpdate = false;
-        end
-    end
-
-    refreshPlot();
-
-    function refreshPlot(varargin)
-        if ~isgraphics(axHandle)
-            return;
-        end
-
-        values = struct();
-        for iSlider = 1:nControl
-            sliderValue = clampSliderValue(get(sliders(iSlider), 'Value'), controls(iSlider));
-            values.(controls(iSlider).field) = sliderValue;
-            if ~dynamicUpdate
-                set(sliders(iSlider), 'Value', sliderValue);
-            end
-            set(sliderLabels(iSlider), 'String', sliderLabelText(controls(iSlider), sliderValue));
-        end
-
-        data = computePlotData(values);
-        renderFrequencyMap(axHandle, data, opt);
         set(statusText, 'String', data.status);
     end
 end
