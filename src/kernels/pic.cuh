@@ -2555,10 +2555,10 @@ template <picType particle, typename mhdReal, typename picReal>
 __global__ void PICDiagDensity(picReal* __restrict__ pic2d, int* __restrict__ pic_keys_in,
                                picReal* __restrict__ pic_values_in, mhdReal* __restrict__ pic_density) {
 
-    int i, j;
+    int i;
     int tileId, picId;
 
-    picReal J, li, lj, dx, dy, dis;
+    picReal li, dx, dis;
     picReal vec0[3] = {};
     picReal coes[4] = {};
 
@@ -2568,33 +2568,29 @@ __global__ void PICDiagDensity(picReal* __restrict__ pic2d, int* __restrict__ pi
 
         picId = blockIdx.x * blockDim.x * pptNums + id * blockDim.x + threadIdx.x;
         vec0[0] = pic_values_in[picId + 0 * picDev];
-        vec0[1] = pic_values_in[picId + 1 * picDev];
         vec0[2] = pic_values_in[picId + 4 * picDev];
 
         li = (vec0[0] - xbeg) / picGridDx;
-        lj = (vec0[1] - ybeg) / picGridDy;
 
-        if constexpr (std::is_same_v<picReal, double>) {
+        if constexpr (std::is_same_v<picReal, double>)
             i = __double2int_rd(li);
-            j = __double2int_rd(lj);
-        } else {
+        else
             i = __float2int_rd(li);
-            j = __float2int_rd(lj);
-        }
 
         dx = li - i;
-        dy = lj - j;
-
-        tileId = (j * cellNx + i) * tileStride2D;
 
         /*------------------------------------Diag Density------------------------------------*/
 
-        for (int index = 0; index < 4; index++)
-            coes[index] = (hx[index] + sx[index] * dx) * (hy[index] + sy[index] * dy);
+        picReal sumJ0 = 0;
+        picReal sumJ1 = 0;
 
-        FieldGather1d2d<4>(tileId, coes, pic2d, J);
+        for (int j = 0; j < gridNy; j++) {
+            tileId = ((j + gridGhost) * cellNx + i) * tileStride2D;
+            sumJ0 += pic2d[tileId + 0] * gridNz;
+            sumJ1 += pic2d[tileId + 1] * gridNz;
+        }
 
-        dis = vec0[2] / J * partConst * pitchB0 * pitchB0 / 2 / mu0 / (mp * va * va) / (gridNy * gridNz);
+        dis = vec0[2] * partConst * pitchB0 * pitchB0 / 2 / mu0 / (mp * va * va);
 
         coes[0] = hx[0] + sx[0] * dx;
         coes[1] = hx[1] + sx[1] * dx;
@@ -2604,8 +2600,8 @@ __global__ void PICDiagDensity(picReal* __restrict__ pic2d, int* __restrict__ pi
         else if (i == gridNx - 2)
             coes[1] *= 2;
 
-        atomicAdd(&pic_density[i], static_cast<mhdReal>(coes[0] * dis));
-        atomicAdd(&pic_density[i + 1], static_cast<mhdReal>(coes[1] * dis));
+        atomicAdd(&pic_density[i], static_cast<mhdReal>(coes[0] * dis / sumJ0));
+        atomicAdd(&pic_density[i + 1], static_cast<mhdReal>(coes[1] * dis / sumJ1));
     }
 }
 
@@ -3628,7 +3624,7 @@ __global__ void PICDiagDiffusivity(picReal* __restrict__ pic1d, picReal* __restr
     picReal invJ, invB, invQ, invRho, invBstar, bconyOverJ;
     picReal na, na_px, nb, nb_px, ni, ni_px;
 
-    picReal gyroLr, gyroLphi, gyroAr, gyroAphi, radius, radialGcon;
+    picReal gyroLr, gyroLphi, gyroAr, gyroAphi, radius;
     picReal avecxdxA, avecydyA, aveczdzA;
     picReal avedxPhi, avedyPhi, avedzPhi;
     picReal avePhipx, avePhipy, avePhipz;
@@ -3637,7 +3633,6 @@ __global__ void PICDiagDiffusivity(picReal* __restrict__ pic1d, picReal* __restr
     const picReal partMass = (particle == Ion) ? IonMass : (particle == Alpha) ? AlphaMass : BeamMass;
     const picReal partChar = (particle == Ion) ? IonChar : (particle == Alpha) ? AlphaChar : BeamChar;
     const picReal partConst = (particle == Ion) ? IonConst : (particle == Alpha) ? AlphaConst : BeamConst;
-    picReal& part_n_px = (particle == Ion ? ni_px : (particle == Alpha ? na_px : nb_px));
 
     for (int id = 0; id < pptNums; id++) {
 
@@ -3901,20 +3896,35 @@ __global__ void PICDiagDiffusivity(picReal* __restrict__ pic1d, picReal* __restr
         dx = li - i;
         dy = lj - j;
         dz = lk - k;
+        qId = i * qStride;
 
         /*----------------------------------Diag Diffusivity----------------------------------*/
 
-        for (int index = 0; index < 4; index++)
-            coes[index] = (hx[index] + sx[index] * dx) * (hy[index] + sy[index] * dy);
+        picReal den0 = 0;
+        picReal den1 = 0;
 
-        tileId = (j * cellNx + i) * tileStride2D;
-        FieldGather1d2d<4>(tileId, coes, pic2d, J);
-        tileId = (j * cellNx + i) * tileStride2D + 52;
-        FieldGather1d2d<4>(tileId, coes, pic2d, gyroLr);
-        radialGcon = 1 / (gyroLr * gyroLr);
+        for (int j = 0; j < gridNy; j++) {
+            tileId = ((j + gridGhost) * cellNx + i) * tileStride2D;
 
-        dis = -vec0[4] / J * partConst * pitchB0 * pitchB0 / 2 / mu0 / (mp * va * va) / (gridNy * gridNz) * dxdt * va /
-              (part_n_px * radialGcon * l4);
+            picReal gyroLr0 = pic2d[tileId + 52 + 0];
+            picReal gyroLr1 = pic2d[tileId + 52 + 1];
+
+            den0 += pic2d[tileId + 0] / (gyroLr0 * gyroLr0) * gridNz;
+            den1 += pic2d[tileId + 1] / (gyroLr1 * gyroLr1) * gridNz;
+        }
+
+        if constexpr (particle == Ion) {
+            den0 *= pic1d[qId + 14 + 0] * l4;
+            den1 *= pic1d[qId + 14 + 1] * l4;
+        } else if constexpr (particle == Alpha) {
+            den0 *= pic1d[qId + 6 + 0] * l4;
+            den1 *= pic1d[qId + 6 + 1] * l4;
+        } else {
+            den0 *= pic1d[qId + 10 + 0] * l4;
+            den1 *= pic1d[qId + 10 + 1] * l4;
+        }
+
+        dis = vec0[4] * partConst * pitchB0 * pitchB0 / 2 / mu0 / (mp * va * va) * dxdt * va;
 
         coes[0] = hx[0] + sx[0] * dx;
         coes[1] = hx[1] + sx[1] * dx;
@@ -3924,8 +3934,8 @@ __global__ void PICDiagDiffusivity(picReal* __restrict__ pic1d, picReal* __restr
         else if (i == gridNx - 2)
             coes[1] *= 2;
 
-        atomicAdd(&pic_diffusivity[i], static_cast<mhdReal>(coes[0] * dis));
-        atomicAdd(&pic_diffusivity[i + 1], static_cast<mhdReal>(coes[1] * dis));
+        atomicAdd(&pic_diffusivity[i], static_cast<mhdReal>(-coes[0] * dis / den0));
+        atomicAdd(&pic_diffusivity[i + 1], static_cast<mhdReal>(-coes[1] * dis / den1));
     }
 }
 
