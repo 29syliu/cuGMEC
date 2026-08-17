@@ -1717,9 +1717,12 @@ function plotAmplitudeInteractive(amplitude, xGrid, tDiag, diagSteps, modeIndexA
             modeIndexAll, physicalNAll, B0, L0, VA0, TeSample, tempOpt);
         [growthRate, growthUnit, growthRange] = ...
             calculateAmplitudeGrowthRate(lnAmplitude, xData, tDiag, L0, VA0, tempOpt);
+        rangeMask = xData(:) >= growthRange(1) & xData(:) <= growthRange(2);
+        maxItems = compose('n=%d: %.6g', toroidalModeN(:), max(logAmplitude(rangeMask, :), [], 1).');
         data = linePlotData(xData, logAmplitude, xLabelText, '', '$e\delta\phi/T_e$', ...
             compose('$n=%d$', toroidalModeN), ...
             amplitudeGrowthStatus(radialX, tempOpt.radialIndex, growthRange, growthUnit, toroidalModeN, growthRate));
+        data.status = sprintf('%s, max log10(ephi/Te): %s', data.status, strjoin(cellstr(maxItems), ', '));
         data.xLines = growthRange;
     end
 end
