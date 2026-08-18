@@ -1,0 +1,45 @@
+# Let Git detect text files by default, then normalize text in the repo.
+* text=auto
+
+# Source code: always LF.
+*.c     text eol=lf
+*.cc    text eol=lf
+*.cpp   text eol=lf
+*.cxx   text eol=lf
+*.h     text eol=lf
+*.hpp   text eol=lf
+*.cu    text eol=lf
+*.cuh   text eol=lf
+
+# MATLAB, scripts, and notebooks.
+*.m     text eol=lf
+*.ipynb text eol=lf
+*.sh    text eol=lf
+Makefile text eol=lf
+
+# Project config and documentation.
+*.md            text eol=lf
+*.json          text eol=lf
+*.yml           text eol=lf
+*.yaml          text eol=lf
+*.ini           text eol=lf
+*.cfg           text eol=lf
+*.txt           text eol=lf
+*.clang-format  text eol=lf
+.editorconfig   text eol=lf
+.gitattributes  text eol=lf
+.github/CODEOWNERS text eol=lf
+
+# Windows-only scripts, if added later.
+*.bat text eol=crlf
+*.cmd text eol=crlf
+
+# Binary/data/artifact files: never line-ending convert or diff as text.
+*.pdf    binary
+*.png    binary
+*.jpg    binary
+*.jpeg   binary
+*.gif    binary
+*.bin    binary
+*.mat    binary
+*.mexw64 binary

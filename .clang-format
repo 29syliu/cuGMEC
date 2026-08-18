@@ -1,0 +1,12 @@
+BasedOnStyle: LLVM
+UseTab: Never
+TabWidth: 8
+IndentWidth: 4
+ContinuationIndentWidth: 4
+ColumnLimit: 120
+PointerAlignment: Left
+AlwaysBreakTemplateDeclarations: Yes
+AlwaysBreakAfterReturnType: None
+AlwaysBreakAfterDefinitionReturnType: None
+PenaltyReturnTypeOnItsOwnLine: 10000
+SortIncludes: Never
