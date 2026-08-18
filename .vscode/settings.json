@@ -5,8 +5,8 @@
         "*.h": "cuda-cpp"
     },
 
-    "editor.fontFamily": "Monaco",
-    "editor.fontSize": 13,
+    // "editor.fontFamily": "Monaco",
+    // "editor.fontSize": 13,
     "editor.formatOnSave": true,
 
     "[cuda-cpp]": {
