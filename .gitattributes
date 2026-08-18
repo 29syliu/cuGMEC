@@ -15,7 +15,10 @@
 *.m     text eol=lf
 *.ipynb text eol=lf
 *.sh    text eol=lf
+
+# Root-level project files.
 Makefile text eol=lf
+LICENSE  text eol=lf
 
 # Project config and documentation.
 *.md            text eol=lf
