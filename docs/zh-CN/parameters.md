@@ -20,44 +20,45 @@
 | `picReal` | `float` / `double` | PIC 计算精度。 | PIC 精度应低于或等于 MHD 精度。 | `using picReal = float;` |
 | `inputDir` | 字符串路径 | 输入文件目录。 | 从头算时，仅需提供 `MHDEquilibrium` 文件。<br>继续算时，还需要提供 `MHDContinue` 和 `PICContinue` 文件，它们来自上一次任务 `outputDir/final`。 | `const std::string inputDir = "/path/to/input";` |
 | `outputDir` | 字符串路径 | 输出文件目录。 |  | `const std::string outputDir = "/path/to/output";` |
-| `MHDEquilibrium` | `.bin` 文件名 | MHD 平衡文件。 |  | `const std::string MHDEquilibrium = "MHDEquilibrium_384_32.bin";` |
-| `<Species>PhaseSpaceMapping` | `.bin` 文件名 | 相空间轨道映射文件。 | 仅 `ifOutputPhaseSpaceOrbit=trueType` 时需要。 | `const std::string IonPhaseSpaceMapping = "IonPhaseSpaceMapping.bin";` |
+| `MHDEquilibrium` | `.bin` 文件名 | MHD 平衡文件。 | 由 `generateInput2D.m` 和 `generateInput3D.m` 生成，托卡马克用前者，仿星器用后者。 | `const std::string MHDEquilibrium = "MHDEquilibrium_384_32.bin";` |
+| `<Species>PhaseSpaceMapping` | `.bin` 文件名 | 相空间映射文件。 | 仅启用 `ifOutputPhaseSpace*` 时需要，由 `generatePhaseSpaceMapping2D.m` 生成。 | `const std::string IonPhaseSpaceMapping = "IonPhaseSpaceMapping.bin";` |
 
-## 归一化参数
+## 归一化
 
 | 参数名 | 允许的值 | 含义 | 注意事项 | 示范 |
 |---|---|---|---|---|
-| `B0` | 正实数 | 磁场归一化基准。 |  | `const double B0 = 4.921751144619735;` |
-| `L0` | 正实数 | 长度归一化基准。 |  | `const double L0 = 6.595629295925759;` |
-| `VA0` | 正实数 | 速度归一化基准。 |  | `const double VA0 = 8.864164667700194e+06;` |
-| `RHO0` | 正实数 | 径向区间左端。 |  | `const double RHO0 = 0.08;` |
-| `RHO1` | 正实数 | 径向区间右端。 |  | `const double RHO1 = 0.90;` |
-| `PSITMAX` | 正实数 | 最外层环向磁通（Wb/rad）。 |  | `const double PSITMAX = 18.868213504765762;` |
+| `B0` | 实数 | 磁场归一化基准。 |  | `const double B0 = 4.921751144619735;` |
+| `L0` | 实数 | 长度归一化基准。 |  | `const double L0 = 6.595629295925759;` |
+| `VA0` | 实数 | 速度归一化基准。 |  | `const double VA0 = 8.864164667700194e+06;` |
+| `RHO0` | 实数 | 径向区间左端。 |  | `const double RHO0 = 0.08;` |
+| `RHO1` | 实数 | 径向区间右端。 |  | `const double RHO1 = 0.90;` |
+| `PSITMAX` | 实数 | 最外层环向磁通（Wb/rad）。 |  | `const double PSITMAX = 18.868213504765762;` |
 
 ## 网格和并行规模
 
 | 参数名 | 允许的值 | 含义 | 注意事项 | 示范 |
 |---|---|---|---|---|
-| `hostNums` | 正整数 | MPI 进程数。 |  | `const int hostNums = 4;` |
-| `devNums` | 正整数 | 每个 MPI 进程使用的 GPU 数。 |  | `const int devNums = 4;` |
-| `gridNx` | 正整数 | 径向网格数。 |  | `const int gridNx = 256;` |
-| `gridNy` | 正整数 | 沿场线方向网格数。 | 需能被 `hostNums * devNums` 整除。 | `const int gridNy = 32;` |
-| `gridNz` | 正整数 | 环向网格数。 |  | `const int gridNz = 96;` |
-| `ppcNums` | 正整数 | 每种离子在每一个网格内的平均粒子数。 |  | `const int ppcNums = 256;` |
+| `hostNums` | 整数 | MPI 进程数。 |  | `const int hostNums = 4;` |
+| `devNums` | 整数 | 每个 MPI 进程使用的 GPU 数。 |  | `const int devNums = 4;` |
+| `gridNx` | 整数 | 径向网格数。 |  | `const int gridNx = 256;` |
+| `gridNy` | 整数 | 沿场线方向网格数。 | 需能被 `hostNums * devNums` 整除。 | `const int gridNy = 32;` |
+| `gridNz` | 整数 | 环向网格数。 |  | `const int gridNz = 96;` |
+| `NFP` | 整数 | 场周期数。`NFP=1` 表示托卡马克；`NFP!=1` 表示仿星器。 |  | `const int NFP = 1;` |
+| `ppcNums` | 整数 | 每种离子在每一个网格内的平均粒子数。 |  | `const int ppcNums = 256;` |
 
 ## 环向范围和初始扰动
 
 | 参数名 | 允许的值 | 含义 | 注意事项 | 示范 |
 |---|---|---|---|---|
-| `tubes` | 正整数 | 模拟 `1/tubes` 个环向区域。 |  | `const int tubes = 6;` |
-| `leftN` | 非负整数 | `1/tubes` 个环向区域里保留的环向模数下限。 | 实际环向模数范围为 `tubes*[leftN,rightN]`，间隔为 `tubes`。 | `const int leftN = 1;` |
-| `rightN` | 非负整数 | `1/tubes` 个环向区域里保留的环向模数上限。 |  | `const int rightN = 6;` |
-| `refinedTimes` | 正整数 | `selectNM_*` 极向滤波使用的沿场线方向插值细分倍数。 | 细分后网格数为 `gridNy * refinedTimes`。 | `const int refinedTimes = 32;` |
-| `perturbLeftN` | 非负整数 | `1/tubes` 个环向区域里初始扰动环向模数下限。 | 实际环向模数范围为 `tubes*[perturbLeftN,perturbRightN]`，间隔为 `tubes`。 | `const int perturbLeftN = 1;` |
-| `perturbRightN` | 非负整数 | `1/tubes` 个环向区域里初始扰动环向模数上限。 |  | `const int perturbRightN = 6;` |
-| `perturbRadialIndex` | `1` 到 `gridNx` | 初始高斯扰动的径向峰值网格点。 |  | `const int perturbRadialIndex = 85;` |
-| `perturbWidth` | 正实数 | 初始高斯扰动的径向宽度。 |  | `const mhdReal perturbWidth = 0.04;` |
-| `perturbAmplitude` | 实数 | 初始高斯扰动的归一化 `Phi` 幅值。 |  | `const mhdReal perturbAmplitude = 2.5e-9;` |
+| `tubes` | 整数 | 模拟 `1/tubes` 个环向区域。 |  | `const int tubes = 6;` |
+| `leftN` | 整数 | `1/tubes` 个环向区域里保留的环向模数下限。 |  | `const int leftN = 1;` |
+| `rightN` | 整数 | `1/tubes` 个环向区域里保留的环向模数上限。 | 实际保留的环向模数范围为 `tubes*[leftN,rightN]`，间隔为 `tubes`。 | `const int rightN = 6;` |
+| `refinedTimes` | 整数 | `selectNM_*` 极向滤波使用的极向网格加密倍数。 | 加密后极向网格数为 `gridNy * refinedTimes`。 | `const int refinedTimes = 32;` |
+| `perturbLeftN` | 整数 | `1/tubes` 个环向区域里初始扰动环向模数下限。 |  | `const int perturbLeftN = 1;` |
+| `perturbRightN` | 整数 | `1/tubes` 个环向区域里初始扰动环向模数上限。 | 初始扰动的环向模数范围为 `tubes*[perturbLeftN,perturbRightN]`，间隔为 `tubes`。 | `const int perturbRightN = 6;` |
+| `perturbRadialIndex` | 整数 | 初始高斯扰动的径向峰值网格点。 |  | `const int perturbRadialIndex = 85;` |
+| `perturbWidth` | 实数 | 初始高斯扰动的径向宽度。 |  | `const mhdReal perturbWidth = 0.04;` |
+| `perturbAmplitude` | 实数 | 初始高斯扰动的归一化 `Phi` 幅值。 | 扰动正比于 `amplitude * exp[-(X - Xc)^2 / (2 * width^2)]`，其中 `Xc = (radialIndex - 1) / (gridNx - 1)`。 | `const mhdReal perturbAmplitude = 2.5e-9;` |
 
 ## 滤波
 
@@ -70,14 +71,16 @@
 | `selectNM_<MHDField>` | `{{{N, leftM, rightM}, ...}}` | 对 MHD 场的指定环向模数进行极向滤波。 |  | `constexpr std::array<std::tuple<int, int, int>, 1> selectNM_Phi = {{{0, 0, 0}}};` |
 | `selectNM_dP` | `{{{N, leftM, rightM}, ...}}` | 对 PIC 扰动压强的指定环向模数进行极向滤波。 | 作用于 `dPi/dPa/dPb`。 | `constexpr std::array<std::tuple<int, int, int>, 1> selectNM_dP = {{{0, 0, 1}}};` |
 
-## MHD 物理开关
+## MHD 物理参数
 
 | 参数名 | 允许的值 | 含义 | 注意事项 | 示范 |
 |---|---|---|---|---|
 | `ifNonlinearMHD` | `trueType` / `falseType` | 是否包含 MHD 非线性项。 |  | `using ifNonlinearMHD = trueType;` |
 | `ifEparallel` | `trueType` / `falseType` | 是否包含平行电场项。 |  | `using ifEparallel = trueType;` |
 | `ifFLRMHD` | `trueType` / `falseType` | 是否包含泊松方程中由背景热离子带来的 FLR 效应。 |  | `using ifFLRMHD = falseType;` |
-| `ifQNeutrality` | `trueType` / `falseType` | 是否由准中性条件计算电子密度扰动。 | 开启时，`dNe` 由涡量项和启用物种的扰动密度共同决定。 | `using ifQNeutrality = trueType;` |
+| `ifQNeutrality` | `trueType` / `falseType` | 是否由准中性条件计算电子密度扰动。 | 开启时，`dNe` 由涡量和离子的扰动密度共同决定。 | `using ifQNeutrality = trueType;` |
+| `ifReducedMHD` | `trueType` / `falseType` | 用单流体压强方程演化背景热等离子体的压强，并关闭 `dNe` 和 `dTe` 的演化。 | 需设置 `ifEparallel=falseType`。 | `using ifReducedMHD = falseType;` |
+| `Gamma` | 实数 | 单流体压强方程中的绝热系数。 |  | `const mhdReal Gamma = 0.0;` |
 | `ifMaxwellStress` | `trueType` / `falseType` | 是否包含 Maxwell stress。 | 仅 `ifNonlinearMHD=trueType` 时有效。 | `using ifMaxwellStress = trueType;` |
 | `ifReynoldsStress` | `trueType` / `falseType` | 是否包含 Reynolds stress。 | 仅 `ifNonlinearMHD=trueType` 时有效。 | `using ifReynoldsStress = trueType;` |
 | `MaxwellStressCoef` | 实数 | Maxwell stress 系数。 | 仅 `ifMaxwellStress=trueType` 时有效。 | `const mhdReal MaxwellStressCoef = 1.0;` |
@@ -88,23 +91,23 @@
 | 参数名 | 允许的值 | 含义 | 注意事项 | 示范 |
 |---|---|---|---|---|
 | `ifNablaPerp2<MHDField>` | `trueType` / `falseType` | 是否对 MHD 场施加垂直方向二阶耗散。 |  | `using ifNablaPerp2Phi = trueType;` |
-| `perp2<MHDField>` | 正实数 | MHD 场的垂直二阶耗散系数。 |  | `const mhdReal perp2Phi = 1.0e-7;` |
+| `perp2<MHDField>` | 实数 | MHD 场的垂直二阶耗散系数。 |  | `const mhdReal perp2Phi = 1.0e-7;` |
 | `ifNablaPara4<MHDField>` | `trueType` / `falseType` | 是否对 MHD 场施加平行方向四阶耗散。 |  | `using ifNablaPara4Phi = trueType;` |
-| `para4<MHDField>` | 正实数 | MHD 场的平行四阶耗散系数。 |  | `const mhdReal para4Phi = 1.0e-6;` |
+| `para4<MHDField>` | 实数 | MHD 场的平行四阶耗散系数。 |  | `const mhdReal para4Phi = 1.0e-6;` |
 | `ifNablaPerp2dP` | `trueType` / `falseType` | 是否对 PIC 扰动压强施加垂直方向二阶耗散。 | 作用于 `dPi/dPa/dPb`。 | `using ifNablaPerp2dP = trueType;` |
-| `perp2dP` | 正实数 | PIC 扰动压强的垂直二阶耗散系数。 | 作用于 `dPi/dPa/dPb`。 | `const mhdReal perp2dP = 1.0e-6;` |
+| `perp2dP` | 实数 | PIC 扰动压强的垂直二阶耗散系数。 | 作用于 `dPi/dPa/dPb`。 | `const mhdReal perp2dP = 1.0e-6;` |
 | `ifNablaPara4dP` | `trueType` / `falseType` | 是否对 PIC 扰动压强施加平行方向四阶耗散。 | 作用于 `dPi/dPa/dPb`。 | `using ifNablaPara4dP = falseType;` |
-| `para4dP` | 正实数 | PIC 扰动压强的平行四阶耗散系数。 | 作用于 `dPi/dPa/dPb`。 | `const mhdReal para4dP = 0.0;` |
+| `para4dP` | 实数 | PIC 扰动压强的平行四阶耗散系数。 | 作用于 `dPi/dPa/dPb`。 | `const mhdReal para4dP = 0.0;` |
 
-## PIC 物理开关
+## PIC 物理参数
 
 | 参数名 | 允许的值 | 含义 | 注意事项 | 示范 |
 |---|---|---|---|---|
 | `ifFLRPIC` | `trueType` / `falseType` | 是否开启 PIC 部分的 FLR 效应。 |  | `using ifFLRPIC = trueType;` |
 | `ifNonlinearPIC` | `trueType` / `falseType` | 是否开启 PIC 非线性项。 |  | `using ifNonlinearPIC = trueType;` |
-| `gyroNums` | 正整数 | gyro-average 点数。 |  | `const int gyroNums = 4;` |
+| `gyroNums` | 整数 | gyro-average 点数。 | 需满足 `gyroNums = 2^n` 且 `n >= 2`。 | `const int gyroNums = 4;` |
 
-## PIC 物种参数
+## PIC 粒子参数
 
 | 参数名 | 允许的值 | 含义 | 注意事项 | 示范 |
 |---|---|---|---|---|
@@ -112,25 +115,25 @@
 | `<Species>Type` | `Maxwell` / `Slowing0` / `Slowing1` / `Slowing2` / `Slowing3` | 速度分布类型。 |  | `const disType IonType = Maxwell;` |
 | `<Species>Space` | `spaceReal` / `spaceUniform` | 空间采样方式（marker 位置空间真实分布或者均匀分布）。 |  | `const spaceType IonSpace = spaceReal;` |
 | `<Species>Velocity` | `velocityReal` / `velocityUniform` | 速度采样方式（marker 速度空间真实分布或者均匀分布）。 |  | `const velocityType IonVelocity = velocityUniform;` |
-| `<Species>Mass` | 正实数 | 离子质量，按质子质量归一化。 |  | `const picReal IonMass = 2.5;` |
-| `<Species>Char` | 正实数 | 离子电荷，按电子电荷归一化。 |  | `const picReal IonChar = 1.0;` |
-| `<Species>Beta` | 正实数 | 离子磁轴处比压（`P/(B0^2/(2*mu0))`）。 |  | `const picReal IonBeta = 0.037793721898356;` |
-| `<Species>Vmin` | 正实数 | 离子速度下限，按 `VA0` 归一化。 |  | `const picReal IonVmin = 0.0135;` |
-| `<Species>Vmax` | 正实数 | 离子速度上限，按 `VA0` 归一化。 |  | `const picReal IonVmax = 0.54;` |
-| `<Species>Vb` | 正实数 | slowing-down 分布的截断速度。 |  | `const picReal BeamVb = 0.1;` |
-| `<Species>DeltaV` | 正实数 | slowing-down 分布的截断宽度。 |  | `const picReal BeamDeltaV = 0.1;` |
-| `<Species>Lambda0` | 正实数 | 各向异性分布的 `Lambda` 中心。 |  | `const picReal BeamLambda0 = 0.4;` |
-| `<Species>DeltaLambda2` | 正实数 | 各向异性分布的 `Lambda` 展宽平方。 |  | `const picReal BeamDeltaLambda2 = 1.0 / (4.5 * 4.5);` |
+| `<Species>Mass` | 实数 | 离子质量，按质子质量归一化。 |  | `const picReal IonMass = 2.5;` |
+| `<Species>Char` | 实数 | 离子电荷，按电子电荷归一化。 |  | `const picReal IonChar = 1.0;` |
+| `<Species>Beta` | 实数 | 离子磁轴处比压（`P/(B0^2/(2*mu0))`）。 |  | `const picReal IonBeta = 0.037793721898356;` |
+| `<Species>Vmin` | 实数 | 离子速度下限，按 `VA0` 归一化。 |  | `const picReal IonVmin = 0.0135;` |
+| `<Species>Vmax` | 实数 | 离子速度上限，按 `VA0` 归一化。 |  | `const picReal IonVmax = 0.54;` |
+| `<Species>Vb` | 实数 | slowing-down 分布的截断速度。 |  | `const picReal BeamVb = 0.1;` |
+| `<Species>DeltaV` | 实数 | slowing-down 分布的截断宽度。 |  | `const picReal BeamDeltaV = 0.1;` |
+| `<Species>Lambda0` | 实数 | 各向异性分布的 `Lambda` 中心。 |  | `const picReal BeamLambda0 = 0.4;` |
+| `<Species>DeltaLambda2` | 实数 | 各向异性分布的 `Lambda` 展宽平方。 |  | `const picReal BeamDeltaLambda2 = 1.0 / (4.5 * 4.5);` |
 
 | 分布类型 | 公式 |
 |---|---|
-| `Maxwell` | `f ~ n * T^(-3/2) * exp[-m*v^2/(2*T)]` |
-| `Slowing0` | `f ~ n / (v^3 + v_c^3)` |
-| `Slowing1` | `f ~ n * [1 + erf((V_b - v)/DeltaV)] / (v^3 + v_c^3)` |
-| `Slowing2` | `f ~ n * exp[-(Lambda - Lambda_0)^2 / DeltaLambda^2] / (v^3 + v_c^3)` |
-| `Slowing3` | `f ~ n * [1 + erf((V_b - v)/DeltaV)] * exp[-(Lambda - Lambda_0)^2 / DeltaLambda^2] / (v^3 + v_c^3)` |
+| `Maxwell` | `f ~ n * T^(-3/2) * exp[-m*V^2/(2*T)]` |
+| `Slowing0` | `f ~ n / (V^3 + Vc^3)` |
+| `Slowing1` | `f ~ n * [1 + erf((Vb - V)/DeltaV)] / (V^3 + Vc^3)` |
+| `Slowing2` | `f ~ n * exp[-(Lambda - Lambda0)^2 / DeltaLambda^2] / (V^3 + Vc^3)` |
+| `Slowing3` | `f ~ n * [1 + erf((Vb - V)/DeltaV)] * exp[-(Lambda - Lambda0)^2 / DeltaLambda^2] / (V^3 + Vc^3)` |
 
-## 诊断开关
+## 诊断
 
 | 参数名 | 允许的值 | 含义 | 注意事项 | 示范 |
 |---|---|---|---|---|
@@ -142,7 +145,7 @@
 | `ifDiagZFDrive` | `trueType` / `falseType` | 是否诊断 zonal-flow 驱动源。 |  | `using ifDiagZFDrive = falseType;` |
 | `ifCheckNAN` | `trueType` / `falseType` | 是否检查 NaN。 | 如果诊断到 NaN，程序会立刻停止并进行输出。 | `using ifCheckNAN = trueType;` |
 
-## MHD 场输出开关
+## MHD 场输出
 
 | 参数名 | 允许的值 | 含义 | 注意事项 | 示范 |
 |---|---|---|---|---|
@@ -150,28 +153,29 @@
 | `ifOutputA` | `trueType` / `falseType` | 是否输出多个时间点的 `A`。 |  | `using ifOutputA = falseType;` |
 | `ifOutputdNe` | `trueType` / `falseType` | 是否输出多个时间点的 `dNe`。 |  | `using ifOutputdNe = falseType;` |
 | `ifOutputdTe` | `trueType` / `falseType` | 是否输出多个时间点的 `dTe`。 |  | `using ifOutputdTe = falseType;` |
+| `ifOutputdP` | `trueType` / `falseType` | 是否输出多个时间点的单流体压强 `dP`。 |  | `using ifOutputdP = falseType;` |
 | `ifOutputdPi` | `trueType` / `falseType` | 是否输出多个时间点的 `dPi`。 |  | `using ifOutputdPi = falseType;` |
 | `ifOutputdPa` | `trueType` / `falseType` | 是否输出多个时间点的 `dPa`。 |  | `using ifOutputdPa = falseType;` |
 | `ifOutputdPb` | `trueType` / `falseType` | 是否输出多个时间点的 `dPb`。 |  | `using ifOutputdPb = falseType;` |
 
-## 相空间输出参数
+## 相空间输出
 
 | 参数名 | 允许的值 | 含义 | 注意事项 | 示范 |
 |---|---|---|---|---|
-| `gridE` | 正整数 | `E` 方向 phase-space 网格数。 |  | `const int gridE = 96;` |
-| `gridPphi` | 正整数 | `Pphi` 方向 phase-space 网格数。 |  | `const int gridPphi = 128;` |
-| `gridLambda` | 正整数 | `Lambda` 方向 phase-space 网格数。 |  | `const int gridLambda = 48;` |
-| `ppcPhase` | 正整数 | 每种离子在每一个 phase-space 网格内的平均粒子数。 |  | `const int ppcPhase = 2048;` |
-| `ifOutputPhaseSpaceJacobian` | `trueType` / `falseType` | 是否输出 phase-space Jacobian。 | 初始阶段输出。 | `using ifOutputPhaseSpaceJacobian = trueType;` |
-| `ifOutputPhaseSpaceOrbit` | `trueType` / `falseType` | 是否输出 phase-space 轨道频率。 | 需要 `<Species>PhaseSpaceMapping` 文件。 | `using ifOutputPhaseSpaceOrbit = falseType;` |
-| `ifOutputPhaseSpaceF0` | `trueType` / `falseType` | 是否输出 phase-space 平衡分布函数。 | 初始阶段输出。 | `using ifOutputPhaseSpaceF0 = falseType;` |
+| `gridE` | 整数 | `E` 方向 phase-space 网格数。 | 需要与 `generatePhaseSpaceMapping2D.m` 的设置一致。 | `const int gridE = 96;` |
+| `gridPphi` | 整数 | `Pphi` 方向 phase-space 网格数。 | 需要与 `generatePhaseSpaceMapping2D.m` 的设置一致。 | `const int gridPphi = 128;` |
+| `gridLambda` | 整数 | `Lambda` 方向 phase-space 网格数。 | 需要与 `generatePhaseSpaceMapping2D.m` 的设置一致。 | `const int gridLambda = 48;` |
+| `ppcPhase` | 整数 | 每种离子在每一个 phase-space 网格内的平均粒子数。 |  | `const int ppcPhase = 2048;` |
+| `ifOutputPhaseSpaceJacobian` | `trueType` / `falseType` | 是否输出 phase-space Jacobian。 |  | `using ifOutputPhaseSpaceJacobian = trueType;` |
+| `ifOutputPhaseSpaceOrbit` | `trueType` / `falseType` | 是否输出 phase-space 轨道频率。 |  | `using ifOutputPhaseSpaceOrbit = falseType;` |
+| `ifOutputPhaseSpaceF0` | `trueType` / `falseType` | 是否输出 phase-space 平衡分布函数。 |  | `using ifOutputPhaseSpaceF0 = falseType;` |
 | `ifOutputPhaseSpaceDeltaF` | `trueType` / `falseType` | 是否输出 phase-space 扰动分布函数。 |  | `using ifOutputPhaseSpaceDeltaF = falseType;` |
 | `ifOutputPhaseSpacePower` | `trueType` / `falseType` | 是否输出 phase-space 波粒作用功率。 |  | `using ifOutputPhaseSpacePower = falseType;` |
-| `gridVpara` | 正整数 | `vpara` 方向 pitch-space 网格数。 |  | `const int gridVpara = 128;` |
-| `gridVperp` | 正整数 | `vperp` 方向 pitch-space 网格数。 |  | `const int gridVperp = 64;` |
-| `ppcPitch` | 正整数 | 每种离子在每一个 pitch-space 网格内的平均粒子数。 |  | `const int ppcPitch = 2048;` |
-| `ifOutputPitchSpaceJacobian` | `trueType` / `falseType` | 是否输出 pitch-space Jacobian。 | 初始阶段输出。 | `using ifOutputPitchSpaceJacobian = trueType;` |
-| `ifOutputPitchSpaceF0` | `trueType` / `falseType` | 是否输出 pitch-space 平衡分布函数。 | 初始阶段输出。 | `using ifOutputPitchSpaceF0 = falseType;` |
+| `gridVpara` | 整数 | `vpara` 方向 pitch-space 网格数。 |  | `const int gridVpara = 128;` |
+| `gridVperp` | 整数 | `vperp` 方向 pitch-space 网格数。 |  | `const int gridVperp = 64;` |
+| `ppcPitch` | 整数 | 每种离子在每一个 pitch-space 网格内的平均粒子数。 |  | `const int ppcPitch = 2048;` |
+| `ifOutputPitchSpaceJacobian` | `trueType` / `falseType` | 是否输出 pitch-space Jacobian。 |  | `using ifOutputPitchSpaceJacobian = trueType;` |
+| `ifOutputPitchSpaceF0` | `trueType` / `falseType` | 是否输出 pitch-space 平衡分布函数。 |  | `using ifOutputPitchSpaceF0 = falseType;` |
 | `ifOutputPitchSpaceDeltaF` | `trueType` / `falseType` | 是否输出 pitch-space 扰动分布函数。 |  | `using ifOutputPitchSpaceDeltaF = falseType;` |
 | `ifOutputPitchSpacePower` | `trueType` / `falseType` | 是否输出 pitch-space 波粒作用功率。 |  | `using ifOutputPitchSpacePower = falseType;` |
 
@@ -180,11 +184,11 @@
 | 参数名 | 允许的值 | 含义 | 注意事项 | 示范 |
 |---|---|---|---|---|
 | `ifContinue` | `trueType` / `falseType` | 是否从继续算文件启动。 | `inputDir` 下需要有 `MHDContinue` 和 `PICContinue` 继续算文件。它们来自上一次任务 `outputDir/final`。 | `using ifContinue = falseType;` |
-| `continueSteps` | 非负整数 | 继续算起始步数。 | 需与继续算文件名后缀一致。 | `const int continueSteps = 0;` |
-| `dt` | 正实数 | MHD 时间步长。 |  | `const double dt = 0.02;` |
-| `totalSteps` | 正整数 | 本次运行总 MHD 步数。 |  | `const int totalSteps = 20000;` |
-| `ratioDt` | 正整数 | PIC 步长相对 MHD 步长的比例。 | PIC 每次推进使用 `dt * ratioDt`。 | `const int ratioDt = 1;` |
-| `sortSteps` | 正整数 | 粒子排序间隔。 |  | `const int sortSteps = 25;` |
-| `diagSteps` | 正整数 | 诊断采样间隔。 |  | `const int diagSteps = 1;` |
-| `outputSteps` | 正整数 | 场和相空间输出间隔。 |  | `const int outputSteps = 2500;` |
+| `continueSteps` | 整数 | 继续算起始步数。 | 需与继续算文件名后缀一致。 | `const int continueSteps = 0;` |
+| `dt` | 实数 | MHD 时间步长。 | 按阿尔芬时间 `L0/VA0` 归一化。 | `const double dt = 0.02;` |
+| `totalSteps` | 整数 | 本次运行总 MHD 步数。 |  | `const int totalSteps = 20000;` |
+| `ratioDt` | 整数 | PIC 步长相对 MHD 步长的比例。 | PIC 每次推进使用 `dt * ratioDt`。 | `const int ratioDt = 1;` |
+| `sortSteps` | 整数 | 粒子排序间隔。 |  | `const int sortSteps = 25;` |
+| `diagSteps` | 整数 | 诊断采样间隔。 |  | `const int diagSteps = 1;` |
+| `outputSteps` | 整数 | 场和相空间输出间隔。 |  | `const int outputSteps = 2500;` |
 
