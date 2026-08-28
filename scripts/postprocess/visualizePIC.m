@@ -175,6 +175,7 @@ picPhaseQuantityOpt = struct( ...
     'colormapIndex', 1, ...
     'contourCount', 0, ...
     'resonance', picResonanceOptions(false, 'para', 65e3, [0, 150e3], 30, [1, 80], 33, [1, 80], 0, [-20, 20]), ...
+    'detuningLine', picPhaseDetuningLineOptions(false, [], [], [], []), ...
     'interactive', 2);
 %{
 enabled         : 是否绘图。
@@ -196,6 +197,12 @@ resonance.poloidalMode    : 共振线正极向模数 m；trapped 分支不使用
 resonance.poloidalModeRange: 共振线 m 滑块范围。
 resonance.harmonic         : 共振线轨道谐波 l；叠加到 phase 图时也可设为 [lMin lMax]。
 resonance.harmonicRange    : l min / l max 滑块允许范围。
+detuningLine    : 固定 Lambda 图上的黑色失谐路径线段，由 picPhaseDetuningLineOptions 构造。
+detuningLine.enabled        : 是否叠加该线段；仅 fixedCoordinate='Lambda' 时生效。
+detuningLine.E0             : 线段中心能量坐标。
+detuningLine.Pphi0          : 图上显示的 Pphi 中心坐标。
+detuningLine.deltaPphiLeft  : 图上 Pphi 向左长度。
+detuningLine.deltaPphiRight : 图上 Pphi 向右长度。
 interactive      : 0 不交互；1 滑块释放后更新；2 拖动滑块时连续更新。
 %}
 % For phase quantity interactive=1/2, resonance.branch may also be a list,
@@ -203,6 +210,42 @@ interactive      : 0 不交互；1 滑块释放后更新；2 拖动滑块时连�
 % {'para','anti','trapped'}, ["para","anti"], or 'all'. Frequency, n, and m
 % sliders are shared; each selected branch gets its own l min / l max pair.
 picWorkspace.phaseQuantity = runPICPhaseQuantityPlot(picPhaseData, phaseSpaceOrbit, meta, picPhaseQuantityOpt);
+
+%% 可视化共振失谐
+
+picResonanceDetuningOpt = struct( ...
+    'enabled', false, ...
+    'species', 'Alpha', ...
+    'plotFile', fullfile(inputDir, 'plot2D.mat'), ...
+    'branch', 'trapped', ...
+    'frequencyHz', 65e3, ...
+    'toroidalMode', 30, ...
+    'poloidalMode', 33, ...
+    'harmonic', 0, ...
+    'E0', [], ...
+    'Pphi0', [], ...
+    'Lambda0', [], ...
+    'deltaPphiLeft', [], ...
+    'deltaPphiRight', [], ...
+    'sampleCount', 201);
+%{
+enabled            : 是否绘制共振失谐 R(x)。
+species            : 'Ion', 'Alpha', 'Beam'。
+plotFile           : plot2D.mat 或 plot3D.mat；当前按 NFP=1 的 Rplot(:,thetaMid) 建立 rho->R 映射。
+branch             : 'para', 'anti' 或 'trapped'。
+frequencyHz        : 有符号模频率，单位 Hz。
+toroidalMode       : 真实物理环向模数 n。
+poloidalMode       : 正极向模数 m；trapped 分支不使用。
+harmonic           : 轨道谐波 l。
+E0                 : 参考能量坐标，使用真实网格坐标。
+Pphi0              : 图上显示的 Pphi 坐标。
+Lambda0            : 参考 Lambda 坐标，使用真实网格坐标。
+deltaPphiLeft      : 图上 Pphi 向左采样长度。
+deltaPphiRight     : 图上 Pphi 向右采样长度。
+sampleCount        : Pphi 路径采样点数，建议为奇数。
+%}
+picWorkspace.resonanceDetuning = runPICResonanceDetuningPlot( ...
+    picPhaseData, phaseSpaceOrbit, meta, inputDir, picResonanceDetuningOpt);
 
 %% 可视化 phase power
 
@@ -406,6 +449,58 @@ function workspace = runPICPhaseQuantityPlot(picPhaseData, phaseSpaceOrbit, meta
         @(dynamicUpdate) plotPhaseQuantityInteractive(picPhaseData, phaseSpaceOrbit, meta, opt, dynamicUpdate));
 end
 
+function workspace = runPICResonanceDetuningPlot(picPhaseData, phaseSpaceOrbit, meta, inputDir, opt)
+
+    workspace = struct('options', opt, 'residualHz', [], 'mapping', [], 'gridPoint', [], ...
+        'center', [], 'path', [], 'fit', []);
+    if ~opt.enabled
+        logSkipped('resonance detuning plot', '缁樺浘寮€鍏充负 false');
+        return;
+    end
+    if ~hasSpeciesData(picPhaseData, opt.species)
+        logSkipped('resonance detuning plot', '鏈鍙栧搴旂墿绉嶇殑 phase 鏁版嵁');
+        return;
+    end
+    if ~hasSpeciesData(phaseSpaceOrbit, opt.species)
+        logSkipped('resonance detuning plot', '鏈鍙栧搴旂墿绉嶇殑 orbit 鏁版嵁');
+        return;
+    end
+
+    opt = validatedResonanceDetuningOptions(opt, meta);
+    plotInput = readResonanceDetuningPlotInput(opt.plotFile, meta);
+    [speciesData, speciesLabel] = resolveSpeciesData(picPhaseData, opt.species, 'phase');
+    [orbitData, ~] = resolveSpeciesData(phaseSpaceOrbit, speciesLabel, 'orbit');
+
+    resOpt = struct( ...
+        'branch', opt.branch, ...
+        'frequencyHz', opt.frequencyHz, ...
+        'toroidalMode', opt.toroidalMode, ...
+        'poloidalMode', opt.poloidalMode, ...
+        'harmonic', opt.harmonic);
+    [residualHz, ~] = calculateResonanceResidualField(orbitData, resOpt, meta);
+
+    mapping = readResonanceDetuningMapping(inputDir, speciesLabel, speciesData, opt.branch, plotInput, meta);
+    gridPoint = nearestResonanceDetuningGridPoint(speciesData, mapping, residualHz, opt);
+    center = projectResonanceDetuningCenter(speciesData, mapping, residualHz, gridPoint);
+    workspace.options = opt;
+    workspace.species = speciesLabel;
+    workspace.residualHz = residualHz;
+    workspace.mapping = mapping;
+    workspace.gridPoint = gridPoint;
+    workspace.center = center;
+    path = sampleResonanceDetuningPath(speciesData, mapping, residualHz, center, opt);
+    workspace.path = path;
+    if isfield(path, 'aborted') && path.aborted
+        return;
+    end
+    fit = fitResonanceDetuningPath(path);
+
+    printResonanceDetuningFitSummary(fit);
+    plotResonanceDetuningPath(path, fit, center, opt);
+
+    workspace.fit = fit;
+end
+
 function workspace = runPICPhasePowerPlot(picPhaseData, phaseSpaceOrbit, meta, opt)
 
     workspace = struct('options', opt);
@@ -539,6 +634,15 @@ function resonance = picResonanceOptions(enabled, branch, frequencyHz, frequency
     resonance.harmonicRange = harmonicRange;
 end
 
+function detuningLine = picPhaseDetuningLineOptions(enabled, E0, Pphi0, deltaPphiLeft, deltaPphiRight)
+
+    detuningLine.enabled = enabled;
+    detuningLine.E0 = E0;
+    detuningLine.Pphi0 = Pphi0;
+    detuningLine.deltaPphiLeft = deltaPphiLeft;
+    detuningLine.deltaPphiRight = deltaPphiRight;
+end
+
 function meta = readPICMetadata(paramText, normData)
 
     meta.speciesEnabled.Ion = readSwitchParam(paramText, 'ifIon');
@@ -592,8 +696,25 @@ function meta = readPICMetadata(paramText, normData)
     meta.nOutputTime = floor(meta.totalSteps / meta.outputSteps) + 1;
     meta.nDiagTime = floor(meta.totalSteps / meta.diagSteps) + 1;
     meta.mhdPrecision = readMHDPrecisionParam(paramText);
+    meta.B0 = NaN;
+    if isfield(normData, 'B0')
+        meta.B0 = readPositiveScalar(normData, 'B0');
+    end
     meta.L0 = readPositiveScalar(normData, 'L0');
     meta.VA0 = readPositiveScalar(normData, 'VA0');
+    meta.MP = NaN;
+    if isfield(normData, 'MP')
+        meta.MP = readPositiveScalar(normData, 'MP');
+    end
+    meta.QE = NaN;
+    if isfield(normData, 'QE')
+        meta.QE = readPositiveScalar(normData, 'QE');
+    end
+    if isfield(normData, 'NFP')
+        meta.NFP = validateFiniteScalar(normData.NFP, 'NFP');
+    else
+        meta.NFP = NaN;
+    end
     assert(isfield(normData, 'RHO0') && isfield(normData, 'RHO1'), ...
         'normalization2D.mat 缺少 RHO0 或 RHO1。');
     meta.RHO0 = validateFiniteScalar(normData.RHO0, 'RHO0');
@@ -1281,6 +1402,7 @@ function plotPhaseQuantity(picPhaseData, phaseSpaceOrbit, meta, opt)
     plotData = mapPlotData(Z, xVec, yVec, xlabelText, ylabelText, titleText, ...
         ['$' quantityLatex '$'], opt.colormapIndex, opt.contourCount, statusText);
     plotData = attachResonanceOverlay(plotData, phaseSpaceOrbit, speciesLabel, dim, idx, opt.resonance, meta);
+    plotData = attachPhaseDetuningLine(plotData, dim, opt.detuningLine, opt.resonance, meta);
     drawMapFigure(sprintf('%s %s phase-space slice', speciesLabel, quantityField), plotData);
 end
 
@@ -1319,6 +1441,7 @@ function plotPhaseQuantityInteractive(picPhaseData, phaseSpaceOrbit, meta, opt, 
         plotData = mapPlotData(Z, xVec, yVec, xlabelText, ylabelText, titleText, ...
             ['$' quantityLatex '$'], opt.colormapIndex, values.contourCount, statusText);
         plotData = attachResonanceOverlay(plotData, phaseSpaceOrbit, speciesLabel, dim, values.sliceIndex, resOpt, meta);
+        plotData = attachPhaseDetuningLine(plotData, dim, opt.detuningLine, resOpt, meta);
     end
 end
 
@@ -1848,6 +1971,60 @@ function plotData = attachResonanceOverlay(plotData, phaseSpaceOrbit, speciesLab
     plotData.status = [plotData.status ', ' resonanceOverlayStatusText('', resOpt, physicalN, branchNames, hasZero)];
 end
 
+function plotData = attachPhaseDetuningLine(plotData, dim, lineOpt, resOpt, meta)
+
+    plotData.detuningLine = [];
+    if ~isfield(lineOpt, 'enabled') || ~lineOpt.enabled
+        return;
+    end
+    if dim ~= 3
+        plotData.status = [plotData.status ', detuning line skipped: fixedCoordinate must be Lambda'];
+        return;
+    end
+
+    lineOpt = validatedPhaseDetuningLineOptions(lineOpt);
+    frequencyHz = validateFiniteScalar(resOpt.frequencyHz, 'resonance.frequencyHz');
+    toroidalMode = readPositiveIntegerScalar(resOpt.toroidalMode, 'resonance.toroidalMode');
+    kappa = resonanceDetuningKappa(meta, frequencyHz, toroidalMode);
+
+    deltaPphiPlot = [-lineOpt.deltaPphiLeft, lineOpt.deltaPphiRight];
+    xPlot = lineOpt.Pphi0 + deltaPphiPlot;
+    deltaPphiRaw = -deltaPphiPlot;
+    yE = lineOpt.E0 + kappa * deltaPphiRaw;
+
+    plotData.detuningLine = struct( ...
+        'x', xPlot, ...
+        'y', yE, ...
+        'label', 'detuning line');
+    plotData.status = [plotData.status ', detuning line = on'];
+end
+
+function lineOpt = validatedPhaseDetuningLineOptions(lineOpt)
+
+    requiredFields = {'E0', 'Pphi0', 'deltaPphiLeft', 'deltaPphiRight'};
+    for iField = 1:numel(requiredFields)
+        fieldName = requiredFields{iField};
+        assert(isfield(lineOpt, fieldName) && ~isempty(lineOpt.(fieldName)), ...
+            'detuningLine.%s must be provided.', fieldName);
+    end
+    lineOpt.E0 = validateFiniteScalar(lineOpt.E0, 'detuningLine.E0');
+    lineOpt.Pphi0 = validateFiniteScalar(lineOpt.Pphi0, 'detuningLine.Pphi0');
+    lineOpt.deltaPphiLeft = validateFiniteScalar(lineOpt.deltaPphiLeft, 'detuningLine.deltaPphiLeft');
+    lineOpt.deltaPphiRight = validateFiniteScalar(lineOpt.deltaPphiRight, 'detuningLine.deltaPphiRight');
+    assert(lineOpt.deltaPphiLeft > 0 && lineOpt.deltaPphiRight > 0, ...
+        'detuningLine.deltaPphiLeft/deltaPphiRight must be positive.');
+end
+
+function [kappa, unitRatio, omegaOverN] = resonanceDetuningKappa(meta, frequencyHz, toroidalMode)
+
+    assert(all(isfinite([meta.QE, meta.B0, meta.L0, meta.MP, meta.VA0])) && ...
+        all([meta.QE, meta.B0, meta.L0, meta.MP, meta.VA0] > 0), ...
+        'detuning diagnostics need positive QE/B0/L0/MP/VA0 in normalization2D.mat.');
+    unitRatio = meta.QE * meta.B0 * meta.L0^2 / (meta.MP * meta.VA0^2);
+    omegaOverN = 2 * pi * frequencyHz / toroidalMode;
+    kappa = unitRatio * omegaOverN;
+end
+
 function [quantityData, quantityField, quantityLatex, isTimeDependent] = resolvePhaseQuantity(speciesData, quantityName)
 
     quantityText = strtrim(char(quantityName));
@@ -2026,6 +2203,492 @@ function [residualHz, physicalToroidalMode] = calculateResonanceResidualField(ph
 
     residualHz = (2 * pi * resOpt.frequencyHz - phaseRate) ./ (2 * pi);
     residualHz(~isfinite(residualHz)) = NaN;
+end
+
+function opt = validatedResonanceDetuningOptions(opt, meta)
+
+    requiredFields = {'species', 'plotFile', 'branch', 'frequencyHz', 'toroidalMode', ...
+        'poloidalMode', 'harmonic', 'E0', 'Pphi0', 'Lambda0', ...
+        'deltaPphiLeft', 'deltaPphiRight', 'sampleCount'};
+    for iField = 1:numel(requiredFields)
+        fieldName = requiredFields{iField};
+        assert(isfield(opt, fieldName) && ~isempty(opt.(fieldName)), ...
+            'picResonanceDetuningOpt.%s must be provided.', fieldName);
+    end
+
+    opt.branch = normalizeResonanceBranch(opt.branch);
+    opt.frequencyHz = validateFiniteScalar(opt.frequencyHz, 'frequencyHz');
+    opt.toroidalMode = readPositiveIntegerScalar(opt.toroidalMode, 'toroidalMode');
+    opt.harmonic = validateIntegerScalar(opt.harmonic, 'harmonic');
+    if strcmp(opt.branch, 'trapped')
+        opt.poloidalMode = 0;
+    else
+        opt.poloidalMode = readNonnegativeIntegerScalar(opt.poloidalMode, 'poloidalMode');
+    end
+
+    opt.E0 = validateFiniteScalar(opt.E0, 'E0');
+    opt.PphiPlot0 = validateFiniteScalar(opt.Pphi0, 'Pphi0');
+    opt.PphiRaw0 = -opt.PphiPlot0;
+    opt.Lambda0 = validateFiniteScalar(opt.Lambda0, 'Lambda0');
+    opt.deltaPphiLeft = validateFiniteScalar(opt.deltaPphiLeft, 'deltaPphiLeft');
+    opt.deltaPphiRight = validateFiniteScalar(opt.deltaPphiRight, 'deltaPphiRight');
+    assert(opt.deltaPphiLeft > 0 && opt.deltaPphiRight > 0, ...
+        'deltaPphiLeft and deltaPphiRight must be positive.');
+    opt.sampleCount = readPositiveIntegerScalar(opt.sampleCount, 'sampleCount');
+    assert(opt.sampleCount >= 5, 'sampleCount must be at least 5.');
+
+    [opt.kappa, unitRatio, omegaOverN] = resonanceDetuningKappa(meta, opt.frequencyHz, opt.toroidalMode);
+    fprintf(['[resonance detuning] kappa=dE/dPphi(raw)=%.16g, displayed slope dE/dPphi(plot)=%.16g.\n', ...
+        '[resonance detuning] kappa = (QE*B0*L0^2)/(MP*VA0^2) * 2*pi*f/n = %.16g * %.16g\n'], ...
+        opt.kappa, -opt.kappa, unitRatio, omegaOverN);
+end
+
+function plotInput = readResonanceDetuningPlotInput(plotFile, meta)
+
+    assert(isfile(plotFile), '缺少 plot 文件：%s', plotFile);
+    if isfield(meta, 'NFP') && isfinite(meta.NFP)
+        assert(meta.NFP == 1, '共振失谐诊断当前只按 NFP=1 实现；当前 NFP=%g。', meta.NFP);
+    end
+
+    raw = load(plotFile);
+    assert(isfield(raw, 'rhoplot') && isfield(raw, 'Rplot'), ...
+        '%s 必须包含 rhoplot 和 Rplot。', plotFile);
+
+    Rplot = firstToroidalSlice(raw.Rplot);
+    rhoplot = firstToroidalSlice(raw.rhoplot);
+    assert(ismatrix(Rplot) && size(Rplot, 1) >= 2 && size(Rplot, 2) >= 1, ...
+        'Rplot 必须是 [rho,theta] 或 [rho,theta,phi] 数组。');
+
+    thetaIndex = max(1, round(size(Rplot, 2) / 2));
+    RAxis = double(Rplot(:, thetaIndex));
+    if isvector(rhoplot)
+        rhoAxis = double(rhoplot(:));
+    else
+        assert(size(rhoplot, 1) == size(Rplot, 1), 'rhoplot 第一维必须匹配 Rplot 第一维。');
+        rhoAxis = double(rhoplot(:, min(thetaIndex, size(rhoplot, 2))));
+    end
+    assert(numel(rhoAxis) == numel(RAxis), 'rhoplot 与 Rplot(:,thetaIndex) 长度不一致。');
+
+    valid = isfinite(rhoAxis) & isfinite(RAxis);
+    rhoAxis = rhoAxis(valid);
+    RAxis = RAxis(valid);
+    [rhoAxis, order] = sort(rhoAxis);
+    RAxis = RAxis(order);
+    [rhoAxis, uniqueIndex] = unique(rhoAxis, 'stable');
+    RAxis = RAxis(uniqueIndex);
+    assert(numel(rhoAxis) >= 2, 'rhoplot/Rplot 有效径向点不足，无法建立 rho->R 映射。');
+
+    plotInput = struct('plotFile', plotFile, 'thetaIndex', thetaIndex, ...
+        'rhoAxis', rhoAxis, 'RAxis', RAxis);
+    fprintf('[load] %s: resonance detuning uses Rplot(:,%d), rho=[%.6g, %.6g], R=[%.6g, %.6g].\n', ...
+        plotFile, thetaIndex, min(rhoAxis), max(rhoAxis), min(RAxis), max(RAxis));
+end
+
+function data2D = firstToroidalSlice(data)
+
+    data = double(data);
+    if ndims(data) <= 2
+        data2D = data;
+    else
+        data2D = data(:, :, 1);
+    end
+end
+
+function mapping = readResonanceDetuningMapping(inputDir, speciesLabel, speciesData, branchName, plotInput, meta)
+
+    filePath = fullfile(inputDir, [char(speciesLabel) 'PhaseSpaceMapping.bin']);
+    assert(isfile(filePath), '缺少 mapping 文件：%s', filePath);
+
+    nPhase = speciesData.gridE * speciesData.gridPphi * speciesData.gridLambda;
+    nRecord = 2 * nPhase;
+    fid = fopen(filePath, 'rb');
+    assert(fid >= 0, '无法打开文件：%s', filePath);
+    cleanupObj = onCleanup(@() fclose(fid));
+
+    ids = fread(fid, nRecord, 'int32=>int32');
+    rho = fread(fid, nRecord, 'double=>double');
+    vpara = fread(fid, nRecord, 'double=>double');
+    mu = fread(fid, nRecord, 'double=>double');
+    assert(numel(ids) == nRecord && numel(rho) == nRecord && numel(vpara) == nRecord && numel(mu) == nRecord, ...
+        '%s 尺寸不匹配：期望每个数组长度为 2*gridE*gridPphi*gridLambda=%d。', filePath, nRecord);
+    clear cleanupObj;
+
+    [ids, rho, vpara, mu] = selectResonanceDetuningMappingBranch(ids, rho, vpara, mu, nPhase, branchName);
+    valid = ~isPadRecord(ids) & isfinite(rho) & isfinite(vpara) & isfinite(mu);
+    assert(all(rho(valid) >= 0 & rho(valid) <= 1), ...
+        'mapping 文件中的 rho 应为 (rho-RHO0)/(RHO1-RHO0) 归一化坐标，有效值必须位于 [0,1]。');
+    rho(~valid) = NaN;
+    vpara(~valid) = NaN;
+    mu(~valid) = NaN;
+
+    physicalRho = meta.RHO0 + double(rho) * (meta.RHO1 - meta.RHO0);
+    minorR = interp1(plotInput.rhoAxis, plotInput.RAxis, physicalRho, 'linear', NaN) - meta.L0;
+    physicalRho(~valid) = NaN;
+    minorR(~valid) = NaN;
+
+    mapping = struct( ...
+        'file', filePath, ...
+        'branch', branchName, ...
+        'id', phaseVectorToGrid(double(ids), speciesData), ...
+        'rhoFile', phaseVectorToGrid(rho, speciesData), ...
+        'rho', phaseVectorToGrid(physicalRho, speciesData), ...
+        'vpara', phaseVectorToGrid(vpara, speciesData), ...
+        'mu', phaseVectorToGrid(mu, speciesData), ...
+        'r', phaseVectorToGrid(minorR, speciesData), ...
+        'valid', phaseVectorToGrid(valid, speciesData));
+    fprintf('[load] %s: branch=%s, valid=%d/%d.\n', filePath, branchName, nnz(valid), nPhase);
+end
+
+function [ids, rho, vpara, mu] = selectResonanceDetuningMappingBranch(idsAll, rhoAll, vparaAll, muAll, nPhase, branchName)
+
+    paraIndex = 1:nPhase;
+    antiIndex = nPhase + (1:nPhase);
+    switch branchName
+        case 'para'
+            ids = idsAll(paraIndex);
+            rho = rhoAll(paraIndex);
+            vpara = vparaAll(paraIndex);
+            mu = muAll(paraIndex);
+        case 'anti'
+            ids = idsAll(antiIndex);
+            rho = rhoAll(antiIndex);
+            vpara = vparaAll(antiIndex);
+            mu = muAll(antiIndex);
+        case 'trapped'
+            idsPara = idsAll(paraIndex);
+            idsAnti = idsAll(antiIndex);
+            rhoPara = rhoAll(paraIndex);
+            rhoAnti = rhoAll(antiIndex);
+            validPara = ~isPadRecord(idsPara) & isfinite(rhoPara) & isfinite(muAll(paraIndex));
+            validAnti = ~isPadRecord(idsAnti) & isfinite(rhoAnti) & isfinite(muAll(antiIndex));
+            useAnti = (~validPara & validAnti) | (validPara & validAnti & rhoAnti > rhoPara);
+            ids = idsPara;
+            rho = rhoPara;
+            vpara = vparaAll(paraIndex);
+            mu = muAll(paraIndex);
+            ids(useAnti) = abs(idsAnti(useAnti));
+            rho(useAnti) = rhoAnti(useAnti);
+            vpara(useAnti) = vparaAll(antiIndex(useAnti));
+            mu(useAnti) = muAll(antiIndex(useAnti));
+        otherwise
+            error('未知 mapping 分支：%s。', branchName);
+    end
+end
+
+function gridData = phaseVectorToGrid(vectorData, speciesData)
+
+    gridData = reshape(vectorData, [speciesData.gridLambda, speciesData.gridPphi, speciesData.gridE]);
+    gridData = permute(gridData, [3, 2, 1]);
+end
+
+function gridPoint = nearestResonanceDetuningGridPoint(speciesData, mapping, residualHz, opt)
+
+    [~, iE] = min(abs(speciesData.E1d - opt.E0));
+    [~, iPphi] = min(abs(speciesData.Pphi1d - opt.PphiRaw0));
+    [~, iLambda] = min(abs(speciesData.Lambda1d - opt.Lambda0));
+
+    gridPoint = resonanceDetuningPoint( ...
+        speciesData.E1d(iE), speciesData.Pphi1d(iPphi), speciesData.Lambda1d(iLambda), ...
+        mapping.mu(iE, iPphi, iLambda), mapping.rho(iE, iPphi, iLambda), ...
+        mapping.r(iE, iPphi, iLambda), residualHz(iE, iPphi, iLambda));
+    gridPoint.index = [iE, iPphi, iLambda];
+
+    fprintf(['[resonance detuning] nearest grid point:\n', ...
+        '  input E=%.16g, Pphi(plot)=%.16g, Pphi(raw)=%.16g, Lambda=%.16g\n', ...
+        '  grid  E=%.16g, Pphi(plot)=%.16g, Pphi(raw)=%.16g, Lambda=%.16g, mu=%.16g, rho=%.16g, r=%.16g, R=%.6g Hz, index=[%d %d %d]\n', ...
+        '  delta dE=%.6g, dPphi(plot)=%.6g, dPphi(raw)=%.6g, dLambda=%.6g\n'], ...
+        opt.E0, opt.PphiPlot0, opt.PphiRaw0, opt.Lambda0, ...
+        gridPoint.E, -gridPoint.Pphi, gridPoint.Pphi, gridPoint.Lambda, gridPoint.mu, gridPoint.rho, gridPoint.r, gridPoint.residualHz, ...
+        iE, iPphi, iLambda, gridPoint.E - opt.E0, -gridPoint.Pphi - opt.PphiPlot0, ...
+        gridPoint.Pphi - opt.PphiRaw0, gridPoint.Lambda - opt.Lambda0);
+end
+
+function point = resonanceDetuningPoint(E, Pphi, Lambda, mu, rho, r, residualHz)
+
+    point = struct('E', E, 'Pphi', Pphi, 'Lambda', Lambda, 'mu', mu, ...
+        'rho', rho, 'r', r, 'residualHz', residualHz);
+end
+
+function center = projectResonanceDetuningCenter(speciesData, mapping, residualHz, gridPoint)
+
+    finiteResidual = residualHz(isfinite(residualHz));
+    assert(~isempty(finiteResidual), 'R 场没有有限值，无法投影代表点。');
+    assert(min(finiteResidual) <= 0 && max(finiteResidual) >= 0, ...
+        '三维相空间中没有 R=0 等值面，无法投影代表点。');
+
+    [PphiGrid, EGrid, LambdaGrid] = meshgrid(speciesData.Pphi1d, speciesData.E1d, speciesData.Lambda1d);
+    surfaceData = isosurface(PphiGrid, EGrid, LambdaGrid, residualHz, 0);
+    assert(isstruct(surfaceData) && isfield(surfaceData, 'vertices') && isfield(surfaceData, 'faces') && ...
+        ~isempty(surfaceData.vertices) && ~isempty(surfaceData.faces), ...
+        '三维相空间中没有提取到 R=0 等值面。');
+
+    queryPEL = [gridPoint.Pphi, gridPoint.E, gridPoint.Lambda];
+    [projectedPEL, distance, faceIndex] = nearestPointOnTriangulatedSurface( ...
+        surfaceData.vertices, surfaceData.faces, queryPEL);
+
+    rfInterp = phaseFieldInterpolant(speciesData, residualHz);
+    rhoInterp = phaseFieldInterpolant(speciesData, mapping.rho);
+    rInterp = phaseFieldInterpolant(speciesData, mapping.r);
+    muMapInterp = phaseFieldInterpolant(speciesData, mapping.mu);
+
+    Pphi = projectedPEL(1);
+    E = projectedPEL(2);
+    Lambda = projectedPEL(3);
+    residualAtCenter = rfInterp(E, Pphi, Lambda);
+    rho = rhoInterp(E, Pphi, Lambda);
+    r = rInterp(E, Pphi, Lambda);
+    muFromCoordinates = E * Lambda;
+    muFromMapping = muMapInterp(E, Pphi, Lambda);
+
+    center = resonanceDetuningPoint(E, Pphi, Lambda, muFromCoordinates, rho, r, residualAtCenter);
+    center.muMapInterpolated = muFromMapping;
+    center.projectionDistance = distance;
+    center.projectionFaceIndex = faceIndex;
+
+    fprintf(['[resonance detuning] projected R=0 reference:\n', ...
+        '  center E=%.16g, Pphi(plot)=%.16g, Pphi(raw)=%.16g, Lambda=%.16g, mu=%.16g, rho=%.16g, r=%.16g, R=%.6g Hz\n', ...
+        '  mapping-interpolated mu=%.16g, projectionDistance=%.6g, face=%d\n', ...
+        '  delta from grid: dE=%.6g, dPphi(plot)=%.6g, dPphi(raw)=%.6g, dLambda=%.6g, dmu=%.6g, dr=%.6g, dR=%.6g Hz\n'], ...
+        center.E, -center.Pphi, center.Pphi, center.Lambda, center.mu, center.rho, center.r, center.residualHz, ...
+        center.muMapInterpolated, center.projectionDistance, center.projectionFaceIndex, ...
+        center.E - gridPoint.E, -center.Pphi + gridPoint.Pphi, center.Pphi - gridPoint.Pphi, ...
+        center.Lambda - gridPoint.Lambda, center.mu - gridPoint.mu, center.r - gridPoint.r, ...
+        center.residualHz - gridPoint.residualHz);
+end
+
+function interpolant = phaseFieldInterpolant(speciesData, fieldData)
+
+    interpolant = griddedInterpolant( ...
+        {speciesData.E1d, speciesData.Pphi1d, speciesData.Lambda1d}, ...
+        fieldData, 'linear', 'none');
+end
+
+function [point, distance, faceIndex] = nearestPointOnTriangulatedSurface(vertices, faces, queryPoint)
+
+    bestDistanceSquared = Inf;
+    point = vertices(1, :);
+    faceIndex = 1;
+    for iFace = 1:size(faces, 1)
+        tri = vertices(faces(iFace, :), :);
+        candidate = nearestPointOnTriangle(queryPoint, tri(1, :), tri(2, :), tri(3, :));
+        distanceSquared = sum((candidate - queryPoint) .^ 2);
+        if distanceSquared < bestDistanceSquared
+            bestDistanceSquared = distanceSquared;
+            point = candidate;
+            faceIndex = iFace;
+        end
+    end
+    distance = sqrt(bestDistanceSquared);
+end
+
+function point = nearestPointOnTriangle(p, a, b, c)
+
+    ab = b - a;
+    ac = c - a;
+    ap = p - a;
+    d1 = dot(ab, ap);
+    d2 = dot(ac, ap);
+    if d1 <= 0 && d2 <= 0
+        point = a;
+        return;
+    end
+
+    bp = p - b;
+    d3 = dot(ab, bp);
+    d4 = dot(ac, bp);
+    if d3 >= 0 && d4 <= d3
+        point = b;
+        return;
+    end
+
+    vc = d1 * d4 - d3 * d2;
+    if vc <= 0 && d1 >= 0 && d3 <= 0
+        v = d1 / (d1 - d3);
+        point = a + v * ab;
+        return;
+    end
+
+    cp = p - c;
+    d5 = dot(ab, cp);
+    d6 = dot(ac, cp);
+    if d6 >= 0 && d5 <= d6
+        point = c;
+        return;
+    end
+
+    vb = d5 * d2 - d1 * d6;
+    if vb <= 0 && d2 >= 0 && d6 <= 0
+        w = d2 / (d2 - d6);
+        point = a + w * ac;
+        return;
+    end
+
+    va = d3 * d6 - d5 * d4;
+    if va <= 0 && (d4 - d3) >= 0 && (d5 - d6) >= 0
+        w = (d4 - d3) / ((d4 - d3) + (d5 - d6));
+        point = b + w * (c - b);
+        return;
+    end
+
+    denominator = 1 / (va + vb + vc);
+    v = vb * denominator;
+    w = vc * denominator;
+    point = a + ab * v + ac * w;
+end
+
+function path = sampleResonanceDetuningPath(speciesData, mapping, residualHz, center, opt)
+
+    deltaPphiPlot = linspace(-opt.deltaPphiLeft, opt.deltaPphiRight, opt.sampleCount).';
+    deltaPphiPlot = unique([deltaPphiPlot; 0]);
+    PphiPlot = -center.Pphi + deltaPphiPlot;
+    Pphi = -PphiPlot;
+    deltaPphiRaw = Pphi - center.Pphi;
+    E = center.E + opt.kappa * deltaPphiRaw;
+    Lambda = center.mu ./ E;
+
+    path = struct( ...
+        'deltaPphiPlot', deltaPphiPlot, ...
+        'deltaPphiRaw', deltaPphiRaw, ...
+        'E', E, ...
+        'PphiPlot', PphiPlot, ...
+        'Pphi', Pphi, ...
+        'Lambda', Lambda, ...
+        'rho', NaN(size(E)), ...
+        'r', NaN(size(E)), ...
+        'x', NaN(size(E)), ...
+        'R', NaN(size(E)), ...
+        'valid', false(size(E)), ...
+        'aborted', false, ...
+        'abortReason', '');
+
+    outside = ~isfinite(E) | ~isfinite(Pphi) | ~isfinite(Lambda) | ...
+        E < min(speciesData.E1d) | E > max(speciesData.E1d) | ...
+        Pphi < min(speciesData.Pphi1d) | Pphi > max(speciesData.Pphi1d) | ...
+        Lambda < min(speciesData.Lambda1d) | Lambda > max(speciesData.Lambda1d);
+    if any(outside)
+        path.aborted = true;
+        path.abortReason = sprintf('%d/%d sampled points are outside the phase-space grid.', nnz(outside), numel(outside));
+        warning(['[resonance detuning] path exceeds phase-space grid; stop this diagnostic before interpolation/fit/plot. ', ...
+            'outside=%d/%d, E=[%.6g, %.6g] grid=[%.6g, %.6g], Pphi(raw)=[%.6g, %.6g] grid=[%.6g, %.6g], ', ...
+            'Lambda=[%.6g, %.6g] grid=[%.6g, %.6g].'], ...
+            nnz(outside), numel(outside), ...
+            finiteMinOrNaN(E), finiteMaxOrNaN(E), min(speciesData.E1d), max(speciesData.E1d), ...
+            finiteMinOrNaN(Pphi), finiteMaxOrNaN(Pphi), min(speciesData.Pphi1d), max(speciesData.Pphi1d), ...
+            finiteMinOrNaN(Lambda), finiteMaxOrNaN(Lambda), min(speciesData.Lambda1d), max(speciesData.Lambda1d));
+        return;
+    end
+
+    rfInterp = phaseFieldInterpolant(speciesData, residualHz);
+    rInterp = phaseFieldInterpolant(speciesData, mapping.r);
+    rhoInterp = phaseFieldInterpolant(speciesData, mapping.rho);
+
+    R = rfInterp(E, Pphi, Lambda);
+    r = rInterp(E, Pphi, Lambda);
+    rho = rhoInterp(E, Pphi, Lambda);
+    x = r - center.r;
+    centerIdx = find(deltaPphiPlot == 0, 1);
+    R(centerIdx) = 0;
+    r(centerIdx) = center.r;
+    rho(centerIdx) = center.rho;
+    x(centerIdx) = 0;
+    valid = isfinite(E) & isfinite(Pphi) & isfinite(Lambda) & isfinite(R) & isfinite(r) & isfinite(x);
+
+    path.rho = rho;
+    path.r = r;
+    path.x = x;
+    path.R = R;
+    path.valid = valid;
+
+    fprintf(['[resonance detuning] sampled path: sampleCount=%d, valid=%d/%d, ', ...
+        'Pphi(plot)=[%.6g, %.6g], Pphi(raw)=[%.6g, %.6g], x=[%.6g, %.6g].\n'], ...
+        numel(deltaPphiPlot), nnz(valid), numel(valid), min(PphiPlot), max(PphiPlot), ...
+        min(Pphi), max(Pphi), finiteMinOrNaN(x(valid)), finiteMaxOrNaN(x(valid)));
+end
+
+function fit = fitResonanceDetuningPath(path)
+
+    valid = path.valid(:) & isfinite(path.x(:)) & isfinite(path.R(:));
+    x = path.x(valid);
+    R = path.R(valid);
+
+    [x, order] = sort(x);
+    R = R(order);
+    [~, centerIdx] = min(abs(x));
+    linearIdx = centerIdx - 2:centerIdx + 2;
+
+    xLinear = x(linearIdx);
+    RLinear = R(linearIdx);
+    fit1 = noInterceptPolynomialFit(xLinear, RLinear, 1);
+    fit2 = noInterceptPolynomialFit(x, R, 2);
+
+    a2 = fit2.coeff(1);
+    b2 = fit2.coeff(2);
+    ratio2 = b2 * x / max(abs(a2), realmin) * sign(a2);
+
+    fit = struct( ...
+        'x', x, ...
+        'R', R, ...
+        'linearX', xLinear, ...
+        'linearR', RLinear, ...
+        'fit1', fit1, ...
+        'fit2', fit2, ...
+        'linearYFit', fit1.coeff(1) * x, ...
+        'quadraticRatio', ratio2, ...
+        'maxAbsQuadraticRatio', max(abs(ratio2)));
+end
+
+function fit = noInterceptPolynomialFit(x, y, order)
+
+    X = zeros(numel(x), order);
+    for iOrder = 1:order
+        X(:, iOrder) = x .^ iOrder;
+    end
+    coeff = X \ y;
+    yFit = X * coeff;
+    rmse = sqrt(mean((y - yFit) .^ 2));
+    yRange = max(y) - min(y);
+    fit = struct('order', order, 'coeff', coeff(:).', 'yFit', yFit, ...
+        'rmse', rmse, 'nrmse', rmse / max(abs(yRange), realmin));
+end
+
+function printResonanceDetuningFitSummary(fit)
+
+    c1 = fit.fit1.coeff;
+    c2 = fit.fit2.coeff;
+    fprintf(['[resonance detuning] fit summary:\n', ...
+        '  R=a*x, 5 points near R=0: a=%.6g, nrmse=%.6g, x=[%.6g, %.6g]\n', ...
+        '  R=a*x+b*x^2, all points:  a=%.6g, b=%.6g, nrmse=%.6g, max|b*x/a|=%.6g\n'], ...
+        c1(1), fit.fit1.nrmse, min(fit.linearX), max(fit.linearX), ...
+        c2(1), c2(2), fit.fit2.nrmse, fit.maxAbsQuadraticRatio);
+end
+
+function plotResonanceDetuningPath(path, fit, center, opt)
+
+    figure('Name', 'resonance detuning R(x)', 'Color', 'w', 'Position', [100, 80, 980, 760]);
+    tiledlayout(2, 1, 'TileSpacing', 'compact');
+
+    nexttile;
+    plot(path.x(path.valid), path.R(path.valid), 'ko', 'MarkerSize', 4, 'DisplayName', 'R samples'); hold on;
+    plot(fit.x, fit.linearYFit, 'b--', 'LineWidth', 1.2, 'DisplayName', 'a x');
+    plot(fit.x, fit.fit2.yFit, 'm-', 'LineWidth', 1.2, 'DisplayName', 'a x + b x^2');
+    xline(0, 'k:');
+    yline(0, 'k:');
+    grid on;
+    xlabel('x = r - r_0');
+    ylabel('R / Hz');
+    title(sprintf('R(x), E0=%.4g, Pphi0(plot)=%.4g, Lambda0=%.4g, f=%.4g Hz, n=%g', ...
+        center.E, -center.Pphi, center.Lambda, opt.frequencyHz, opt.toroidalMode), 'Interpreter', 'none');
+    legend('Location', 'best');
+
+    nexttile;
+    plot(fit.x, fit.quadraticRatio, 'm-', 'LineWidth', 1.2, 'DisplayName', 'b x / a'); hold on;
+    xline(0, 'k:');
+    yline(0, 'k:');
+    grid on;
+    xlabel('x = r - r_0');
+    ylabel('relative detuning contribution');
+    title(sprintf('max |b x/a|=%.3g', fit.maxAbsQuadraticRatio));
+    legend('Location', 'best');
 end
 
 function [Z, xVec, yVec, xlabelText, ylabelText, titleText] = slicePhaseField(dim, idx, fieldData, speciesData)
@@ -2398,11 +3061,18 @@ function renderMap(axHandle, plotData)
         contour(axHandle, X, Y, plotData.resonanceZ, [0, 0], 'EdgeColor', 'w', 'LineWidth', 2.6);
         contour(axHandle, X, Y, plotData.resonanceZ, [0, 0], 'EdgeColor', 'k', 'LineWidth', 1.2);
     end
-
     xlabel(axHandle, plotData.xlabelText, 'Interpreter', 'latex', 'FontName', 'Times New Roman', 'FontSize', 14);
     ylabel(axHandle, plotData.ylabelText, 'Interpreter', 'latex', 'FontName', 'Times New Roman', 'FontSize', 14);
     title(axHandle, plotData.titleText, 'Interpreter', 'latex', 'FontName', 'Times New Roman', 'FontSize', 13);
     axis(axHandle, 'tight');
+    xLimits = xlim(axHandle);
+    yLimits = ylim(axHandle);
+    if isfield(plotData, 'detuningLine') && ~isempty(plotData.detuningLine)
+        plot(axHandle, plotData.detuningLine.x, plotData.detuningLine.y, ...
+            'k-', 'LineWidth', 1.8, 'HandleVisibility', 'off');
+        xlim(axHandle, xLimits);
+        ylim(axHandle, yLimits);
+    end
     box(axHandle, 'on');
     set(axHandle, 'FontName', 'Times New Roman', 'FontSize', 14, ...
         'Color', 'white', 'Layer', 'top', 'TickDir', 'out', 'LineWidth', 1);
@@ -2470,7 +3140,8 @@ function plotData = mapPlotData(Z, xVec, yVec, xlabelText, ylabelText, titleText
         'status', statusText, ...
         'forceSigned', false, ...
         'resonanceZ', [], ...
-        'resonanceOverlays', struct('Z', {}, 'label', {}, 'harmonic', {}));
+        'resonanceOverlays', struct('Z', {}, 'label', {}, 'harmonic', {}), ...
+        'detuningLine', []);
 end
 
 function plotInteractiveMap(figName, controls, dynamicUpdate, computePlotData, renderPlotData)
@@ -3932,6 +4603,26 @@ function value = safeDivide(numerator, denominator)
         value = NaN;
     else
         value = numerator / denominator;
+    end
+end
+
+function value = finiteMinOrNaN(x)
+
+    x = x(isfinite(x));
+    if isempty(x)
+        value = NaN;
+    else
+        value = min(x);
+    end
+end
+
+function value = finiteMaxOrNaN(x)
+
+    x = x(isfinite(x));
+    if isempty(x)
+        value = NaN;
+    else
+        value = max(x);
     end
 end
 
