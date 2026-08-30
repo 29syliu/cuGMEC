@@ -1992,50 +1992,53 @@ class HybridModel {
 
         /*-----------------------------------CUB Radix Sort Storage-----------------------------------*/
 
-        logStart("Allocate memory on device for sorting particles.");
+        if (ifIon || ifAlpha || ifBeam) {
 
-        auto setupRadixSort = [&](bool enable, void** storage, std::vector<size_t>& storageBytes, int** keys_in,
-                                  int** keys_out, int** sort_ids_in, int** sort_ids_out, picReal** values_in,
-                                  picReal** values_out) {
-            if (!enable)
-                return;
-            for (int i = 0; i < devNums; i++) {
-                CUDACHECK(cudaSetDevice(localId * devNums + i));
-                cub::DeviceRadixSort::SortPairs(storage[i], storageBytes[i], keys_in[i], keys_out[i], sort_ids_in[i],
-                                                sort_ids_out[i], picDev);
-                CUDACHECK(cudaMalloc(&storage[i], storageBytes[i]));
-                PICInitSortIds<<<SortGridDimx, SortBlockDimx, 0, 0>>>(sort_ids_in[i]);
-                if (!toBool<ifContinue> || continueSteps == 0) {
+            logStart("Allocate memory on device for sorting particles.");
+
+            auto setupRadixSort = [&](bool enable, void** storage, std::vector<size_t>& storageBytes, int** keys_in,
+                                      int** keys_out, int** sort_ids_in, int** sort_ids_out, picReal** values_in,
+                                      picReal** values_out) {
+                if (!enable)
+                    return;
+                for (int i = 0; i < devNums; i++) {
+                    CUDACHECK(cudaSetDevice(localId * devNums + i));
                     cub::DeviceRadixSort::SortPairs(storage[i], storageBytes[i], keys_in[i], keys_out[i],
                                                     sort_ids_in[i], sort_ids_out[i], picDev);
-                    PICReorderValues<<<SortGridDimx, SortBlockDimx, 0, 0>>>(sort_ids_out[i], values_in[i],
-                                                                            values_out[i]);
+                    CUDACHECK(cudaMalloc(&storage[i], storageBytes[i]));
+                    PICInitSortIds<<<SortGridDimx, SortBlockDimx, 0, 0>>>(sort_ids_in[i]);
+                    if (!toBool<ifContinue> || continueSteps == 0) {
+                        cub::DeviceRadixSort::SortPairs(storage[i], storageBytes[i], keys_in[i], keys_out[i],
+                                                        sort_ids_in[i], sort_ids_out[i], picDev);
+                        PICReorderValues<<<SortGridDimx, SortBlockDimx, 0, 0>>>(sort_ids_out[i], values_in[i],
+                                                                                values_out[i]);
 
-                    int* temp_keys = keys_in[i];
-                    keys_in[i] = keys_out[i];
-                    keys_out[i] = temp_keys;
+                        int* temp_keys = keys_in[i];
+                        keys_in[i] = keys_out[i];
+                        keys_out[i] = temp_keys;
 
-                    picReal* temp_values = values_in[i];
-                    values_in[i] = values_out[i];
-                    values_out[i] = temp_values;
+                        picReal* temp_values = values_in[i];
+                        values_in[i] = values_out[i];
+                        values_out[i] = temp_values;
+                    }
                 }
-            }
-        };
-        setupRadixSort(ifIon, d_Ion_storage, d_Ion_storage_bytes, d_Ion_keys_in, d_Ion_keys_out, d_Ion_sort_ids_in,
-                       d_Ion_sort_ids_out, d_Ion_values_in, d_Ion_values_out);
-        setupRadixSort(ifAlpha, d_Alpha_storage, d_Alpha_storage_bytes, d_Alpha_keys_in, d_Alpha_keys_out,
-                       d_Alpha_sort_ids_in, d_Alpha_sort_ids_out, d_Alpha_values_in, d_Alpha_values_out);
-        setupRadixSort(ifBeam, d_Beam_storage, d_Beam_storage_bytes, d_Beam_keys_in, d_Beam_keys_out,
-                       d_Beam_sort_ids_in, d_Beam_sort_ids_out, d_Beam_values_in, d_Beam_values_out);
+            };
+            setupRadixSort(ifIon, d_Ion_storage, d_Ion_storage_bytes, d_Ion_keys_in, d_Ion_keys_out, d_Ion_sort_ids_in,
+                           d_Ion_sort_ids_out, d_Ion_values_in, d_Ion_values_out);
+            setupRadixSort(ifAlpha, d_Alpha_storage, d_Alpha_storage_bytes, d_Alpha_keys_in, d_Alpha_keys_out,
+                           d_Alpha_sort_ids_in, d_Alpha_sort_ids_out, d_Alpha_values_in, d_Alpha_values_out);
+            setupRadixSort(ifBeam, d_Beam_storage, d_Beam_storage_bytes, d_Beam_keys_in, d_Beam_keys_out,
+                           d_Beam_sort_ids_in, d_Beam_sort_ids_out, d_Beam_values_in, d_Beam_values_out);
 
-        if (hostId == 0) {
-            size_t avail, total, used;
-            CUDACHECK(cudaSetDevice(localId * devNums));
-            CUDACHECK(cudaMemGetInfo(&avail, &total));
-            used = total - avail;
-            std::cout << BOLDYELLOW << "Device memory used: " << (double)used / 1024 / 1024 / 1024 << " GB." << RESET
-                      << std::endl;
-            logDone();
+            if (hostId == 0) {
+                size_t avail, total, used;
+                CUDACHECK(cudaSetDevice(localId * devNums));
+                CUDACHECK(cudaMemGetInfo(&avail, &total));
+                used = total - avail;
+                std::cout << BOLDYELLOW << "Device memory used: " << (double)used / 1024 / 1024 / 1024 << " GB."
+                          << RESET << std::endl;
+                logDone();
+            }
         }
     }
     void memcpyDeviceToHost(const std::string& finalDir) {
@@ -2236,28 +2239,40 @@ class HybridModel {
 
         /*-----------------------------------PIC Continuation File------------------------------------*/
 
-        const size_t speciesSize =
-            sizeof(picReal) + sizeof(int) * devNums * picDev + sizeof(picReal) * devNums * picDev * 7;
+        const size_t keysBytes = sizeof(int) * (size_t)devNums * picDev;
+        const size_t valuesBytes = sizeof(picReal) * (size_t)devNums * picDev * 7;
+        const size_t speciesSize = sizeof(picReal) + keysBytes + valuesBytes;
         const int enabledCount = (ifIon ? 1 : 0) + (ifAlpha ? 1 : 0) + (ifBeam ? 1 : 0);
         const size_t rankSize = enabledCount * speciesSize;
+        const size_t fileSize = (size_t)hostNums * rankSize;
+
+        auto writeBytes = [&](MPI_File fileHandle, size_t offset, const void* data, size_t bytes) {
+            constexpr size_t chunkBytes = 1ULL << 30;
+            const char* ptr = reinterpret_cast<const char*>(data);
+
+            for (size_t done = 0; done < bytes;) {
+                const size_t chunk = (bytes - done > chunkBytes) ? chunkBytes : bytes - done;
+                MPICHECK(MPI_File_write_at_all(fileHandle, (MPI_Offset)(offset + done), const_cast<char*>(ptr + done),
+                                               (int)chunk, MPI_BYTE, MPI_STATUS_IGNORE));
+                done += chunk;
+            }
+        };
 
         auto writeFinalPicData = [&](picReal* picConst, int** picKeys, picReal** picValues, size_t intraRankOffset) {
             const std::string filename =
                 finalDir + "/PICContinue_" + std::to_string(continueSteps + totalSteps) + ".bin";
-            const MPI_Datatype picMPIType = std::is_same_v<picReal, double> ? MPI_DOUBLE : MPI_FLOAT;
-            const size_t offset = hostId * rankSize + intraRankOffset;
+            const size_t offset = (size_t)hostId * rankSize + intraRankOffset;
 
             MPI_File fileHandle;
-            MPI_File_open(MPI_COMM_WORLD, filename.c_str(), MPI_MODE_CREATE | MPI_MODE_WRONLY, MPI_INFO_NULL,
-                          &fileHandle);
+            MPICHECK(MPI_File_open(MPI_COMM_WORLD, filename.c_str(), MPI_MODE_CREATE | MPI_MODE_WRONLY, MPI_INFO_NULL,
+                                   &fileHandle));
+            MPICHECK(MPI_File_set_size(fileHandle, (MPI_Offset)fileSize));
 
-            MPI_File_write_at_all(fileHandle, offset, picConst, 1, picMPIType, MPI_STATUS_IGNORE);
-            MPI_File_write_at_all(fileHandle, offset + sizeof(picReal), picKeys[0], devNums * picDev, MPI_INT,
-                                  MPI_STATUS_IGNORE);
-            MPI_File_write_at_all(fileHandle, offset + sizeof(picReal) + sizeof(int) * devNums * picDev, picValues[0],
-                                  devNums * picDev * 7, picMPIType, MPI_STATUS_IGNORE);
+            writeBytes(fileHandle, offset, picConst, sizeof(picReal));
+            writeBytes(fileHandle, offset + sizeof(picReal), picKeys[0], keysBytes);
+            writeBytes(fileHandle, offset + sizeof(picReal) + keysBytes, picValues[0], valuesBytes);
 
-            MPI_File_close(&fileHandle);
+            MPICHECK(MPI_File_close(&fileHandle));
         };
 
         size_t off = 0;
@@ -5321,19 +5336,33 @@ class HybridModel {
 
         logStart("Load particles from PICContinue file.");
 
-        const size_t speciesSize =
-            sizeof(picReal) + sizeof(int) * devNums * picDev + sizeof(picReal) * devNums * picDev * 7;
+        const size_t keysBytes = sizeof(int) * (size_t)devNums * picDev;
+        const size_t valuesBytes = sizeof(picReal) * (size_t)devNums * picDev * 7;
+        const size_t speciesSize = sizeof(picReal) + keysBytes + valuesBytes;
         const int enabledCount = (ifIon ? 1 : 0) + (ifAlpha ? 1 : 0) + (ifBeam ? 1 : 0);
         const size_t rankSize = enabledCount * speciesSize;
 
         std::ifstream input(file, std::ios::in | std::ios::binary);
-        size_t cursor = hostId * rankSize;
 
-        auto readSection = [&](picReal& Const, int** keysH, picReal** valuesH) {
-            input.seekg(cursor, std::ios::beg);
-            input.read(reinterpret_cast<char*>(&Const), sizeof(picReal));
-            input.read(reinterpret_cast<char*>(keysH[0]), sizeof(int) * devNums * picDev);
-            input.read(reinterpret_cast<char*>(valuesH[0]), sizeof(picReal) * devNums * picDev * 7);
+        auto readBytes = [&](size_t offset, void* data, size_t bytes) {
+            constexpr size_t chunkBytes = 1ULL << 30;
+            char* ptr = reinterpret_cast<char*>(data);
+
+            input.seekg(offset, std::ios::beg);
+
+            for (size_t done = 0; done < bytes;) {
+                const size_t chunk = (bytes - done > chunkBytes) ? chunkBytes : bytes - done;
+                input.read(ptr + done, chunk);
+                done += chunk;
+            }
+        };
+
+        size_t cursor = (size_t)hostId * rankSize;
+
+        auto readSection = [&](picReal& picConst, int** picKeys, picReal** picValues) {
+            readBytes(cursor, &picConst, sizeof(picReal));
+            readBytes(cursor + sizeof(picReal), picKeys[0], keysBytes);
+            readBytes(cursor + sizeof(picReal) + keysBytes, picValues[0], valuesBytes);
             cursor += speciesSize;
         };
 
@@ -5484,8 +5513,9 @@ class HybridModel {
         picReal Beta;
         size_t intraRankOffset;
 
-        const size_t speciesSize =
-            sizeof(picReal) + sizeof(int) * devNums * picDev + sizeof(picReal) * devNums * picDev * 7;
+        const size_t keysBytes = sizeof(int) * (size_t)devNums * picDev;
+        const size_t valuesBytes = sizeof(picReal) * (size_t)devNums * picDev * 7;
+        const size_t speciesSize = sizeof(picReal) + keysBytes + valuesBytes;
 
         if constexpr (picType == 0) {
             picConst = &IonConst;
@@ -5704,22 +5734,34 @@ class HybridModel {
             output.close();
         }
 
-        const MPI_Datatype picMPIType = std::is_same_v<picReal, double> ? MPI_DOUBLE : MPI_FLOAT;
         const int enabledCount = (ifIon ? 1 : 0) + (ifAlpha ? 1 : 0) + (ifBeam ? 1 : 0);
         const size_t rankSize = enabledCount * speciesSize;
-        const size_t offset = hostId * rankSize + intraRankOffset;
+        const size_t fileSize = (size_t)hostNums * rankSize;
+        const size_t offset = (size_t)hostId * rankSize + intraRankOffset;
         const std::string picFile = initialDir + "/PICContinue_0.bin";
 
+        auto writeBytes = [&](MPI_File fileHandle, size_t offset, const void* data, size_t bytes) {
+            constexpr size_t chunkBytes = 1ULL << 30;
+            const char* ptr = reinterpret_cast<const char*>(data);
+
+            for (size_t done = 0; done < bytes;) {
+                const size_t chunk = (bytes - done > chunkBytes) ? chunkBytes : bytes - done;
+                MPICHECK(MPI_File_write_at_all(fileHandle, (MPI_Offset)(offset + done), const_cast<char*>(ptr + done),
+                                               (int)chunk, MPI_BYTE, MPI_STATUS_IGNORE));
+                done += chunk;
+            }
+        };
+
         MPI_File fileHandle;
-        MPI_File_open(MPI_COMM_WORLD, picFile.c_str(), MPI_MODE_CREATE | MPI_MODE_WRONLY, MPI_INFO_NULL, &fileHandle);
+        MPICHECK(MPI_File_open(MPI_COMM_WORLD, picFile.c_str(), MPI_MODE_CREATE | MPI_MODE_WRONLY, MPI_INFO_NULL,
+                               &fileHandle));
+        MPICHECK(MPI_File_set_size(fileHandle, (MPI_Offset)fileSize));
 
-        MPI_File_write_at_all(fileHandle, offset, picConst, 1, picMPIType, MPI_STATUS_IGNORE);
-        MPI_File_write_at_all(fileHandle, offset + sizeof(picReal), picKeys[0], devNums * picDev, MPI_INT,
-                              MPI_STATUS_IGNORE);
-        MPI_File_write_at_all(fileHandle, offset + sizeof(picReal) + sizeof(int) * devNums * picDev, picValues[0],
-                              devNums * picDev * 7, picMPIType, MPI_STATUS_IGNORE);
+        writeBytes(fileHandle, offset, picConst, sizeof(picReal));
+        writeBytes(fileHandle, offset + sizeof(picReal), picKeys[0], keysBytes);
+        writeBytes(fileHandle, offset + sizeof(picReal) + keysBytes, picValues[0], valuesBytes);
 
-        MPI_File_close(&fileHandle);
+        MPICHECK(MPI_File_close(&fileHandle));
 
         if (hostId == 0) {
 
