@@ -81,6 +81,7 @@ constexpr std::array<std::tuple<int, int, int>, 0> selectNM_dTe = {{}};
 constexpr std::array<std::tuple<int, int, int>, 0> selectNM_dP = {{}};
 
 using ifNonlinearMHD = trueType;
+using ifDiaDrift = trueType;
 using ifEparallel = trueType;
 using ifFLRMHD = falseType;
 using ifQNeutrality = falseType;

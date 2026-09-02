@@ -21,7 +21,8 @@
 
 /*----------------------------------------MHD Kernels-----------------------------------------*/
 
-template <int rk4, typename nonlinear, typename local, typename Eparallel, typename ReducedMHD, typename type>
+template <int rk4, typename local, typename nonlinear, typename DiaDrift, typename Eparallel, typename ReducedMHD,
+          typename type>
 __global__ void MHDLinearRK4(type* __restrict__ d_qtheta, type* __restrict__ w_beg, type* __restrict__ w_midl,
                              type* __restrict__ w_midr, type* __restrict__ w_end, type* __restrict__ A_beg,
                              type* __restrict__ A_midl, type* __restrict__ A_midr, type* __restrict__ A_end,
@@ -117,13 +118,16 @@ __global__ void MHDLinearRK4(type* __restrict__ d_qtheta, type* __restrict__ w_b
 
     /*---------------------------Ion Diamagnetic Drift in Vorticity---------------------------*/
 
-    field = w_midl[offset3d];
+    if constexpr (std::is_same_v<DiaDrift, trueType>) {
 
-    PartialZ<local>(k, offset3d, lane_id, w_midl, field, field_du, field_pz);
-    PartialY<local>(k, offset3d, lane_id, shift_k, shift_lk, shift_dk, qtheta, qtheta_lr, w_midl, field_du, field_lr,
-                    field_py);
+        field = w_midl[offset3d];
 
-    dwdt += compcoes[0] * field_py + compcoes[1] * field_pz;
+        PartialZ<local>(k, offset3d, lane_id, w_midl, field, field_du, field_pz);
+        PartialY<local>(k, offset3d, lane_id, shift_k, shift_lk, shift_dk, qtheta, qtheta_lr, w_midl, field_du,
+                        field_lr, field_py);
+
+        dwdt += compcoes[0] * field_py + compcoes[1] * field_pz;
+    }
 
     /*-------------------------------Ion Pressure in Vorticity--------------------------------*/
 
@@ -366,8 +370,8 @@ __global__ void MHDLinearRK4(type* __restrict__ d_qtheta, type* __restrict__ w_b
     }
 }
 
-template <int rk4, typename MaxwellStress, typename ReynoldsStress, typename diagZFDrive, typename local,
-          typename Eparallel, typename ReducedMHD, typename type>
+template <int rk4, typename local, typename Eparallel, typename ReducedMHD, typename MaxwellStress,
+          typename ReynoldsStress, typename diagZFDrive, typename type>
 __global__ void MHDNonlinearRK4(
     type* __restrict__ d_qtheta, type* __restrict__ w_midl, type* __restrict__ w_midr, type* __restrict__ w_end,
     type* __restrict__ A_midl, type* __restrict__ A_midr, type* __restrict__ A_end, type* __restrict__ dNe_midl,
@@ -759,7 +763,7 @@ __global__ void MHDNonlinearRK4(
     }
 }
 
-template <typename nonlinear, typename local, typename FLRMHD, typename ReducedMHD, typename type>
+template <typename local, typename nonlinear, typename FLRMHD, typename ReducedMHD, typename type>
 __global__ void MHD2dJpBdPePhi(type* __restrict__ A_mid, type* __restrict__ dJpB_mid, type* __restrict__ d_A2dJpB,
                                type* __restrict__ w_mid, type* __restrict__ Phi_mid, type* __restrict__ d_w2Phi,
                                type* __restrict__ dNe_mid, type* __restrict__ dTe_mid, type* __restrict__ dP_mid,
@@ -1375,7 +1379,7 @@ __global__ void MHDSubtractMode(type* __restrict__ d_Subtrahend, type* __restric
     d_Minuend[offset3d] -= d_Subtrahend[offset3d];
 }
 
-template <typename nonlinear, typename local, typename Eparallel, typename type>
+template <typename local, typename nonlinear, typename Eparallel, typename type>
 __global__ void MHD2Apt(type* __restrict__ d_qtheta, type* __restrict__ A_mid, type* __restrict__ dNe_mid,
                         type* __restrict__ dTe_mid, type* __restrict__ Phi_mid, type* __restrict__ d_Ne0,
                         type* __restrict__ d_Te0, type* __restrict__ d_Ne0_px, type* __restrict__ d_APhidNe2A,

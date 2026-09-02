@@ -9,7 +9,7 @@
   <img src="https://img.shields.io/badge/CUDA-76B900?style=flat&logo=nvidia&logoColor=white" alt="CUDA">
   <img src="https://img.shields.io/badge/C++-00599C?style=flat&logo=cplusplus&logoColor=white" alt="C++">
   <img src="https://img.shields.io/badge/License-GPLv3-blue" alt="GPLv3">
-  <img src="https://img.shields.io/badge/Version-1.25.2608-76B900" alt="Version 1.25.2608">
+  <img src="https://img.shields.io/badge/Version-1.26.2609-76B900" alt="Version 1.26.2609">
 </p>
 
 <p align="center">

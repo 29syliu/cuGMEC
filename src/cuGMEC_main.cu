@@ -331,7 +331,7 @@ int main(int argc, char* argv[]) {
                 MHDQNeutrality2dNe<<<MRK4GridSize, MRK4BlockSize, 0, 0>>>(w_midl[i], dNi_midl[i], dNa_midl[i],
                                                                           dNb_midl[i], dNe_midl[i]);
             }
-            MHD2dJpBdPePhi<ifNonlinearMHD, ifLocal, ifFLRMHD, ifReducedMHD><<<MRK4GridSize, MRK4BlockSize, 0, 0>>>(
+            MHD2dJpBdPePhi<ifLocal, ifNonlinearMHD, ifFLRMHD, ifReducedMHD><<<MRK4GridSize, MRK4BlockSize, 0, 0>>>(
                 A_midl[i], dJpB_midl[i], A2dJpB[i], w_midl[i], Phi_midl[i], w2Phi[i], dNe_midl[i], dTe_midl[i],
                 dP_midl[i], dPe_midl[i], Ne0[i], Te0[i]);
             cudaMemcpyAsync(w_beg[i], w_midl[i], sizeof(mhdReal) * (devNy + 2 * gridGhost) * gridNxz,
@@ -356,7 +356,7 @@ int main(int argc, char* argv[]) {
                                          mhdReal** dP_out = nullptr) {
         if constexpr (stage != 5) {
             forEachDev([&](int i) {
-                MHDLinearRK4<stage, ifNonlinearMHD, ifLocal, ifEparallel, ifReducedMHD>
+                MHDLinearRK4<stage, ifLocal, ifNonlinearMHD, ifDiaDrift, ifEparallel, ifReducedMHD>
                     <<<MRK4GridSize, MRK4BlockSize, 0, 0>>>(
                         qtheta[i], w_beg[i], w_in[i], w_out[i], w_end[i], A_beg[i], A_in[i], A_out[i], A_end[i],
                         dNe_beg[i], dNe_in[i], dNe_out[i], dNe_end[i], dTe_beg[i], dTe_in[i], dTe_out[i], dTe_end[i],
@@ -364,8 +364,8 @@ int main(int argc, char* argv[]) {
                         dPa_midl[i], dPb_midl[i], wdPAdJpB2w[i], APhidNe2A[i], dPePhiAdJpB2dNe[i], PhidTedNe2dTe[i],
                         Phi2dP[i]);
                 if constexpr (std::is_same_v<ifNonlinearMHD, trueType>) {
-                    MHDNonlinearRK4<stage, ifMaxwellStress, ifReynoldsStress, ifDiagZFDrive, ifLocal, ifEparallel,
-                                    ifReducedMHD><<<MRK4GridSize, MRK4BlockSize, 0, 0>>>(
+                    MHDNonlinearRK4<stage, ifLocal, ifEparallel, ifReducedMHD, ifMaxwellStress, ifReynoldsStress,
+                                    ifDiagZFDrive><<<MRK4GridSize, MRK4BlockSize, 0, 0>>>(
                         qtheta[i], w_in[i], w_out[i], w_end[i], A_in[i], A_out[i], A_end[i], dNe_in[i], dNe_out[i],
                         dNe_end[i], dTe_in[i], dTe_out[i], dTe_end[i], dP_in[i], dP_out[i], dP_end[i], Phi_midl[i],
                         dJpB_midl[i], dPe_midl[i], Ne0[i], Te0[i], Ne0_px[i], Te0_px[i], APhidNe2A[i], wPhi_w[i],
@@ -382,7 +382,7 @@ int main(int argc, char* argv[]) {
                                                                               dNb_midl[i], dNe_out[i]);
                 }
                 if constexpr (stage != 4) {
-                    MHD2dJpBdPePhi<ifNonlinearMHD, ifLocal, ifFLRMHD, ifReducedMHD>
+                    MHD2dJpBdPePhi<ifLocal, ifNonlinearMHD, ifFLRMHD, ifReducedMHD>
                         <<<MRK4GridSize, MRK4BlockSize, 0, 0>>>(A_out[i], dJpB_midl[i], A2dJpB[i], w_out[i],
                                                                 Phi_midl[i], w2Phi[i], dNe_out[i], dTe_out[i],
                                                                 dP_out[i], dPe_midl[i], Ne0[i], Te0[i]);
@@ -404,7 +404,7 @@ int main(int argc, char* argv[]) {
                     MHDQNeutrality2dNe<<<MRK4GridSize, MRK4BlockSize, 0, 0>>>(w_midl[i], dNi_midl[i], dNa_midl[i],
                                                                               dNb_midl[i], dNe_midl[i]);
                 }
-                MHD2dJpBdPePhi<ifNonlinearMHD, ifLocal, ifFLRMHD, ifReducedMHD><<<MRK4GridSize, MRK4BlockSize, 0, 0>>>(
+                MHD2dJpBdPePhi<ifLocal, ifNonlinearMHD, ifFLRMHD, ifReducedMHD><<<MRK4GridSize, MRK4BlockSize, 0, 0>>>(
                     A_midl[i], dJpB_midl[i], A2dJpB[i], w_midl[i], Phi_midl[i], w2Phi[i], dNe_midl[i], dTe_midl[i],
                     dP_midl[i], dPe_midl[i], Ne0[i], Te0[i]);
                 cudaMemcpyAsync(w_beg[i], w_midl[i], sizeof(mhdReal) * (devNy + 2 * gridGhost) * gridNxz,
@@ -576,7 +576,7 @@ int main(int argc, char* argv[]) {
             };
 
             forEachDev([&](int i) {
-                MHD2Apt<ifNonlinearMHD, ifLocal, ifEparallel><<<MRK4GridSize, MRK4BlockSize, 0, 0>>>(
+                MHD2Apt<ifLocal, ifNonlinearMHD, ifEparallel><<<MRK4GridSize, MRK4BlockSize, 0, 0>>>(
                     qtheta[i], A_midl[i], dNe_midl[i], dTe_midl[i], Phi_midl[i], Ne0[i], Te0[i], Ne0_px[i],
                     APhidNe2A[i], PhiA_A[i], NeA_A[i], Apt_midl[i]);
             });
@@ -829,7 +829,7 @@ int main(int argc, char* argv[]) {
     auto mhdToPIC = [&]<typename... Guards>() {
         if constexpr (allTrue<Guards...>) {
             forEachDev([&](int i) {
-                MHD2Apt<ifNonlinearMHD, ifLocal, ifEparallel><<<MRK4GridSize, MRK4BlockSize, 0, 0>>>(
+                MHD2Apt<ifLocal, ifNonlinearMHD, ifEparallel><<<MRK4GridSize, MRK4BlockSize, 0, 0>>>(
                     qtheta[i], A_midl[i], dNe_midl[i], dTe_midl[i], Phi_midl[i], Ne0[i], Te0[i], Ne0_px[i],
                     APhidNe2A[i], PhiA_A[i], NeA_A[i], Apt_midl[i]);
                 MHDShifted2A<0, ifLocal><<<MRK4GridSize, MRK4BlockSize, 0, 0>>>(
@@ -1178,7 +1178,7 @@ int main(int argc, char* argv[]) {
                 forEachDev([&](int i) {
                     MHDQNeutrality2dNe<<<MRK4GridSize, MRK4BlockSize, 0, 0>>>(w_midl[i], dNi_midl[i], dNa_midl[i],
                                                                               dNb_midl[i], dNe_midl[i]);
-                    MHD2dJpBdPePhi<ifNonlinearMHD, ifLocal, falseType, ifReducedMHD>
+                    MHD2dJpBdPePhi<ifLocal, ifNonlinearMHD, falseType, ifReducedMHD>
                         <<<MRK4GridSize, MRK4BlockSize, 0, 0>>>(A_midl[i], dJpB_midl[i], A2dJpB[i], w_midl[i],
                                                                 Phi_midl[i], w2Phi[i], dNe_midl[i], dTe_midl[i],
                                                                 dP_midl[i], dPe_midl[i], Ne0[i], Te0[i]);
