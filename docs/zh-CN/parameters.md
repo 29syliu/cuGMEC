@@ -76,6 +76,7 @@
 | 参&#8288;数&#8288;名 | 允&#8288;许&#8288;的&#8288;值 | 含&#8288;义 | 注&#8288;意&#8288;事&#8288;项 | 示&#8288;范 |
 |---|---|---|---|---|
 | `ifNonlinearMHD` | `trueType` / `falseType` | 是否包含 MHD 非线性项。 |  | `using ifNonlinearMHD = trueType;` |
+| `ifDiaDrift` | `trueType` / `falseType` | 是否在涡量方程中包含离子抗磁漂移项。 |  | `using ifDiaDrift = trueType;` |
 | `ifEparallel` | `trueType` / `falseType` | 是否包含平行电场项。 |  | `using ifEparallel = trueType;` |
 | `ifFLRMHD` | `trueType` / `falseType` | 是否包含泊松方程中由背景热离子带来的 FLR 效应。 |  | `using ifFLRMHD = falseType;` |
 | `ifQNeutrality` | `trueType` / `falseType` | 是否由准中性条件计算电子密度扰动。 | 开启时，`dNe` 由涡量和离子的扰动密度共同决定。 | `using ifQNeutrality = trueType;` |

@@ -76,6 +76,7 @@ Notation:
 | Parameter | Allowed&nbsp;Values | Description | Notes | Example |
 |---|---|---|---|---|
 | `ifNonlinearMHD` | `trueType` / `falseType` | Whether to include MHD nonlinear terms. |  | `using ifNonlinearMHD = trueType;` |
+| `ifDiaDrift` | `trueType` / `falseType` | Whether to include ion diamagnetic drift in the vorticity equation. |  | `using ifDiaDrift = trueType;` |
 | `ifEparallel` | `trueType` / `falseType` | Whether to include the parallel electric-field term. |  | `using ifEparallel = trueType;` |
 | `ifFLRMHD` | `trueType` / `falseType` | Whether to include the FLR effect from background thermal ions in the Poisson equation. |  | `using ifFLRMHD = falseType;` |
 | `ifQNeutrality` | `trueType` / `falseType` | Whether to compute the electron density perturbation from quasi-neutrality. | When enabled, `dNe` is determined by vorticity and the ion density perturbation. | `using ifQNeutrality = trueType;` |
