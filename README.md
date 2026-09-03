@@ -24,17 +24,17 @@
 
 * **P. Y. Jiang, Z. Y. Liu, S. Y. Liu, J. Bao, and G. Y. Fu**<br>
   *Development of a gyrokinetic-MHD energetic particle simulation code. I. MHD version*<br>
-  **Physics of Plasmas 31, 073904 (2024)**<br>
+  Physics of Plasmas 31, 073904 (2024)<br>
   DOI: [10.1063/5.0203252](https://doi.org/10.1063/5.0203252)
 
 * **Z. Y. Liu, P. Y. Jiang, S. Y. Liu, L. L. Zhang, and G. Y. Fu**<br>
   *Development of a gyrokinetic-MHD energetic particle simulation code. II. Linear simulations of Alfvén eigenmodes driven by energetic particles*<br>
-  **Physics of Plasmas 31, 073905 (2024)**<br>
+  Physics of Plasmas 31, 073905 (2024)<br>
   DOI: [10.1063/5.0206762](https://doi.org/10.1063/5.0206762)
 
 * **S. Y. Liu, P. Y. Jiang, and G. Y. Fu**<br>
   *cuGMEC: A High-Performance Code for Gyrokinetic-MHD Hybrid Simulation on GPUs with CUDA C++*<br>
-  **Computer Physics Communications 327, 110249 (2026)**<br>
+  Computer Physics Communications 327, 110249 (2026)<br>
   DOI: [10.1016/j.cpc.2026.110249](https://doi.org/10.1016/j.cpc.2026.110249)
 
 ---
@@ -54,7 +54,7 @@ The MHD component includes:
 * Gyrokinetic vorticity equation
 * Gyrokinetic Poisson equation
 * Parallel Ampère’s law
-* Generalized Ohm’s law
+* Parallel Ohm’s law
 * Electron continuity equation
 * Electron isothermal condition
 
@@ -79,7 +79,7 @@ For details, please refer to our CPC paper.
 
 ## ⚡ Performance
 
-The performance reported in our CPC paper no longer represents cuGMEC's best performance, as both the MHD and PIC components have since been optimized. The updated single-GPU speed tests below are based on the ITPA TAE benchmark case, using a 256x64x16 grid and dt = 0.025 Alfvén time (major radius divided by Alfvén velocity), and we believe the results are quite fast among codes of the same type. The MHD component uses double precision; the PIC component uses 400 keV fast ions with a maximum velocity of about 1.2 times the Alfvén velocity and is tested in both double and float precision. Note that particle deposition is performed in double precision in both double- and float-precision PIC runs. GYRO denotes the number of gyro-average points, and P/G denotes the average number of particles per grid. For convenience, all GPUs are tested using the same gridDim and blockDim, so the timings may differ very slightly from the absolute optimum.
+The performance reported in our CPC paper no longer represents cuGMEC's best performance, as both the MHD and PIC components have since been optimized. The updated single-GPU speed tests below are based on the ITPA TAE benchmark case, using a 256x64x16 grid and dt = 0.025 Alfvén time (major radius divided by Alfvén velocity), and we believe the results are quite fast among codes of the same type. The MHD component uses double precision; the PIC component uses 400 keV fast ions with a maximum velocity of about 1.2 times the Alfvén velocity and is tested in both double and float precision. Note that particle deposition is performed in double precision in both double- and float-precision PIC runs. GYRO denotes the number of gyro-average points, and P/G denotes the average number of particles per grid. For convenience, all GPUs are tested using the same gridDim and blockDim, so the timings may differ from the absolute optimum.
 
 Click the triangle below for results.
 
@@ -407,9 +407,117 @@ Click the triangle below for results.
 
 </details>
 
+<details>
+  <summary>NVIDIA B200</summary>
+
+<p style="margin-top: 16px; margin-bottom: 2px;">The MHD per-step time is 9.89ms. The PIC per-step times are shown in the table.</p>
+
+<table border="0" cellspacing="0" cellpadding="0" bgcolor="#ffffff" style="background-color: #ffffff; border: none; border-collapse: collapse;">
+  <tr bgcolor="#ffffff" style="background-color: #ffffff; border: none;">
+    <td valign="top" bgcolor="#ffffff" style="background-color: #ffffff; border: none; padding-right: 36px;">
+<table bgcolor="#ffffff" style="background-color: #ffffff;">
+  <tr bgcolor="#ffffff" style="background-color: #ffffff;">
+    <td colspan="5" align="center" bgcolor="#ffffff" style="background-color: #ffffff;">double</td>
+  </tr>
+  <tr bgcolor="#ffffff" style="background-color: #ffffff;">
+    <td align="center" width="82" height="42" bgcolor="#ffffff" style="background-color: #ffffff; width: 82px; min-width: 82px; max-width: 82px; height: 42px; padding: 0; line-height: 0;">
+      <svg width="82" height="42" viewBox="0 0 82 42" xmlns="http://www.w3.org/2000/svg" style="display:block;">
+        <line x1="0" y1="0" x2="74" y2="42" stroke="#d0d7de" stroke-width="1"/>
+        <text x="74" y="17" text-anchor="end" font-size="13">GYRO</text>
+        <text x="16" y="37" text-anchor="start" font-size="13">P/G</text>
+      </svg>
+    </td>
+    <td align="center" bgcolor="#ffffff" style="background-color: #ffffff;">0</td>
+    <td align="center" bgcolor="#ffffff" style="background-color: #ffffff;">4</td>
+    <td align="center" bgcolor="#ffffff" style="background-color: #ffffff;">8</td>
+    <td align="center" bgcolor="#ffffff" style="background-color: #ffffff;">16</td>
+  </tr>
+  <tr bgcolor="#ffffff" style="background-color: #ffffff;">
+    <td align="center" bgcolor="#ffffff" style="background-color: #ffffff;">32</td>
+    <td align="center" bgcolor="#ffffff" style="background-color: #ffffff;">0.906ms</td>
+    <td align="center" bgcolor="#ffffff" style="background-color: #ffffff;">6.60ms</td>
+    <td align="center" bgcolor="#ffffff" style="background-color: #ffffff;">15.5ms</td>
+    <td align="center" bgcolor="#ffffff" style="background-color: #ffffff;">32.6ms</td>
+  </tr>
+  <tr bgcolor="#ffffff" style="background-color: #ffffff;">
+    <td align="center" bgcolor="#ffffff" style="background-color: #ffffff;">64</td>
+    <td align="center" bgcolor="#ffffff" style="background-color: #ffffff;">2.03ms</td>
+    <td align="center" bgcolor="#ffffff" style="background-color: #ffffff;">16.9ms</td>
+    <td align="center" bgcolor="#ffffff" style="background-color: #ffffff;">33.8ms</td>
+    <td align="center" bgcolor="#ffffff" style="background-color: #ffffff;">66.6ms</td>
+  </tr>
+  <tr bgcolor="#ffffff" style="background-color: #ffffff;">
+    <td align="center" bgcolor="#ffffff" style="background-color: #ffffff;">128</td>
+    <td align="center" bgcolor="#ffffff" style="background-color: #ffffff;">7.20ms</td>
+    <td align="center" bgcolor="#ffffff" style="background-color: #ffffff;">37.5ms</td>
+    <td align="center" bgcolor="#ffffff" style="background-color: #ffffff;">70.4ms</td>
+    <td align="center" bgcolor="#ffffff" style="background-color: #ffffff;">135ms</td>
+  </tr>
+  <tr bgcolor="#ffffff" style="background-color: #ffffff;">
+    <td align="center" bgcolor="#ffffff" style="background-color: #ffffff;">256</td>
+    <td align="center" bgcolor="#ffffff" style="background-color: #ffffff;">18.1ms</td>
+    <td align="center" bgcolor="#ffffff" style="background-color: #ffffff;">81.2ms</td>
+    <td align="center" bgcolor="#ffffff" style="background-color: #ffffff;">151ms</td>
+    <td align="center" bgcolor="#ffffff" style="background-color: #ffffff;">294ms</td>
+  </tr>
+</table>
+    </td>
+    <td valign="top" bgcolor="#ffffff" style="background-color: #ffffff; border: none; padding-left: 0px;">
+<table bgcolor="#ffffff" style="background-color: #ffffff;">
+  <tr bgcolor="#ffffff" style="background-color: #ffffff;">
+    <td colspan="5" align="center" bgcolor="#ffffff" style="background-color: #ffffff;">float</td>
+  </tr>
+  <tr bgcolor="#ffffff" style="background-color: #ffffff;">
+    <td align="center" width="82" height="42" bgcolor="#ffffff" style="background-color: #ffffff; width: 82px; min-width: 82px; max-width: 82px; height: 42px; padding: 0; line-height: 0;">
+      <svg width="82" height="42" viewBox="0 0 82 42" xmlns="http://www.w3.org/2000/svg" style="display:block;">
+        <line x1="0" y1="0" x2="74" y2="42" stroke="#d0d7de" stroke-width="1"/>
+        <text x="74" y="17" text-anchor="end" font-size="13">GYRO</text>
+        <text x="16" y="37" text-anchor="start" font-size="13">P/G</text>
+      </svg>
+    </td>
+    <td align="center" bgcolor="#ffffff" style="background-color: #ffffff;">0</td>
+    <td align="center" bgcolor="#ffffff" style="background-color: #ffffff;">4</td>
+    <td align="center" bgcolor="#ffffff" style="background-color: #ffffff;">8</td>
+    <td align="center" bgcolor="#ffffff" style="background-color: #ffffff;">16</td>
+  </tr>
+  <tr bgcolor="#ffffff" style="background-color: #ffffff;">
+    <td align="center" bgcolor="#ffffff" style="background-color: #ffffff;">32</td>
+    <td align="center" bgcolor="#ffffff" style="background-color: #ffffff;">0.805ms</td>
+    <td align="center" bgcolor="#ffffff" style="background-color: #ffffff;">3.27ms</td>
+    <td align="center" bgcolor="#ffffff" style="background-color: #ffffff;">7.80ms</td>
+    <td align="center" bgcolor="#ffffff" style="background-color: #ffffff;">17.0ms</td>
+  </tr>
+  <tr bgcolor="#ffffff" style="background-color: #ffffff;">
+    <td align="center" bgcolor="#ffffff" style="background-color: #ffffff;">64</td>
+    <td align="center" bgcolor="#ffffff" style="background-color: #ffffff;">1.01ms</td>
+    <td align="center" bgcolor="#ffffff" style="background-color: #ffffff;">7.08ms</td>
+    <td align="center" bgcolor="#ffffff" style="background-color: #ffffff;">16.3ms</td>
+    <td align="center" bgcolor="#ffffff" style="background-color: #ffffff;">33.0ms</td>
+  </tr>
+  <tr bgcolor="#ffffff" style="background-color: #ffffff;">
+    <td align="center" bgcolor="#ffffff" style="background-color: #ffffff;">128</td>
+    <td align="center" bgcolor="#ffffff" style="background-color: #ffffff;">3.33ms</td>
+    <td align="center" bgcolor="#ffffff" style="background-color: #ffffff;">18.2ms</td>
+    <td align="center" bgcolor="#ffffff" style="background-color: #ffffff;">39.2ms</td>
+    <td align="center" bgcolor="#ffffff" style="background-color: #ffffff;">73.1ms</td>
+  </tr>
+  <tr bgcolor="#ffffff" style="background-color: #ffffff;">
+    <td align="center" bgcolor="#ffffff" style="background-color: #ffffff;">256</td>
+    <td align="center" bgcolor="#ffffff" style="background-color: #ffffff;">5.82ms</td>
+    <td align="center" bgcolor="#ffffff" style="background-color: #ffffff;">40.5ms</td>
+    <td align="center" bgcolor="#ffffff" style="background-color: #ffffff;">89.2ms</td>
+    <td align="center" bgcolor="#ffffff" style="background-color: #ffffff;">162ms</td>
+  </tr>
+</table>
+    </td>
+  </tr>
+</table>
+
+</details>
+
 The total runtime of a simulation can be estimated as (MHD per-step time + PIC per-step time) × the total number of time steps. For other numerical parameters or multi-GPU runs, the runtime can be estimated by simple scaling.
 
-For example, an ITER steady-state full-torus case up to toroidal mode number 40 uses a 384x32x640 grid (about 7.9 million points), P/G = 192 (about 4.5 billion particles across three ion species), GYRO = 4, dt = 0.025 Alfvén time, double-precision MHD, float-precision PIC, and double-precision deposition. For 20,000 steps on 8 NVIDIA A800-SXM4-80GB GPUs, using only linear scaling from the tables above gives 4.78 hours, compared with a measured 4.87 hours, a 2% difference. This agreement indicates that the three GPU tables capture performance from the simplest benchmarks to more demanding cases.
+For example, an ITER steady-state full-torus case up to toroidal mode number 36 uses a 384x32x576 grid (about 7.1 million points), P/G = 240 (about 5.1 billion particles across three ion species), GYRO = 4, dt = 0.025 Alfvén time, 20,000 steps, double-precision MHD, and float-precision PIC. Using only linear scaling from the tables above gives 5.31 hours on 8 NVIDIA A800-SXM4-80GB GPUs, compared with a measured 4.97 hours, a 6% difference; on 8 NVIDIA B200 GPUs, it gives 2.32 hours, compared with a measured 2.23 hours, a 4% difference. This agreement indicates that the tables above capture performance from the simplest benchmarks to more demanding cases.
 
 ---
 
