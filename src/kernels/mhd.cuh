@@ -1916,6 +1916,63 @@ __global__ void MHDDiagZFDrive(type* __restrict__ w_beg, type* __restrict__ w_en
     dwdtTotal[i] = (w_end[offset3d] - w_beg[offset3d]) / mhdGridDt;
 }
 
+template <typename type>
+__global__ void MHDDiagShearing(picReal* __restrict__ pic1d, picReal* __restrict__ pic2d, type* __restrict__ Phi_mid,
+                                type* __restrict__ d_shearing) {
+
+    /*-------------------------------------Related Index--------------------------------------*/
+
+    int i = threadIdx.x;
+    int ii = i;
+    int qId;
+    int tileId;
+    int offset3d = gridGhost * gridNxz + i * gridNz;
+
+    /*----------------------------------Field and Derivative----------------------------------*/
+
+    picReal q, q_px;
+    picReal J, B, gyroLr;
+    type Phi, Phi_px, Phi_px2;
+    type rho = RHO0 + i * mhdGridDx * (RHO1 - RHO0);
+    type sumJ = 0;
+    type sumJgconxx2B = 0;
+    type aveGconxx2B, shear;
+    type field_lr[4];
+    picReal coes[4] = {1, 0, 0, 0};
+
+    /*----------------------------------------Initialize---------------------------------------*/
+
+    if (i == gridNx - 1) {
+        ii = i - 1;
+        coes[0] = 0;
+        coes[1] = 1;
+    }
+
+    qId = ii * qStride;
+    FieldGather1d2d<2>(qId, coes, pic1d, q, q_px);
+
+    Phi = Phi_mid[offset3d];
+    PartialX2(i, offset3d, Phi_mid, Phi, field_lr, Phi_px, Phi_px2);
+
+    /*----------------------------------------Shearing-----------------------------------------*/
+
+    for (int jj = 0; jj < gridNy; jj++) {
+
+        tileId = ((jj + gridGhost) * cellNx + ii) * tileStride2D;
+        FieldGather1d2d<4>(tileId, coes, pic2d, J, B);
+
+        tileId = ((jj + gridGhost) * cellNx + ii) * tileStride2D + 52;
+        FieldGather1d2d<4>(tileId, coes, pic2d, gyroLr);
+
+        sumJ += static_cast<type>(J);
+        sumJgconxx2B += static_cast<type>(J / (B * gyroLr * gyroLr));
+    }
+
+    aveGconxx2B = sumJgconxx2B / sumJ;
+    shear = aveGconxx2B * (Phi_px2 - static_cast<type>((RHO1 - RHO0) / rho - q_px / q) * Phi_px);
+    d_shearing[i] = shear * VA0 / L0;
+}
+
 template <typename nonlinear, typename Eparallel, typename type>
 __global__ void MHDDiagEparallel(type* __restrict__ d_qtheta, type* __restrict__ A_mid, type* __restrict__ dNe_mid,
                                  type* __restrict__ dTe_mid, type* __restrict__ Phi_mid, type* __restrict__ d_Ne0,

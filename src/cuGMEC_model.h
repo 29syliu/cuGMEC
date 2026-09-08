@@ -102,7 +102,7 @@ struct HybridModelConfig {
     struct Filter         { int leftN, rightN; } filter;
     struct NFFTSize       { int time, batch, freq; };  NFFTSize nFFT;
     struct MFFTSize       { int time; };               MFFTSize mFFT;
-    struct DiagFlags      { bool amplitude, frequency, Eparallel, density, diffusivity, ZFDrive, checkNAN; } diag;
+    struct DiagFlags      { bool amplitude, frequency, Eparallel, density, diffusivity, ZFDrive, shearing, checkNAN; } diag;
     struct OutputFlags    { bool Phi, A, dNe, dTe, dP, dPi, dPa, dPb; } output;
 };
 // clang-format on
@@ -152,7 +152,7 @@ class HybridModel {
 
           ifDiagAmplitude{cfg.diag.amplitude}, ifDiagFrequency{cfg.diag.frequency}, ifDiagEparallel{cfg.diag.Eparallel},
           ifDiagDensity{cfg.diag.density}, ifDiagDiffusivity{cfg.diag.diffusivity}, ifDiagZFDrive{cfg.diag.ZFDrive},
-          ifCheckNAN{cfg.diag.checkNAN},
+          ifDiagShearing{cfg.diag.shearing}, ifCheckNAN{cfg.diag.checkNAN},
 
           ifOutputPhi{cfg.output.Phi}, ifOutputA{cfg.output.A}, ifOutputdNe{cfg.output.dNe},
           ifOutputdTe{cfg.output.dTe}, ifOutputdP{cfg.output.dP}, ifOutputdPi{cfg.output.dPi},
@@ -566,19 +566,20 @@ class HybridModel {
 	const int nFFTTimeSize, nFFTBatchSize, nFFTFreqSize;
 	const int mFFTTimeSize;
 
-	const bool ifDiagAmplitude, ifDiagFrequency, ifDiagEparallel, ifDiagDensity, ifDiagDiffusivity, ifDiagZFDrive, ifCheckNAN;
+	const bool ifDiagAmplitude, ifDiagFrequency, ifDiagEparallel, ifDiagDensity, ifDiagDiffusivity, ifDiagZFDrive,
+	    ifDiagShearing, ifCheckNAN;
 	const bool ifOutputPhi, ifOutputA, ifOutputdNe, ifOutputdTe, ifOutputdP, ifOutputdPi, ifOutputdPa, ifOutputdPb;
 
 	/*---------------------------------------------------Diagnostic on CPU/GPU----------------------------------------------------*/
 
-	std::vector<mhdReal> h_amplitude; std::vector<mhdReal> h_frequency;
+	std::vector<mhdReal> h_amplitude; std::vector<mhdReal> h_frequency; std::vector<mhdReal> h_shearing;
 	std::vector<mhdReal> h_modeReal; std::vector<mhdReal> h_modeImag;
 	std::vector<mhdReal> h_Epara;    std::vector<mhdReal> h_EparaES;
 	std::vector<mhdReal> h_MaxwellDrive; std::vector<mhdReal> h_ReynoldsDrive; std::vector<mhdReal> h_dwdtTotal;
 	std::vector<mhdReal> h_IonDensity;   std::vector<mhdReal> h_AlphaDensity;   std::vector<mhdReal> h_BeamDensity;
 	std::vector<mhdReal> h_IonDiffusivity; std::vector<mhdReal> h_AlphaDiffusivity; std::vector<mhdReal> h_BeamDiffusivity;
 
-	mhdReal** d_amplitude; mhdReal** d_frequency;
+	mhdReal** d_amplitude; mhdReal** d_frequency; mhdReal** d_shearing;
 	mhdReal** d_modeReal;  mhdReal** d_modeImag;
 	mhdReal** d_Epara;     mhdReal** d_EparaES;
 	mhdReal** d_MaxwellDrive; mhdReal** d_ReynoldsDrive; mhdReal** d_dwdtTotal;
@@ -1126,6 +1127,7 @@ class HybridModel {
         h_modeReal.resize(diagLenN);
         h_modeImag.resize(diagLenN);
         h_frequency.resize(diagLen);
+        h_shearing.resize(diagLen);
         h_Epara.resize(diagLen);
         h_EparaES.resize(diagLen);
         h_MaxwellDrive.resize(diagLen);
@@ -1395,6 +1397,9 @@ class HybridModel {
 
         if constexpr (std::is_same_v<::ifDiagFrequency, trueType>)
             DeviceAllocator.allocateDeviceArrays(localId, devNums, h_frequency.size(), d_frequency);
+
+        if constexpr (std::is_same_v<::ifDiagShearing, trueType>)
+            DeviceAllocator.allocateDeviceArrays(localId, devNums, h_shearing.size(), d_shearing);
 
         if constexpr (std::is_same_v<::ifDiagEparallel, trueType>)
             DeviceAllocator.allocateDeviceArrays(localId, devNums, h_Epara.size(), d_Epara, d_EparaES);
@@ -1693,6 +1698,9 @@ class HybridModel {
 
         if constexpr (std::is_same_v<::ifDiagFrequency, trueType>)
             DeviceAllocator.releaseDeviceArrays(localId, devNums, d_frequency);
+
+        if constexpr (std::is_same_v<::ifDiagShearing, trueType>)
+            DeviceAllocator.releaseDeviceArrays(localId, devNums, d_shearing);
 
         if constexpr (std::is_same_v<::ifDiagEparallel, trueType>)
             DeviceAllocator.releaseDeviceArrays(localId, devNums, d_Epara, d_EparaES);
@@ -2194,6 +2202,9 @@ class HybridModel {
         if constexpr (std::is_same_v<::ifDiagFrequency, trueType>)
             CUDACHECK(cudaMemcpy(h_frequency.data(), d_frequency[localDevIdx], sizeof(mhdReal) * h_frequency.size(),
                                  cudaMemcpyDeviceToHost));
+        if constexpr (std::is_same_v<::ifDiagShearing, trueType>)
+            CUDACHECK(cudaMemcpy(h_shearing.data(), d_shearing[localDevIdx], sizeof(mhdReal) * h_shearing.size(),
+                                 cudaMemcpyDeviceToHost));
         if constexpr (std::is_same_v<::ifDiagEparallel, trueType>) {
             CUDACHECK(cudaMemcpy(h_Epara.data(), d_Epara[localDevIdx], sizeof(mhdReal) * h_Epara.size(),
                                  cudaMemcpyDeviceToHost));
@@ -2302,6 +2313,8 @@ class HybridModel {
             }
             if (ifDiagFrequency)
                 writeBin(finalDir + "/frequency.bin", h_frequency.data(), sizeof(mhdReal) * h_frequency.size());
+            if (ifDiagShearing)
+                writeBin(finalDir + "/shearing.bin", h_shearing.data(), sizeof(mhdReal) * h_shearing.size());
             if (ifDiagEparallel) {
                 writeBin(finalDir + "/Epara.bin", h_Epara.data(), sizeof(mhdReal) * h_Epara.size());
                 writeBin(finalDir + "/EparaES.bin", h_EparaES.data(), sizeof(mhdReal) * h_EparaES.size());

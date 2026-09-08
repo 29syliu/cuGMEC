@@ -13,13 +13,13 @@ standard2D.mat, plot2D.mat, normalization2D.mat
 standard3D.mat, plot3D.mat, normalization3D.mat
 
 按开关读取：
-ifDiagAmplitude, ifDiagFrequency, ifDiagEparallel, ifDiagZFDrive,
+ifDiagAmplitude, ifDiagFrequency, ifDiagEparallel, ifDiagZFDrive, ifDiagShearing,
 ifOutputPhi, ifOutputA, ifOutputdNe, ifOutputdTe,
 ifOutputdPi, ifOutputdPa, ifOutputdPb
 
 可能包含：
 amplitude.bin, RealMode.bin, ImagMode.bin, frequency.bin, Epara.bin,
-EparaES.bin, MaxwellDrive.bin, ReynoldsDrive.bin, ZonalDrive.bin,
+EparaES.bin, shearing.bin, MaxwellDrive.bin, ReynoldsDrive.bin, ZonalDrive.bin,
 Phi.bin, A.bin, dNe.bin, dTe.bin, dPi.bin, dPa.bin, dPb.bin,
 totalPhi.bin, totalA.bin, totaldNe.bin, totaldTe.bin,
 totaldPi.bin, totaldPa.bin, totaldPb.bin
@@ -320,6 +320,29 @@ axisFontSize  : 坐标轴字号。
 %}
 mhdWorkspace.epara = runMHDEparaPlot(mhdData, mhdInput, mhdEparaOpt);
 
+%% 可视化 shearing
+
+mhdShearingOpt = struct( ...
+    'enabled', meta.switch.ifDiagShearing, ...
+    'plotType', 1, ...
+    'timeIndex', 12000, ...
+    'radialIndex', 90, ...
+    'interactive', 2, ...
+    'titleFontSize', 16, ...
+    'labelFontSize', 14, ...
+    'axisFontSize', 12);
+%{
+enabled       : 是否绘图。
+plotType      : 1 固定 t 的 x 剖面；2 固定 x 的 t 剖面；3 x-t 二维图。
+timeIndex     : plotType = 1 时的固定诊断时间索引（1 到 nDiagTime）。
+radialIndex   : plotType = 2 时的固定径向索引（1 到 gridNx）。
+interactive   : 0 不交互；1 滑块释放后更新；2 拖动滑块时连续更新。
+titleFontSize : 标题字号。
+labelFontSize : 坐标轴标签字号。
+axisFontSize  : 坐标轴字号。
+%}
+mhdWorkspace.shearing = runMHDShearingPlot(mhdData, meta, mhdInput, mhdShearingOpt);
+
 %% 可视化 MaxwellDrive / ReynoldsDrive / ZonalDrive
 
 mhdZonalDriveOpt = struct( ...
@@ -530,6 +553,7 @@ function meta = readMHDMetadata(paramText)
     meta.switch.ifDiagFrequency = readSwitchParam(paramText, 'ifDiagFrequency');
     meta.switch.ifDiagEparallel = readSwitchParam(paramText, 'ifDiagEparallel');
     meta.switch.ifDiagZFDrive = readSwitchParam(paramText, 'ifDiagZFDrive');
+    meta.switch.ifDiagShearing = readSwitchParam(paramText, 'ifDiagShearing');
     meta.switch.ifOutputPhi = readSwitchParam(paramText, 'ifOutputPhi');
     meta.switch.ifOutputA = readSwitchParam(paramText, 'ifOutputA');
     meta.switch.ifOutputdNe = readSwitchParam(paramText, 'ifOutputdNe');
@@ -559,6 +583,7 @@ function data = readAllMHDDiagnostics(inputDir, meta)
         'frequency', [], ...
         'Epara', [], ...
         'EparaES', [], ...
+        'Shearing', [], ...
         'MaxwellDrive', [], ...
         'ReynoldsDrive', [], ...
         'ZonalDrive', [], ...
@@ -571,6 +596,7 @@ function data = readAllMHDDiagnostics(inputDir, meta)
         'frequency', 'ifDiagFrequency', 'frequency.bin', 'radial'; ...
         'Epara', 'ifDiagEparallel', 'Epara.bin', 'radial'; ...
         'EparaES', 'ifDiagEparallel', 'EparaES.bin', 'radial'; ...
+        'Shearing', 'ifDiagShearing', 'shearing.bin', 'radial'; ...
         'MaxwellDrive', 'ifDiagZFDrive', 'MaxwellDrive.bin', 'radial'; ...
         'ReynoldsDrive', 'ifDiagZFDrive', 'ReynoldsDrive.bin', 'radial'; ...
         'ZonalDrive', 'ifDiagZFDrive', 'ZonalDrive.bin', 'radial'};
@@ -1133,6 +1159,34 @@ function workspace = runMHDEparaPlot(mhdData, mhdInput, opt)
     runInteractivePlot(opt.interactive, ...
         @() plotEpara(mhdData.Epara, mhdData.EparaES, mhdInput.rho, opt), ...
         @(dynamicUpdate) plotEparaInteractive(mhdData.Epara, mhdData.EparaES, mhdInput.rho, opt, dynamicUpdate));
+end
+
+function workspace = runMHDShearingPlot(mhdData, meta, ~, opt)
+
+    workspace = struct('options', opt);
+    if ~opt.enabled
+        logSkipped('shearing plot', '绘图开关为 false');
+        return;
+    end
+    if ~hasMHDDataFields(mhdData, {'Shearing'})
+        logSkipped('shearing plot', '未读取 Shearing 数据');
+        return;
+    end
+
+    switch opt.plotType
+        case 1
+            runInteractivePlot(opt.interactive, ...
+                @() plotShearingTimeSlice(mhdData.Shearing, meta.xGrid, meta.tDiag, opt), ...
+                @(dynamicUpdate) plotShearingTimeSliceInteractive(mhdData.Shearing, meta.xGrid, meta.tDiag, opt, dynamicUpdate));
+        case 2
+            runInteractivePlot(opt.interactive, ...
+                @() plotShearingRadialTrace(mhdData.Shearing, meta.xGrid, meta.tDiag, opt), ...
+                @(dynamicUpdate) plotShearingRadialTraceInteractive(mhdData.Shearing, meta.xGrid, meta.tDiag, opt, dynamicUpdate));
+        case 3
+            plotShearingMap(mhdData.Shearing, meta.xGrid, meta.tDiag, opt);
+        otherwise
+            error('plotType 必须为 1、2 或 3。');
+    end
 end
 
 function workspace = runMHDZonalDrivePlot(mhdData, mhdInput, opt)
@@ -2238,6 +2292,95 @@ function [xData, yData] = calculateEparaData(Epara, EparaES, rho, opt)
     timeIdx = parseTimeIndex(opt.timeIndex, nTime);
     xData = rho(:, 1);
     yData = [Epara(timeIdx, :)', EparaES(timeIdx, :)', (EparaES(timeIdx, :) - Epara(timeIdx, :))'];
+end
+
+function plotShearingTimeSlice(Shearing, xGrid, tDiag, opt)
+    [xData, yData, timeIdx] = calculateShearingTimeSliceData(Shearing, xGrid, tDiag, opt);
+    drawLinePlot(linePlotData(xData, yData, '$x$', '$\gamma_E\;[\mathrm{s}^{-1}]$', ...
+        '$\mathrm{Hahm\mbox{-}Burrell\;shearing}$', [], ''), opt);
+
+    fprintf('[plot] Shearing: timeIndex=%d\n', timeIdx);
+end
+
+function plotShearingTimeSliceInteractive(Shearing, xGrid, tDiag, opt, dynamicUpdate)
+    nTime = size(Shearing, 1);
+    timeIndex0 = parseTimeIndex(opt.timeIndex, nTime);
+    controls = integerSliderControl('timeIndex', 'timeIndex', timeIndex0, 1, nTime);
+    plotInteractiveLineWithSliders('Shearing', controls, dynamicUpdate, opt, @computePlotData);
+
+    function data = computePlotData(values)
+        tempOpt = opt;
+        tempOpt.timeIndex = values.timeIndex;
+        [xData, yData] = calculateShearingTimeSliceData(Shearing, xGrid, tDiag, tempOpt);
+        data = linePlotData(xData, yData, '$x$', '$\gamma_E\;[\mathrm{s}^{-1}]$', ...
+            '$\mathrm{Hahm\mbox{-}Burrell\;shearing}$', [], ...
+            sprintf('timeIndex = %d', tempOpt.timeIndex));
+    end
+end
+
+function [xData, yData, timeIdx] = calculateShearingTimeSliceData(Shearing, xGrid, tDiag, opt)
+    nTime = size(Shearing, 1);
+    nRadial = size(Shearing, 2);
+    assert(numel(tDiag) == nTime, 'tDiag 长度必须匹配 Shearing 时间维度。');
+    assert(numel(xGrid) == nRadial, 'xGrid 长度必须匹配 Shearing 径向维度。');
+
+    timeIdx = parseTimeIndex(opt.timeIndex, nTime);
+    xData = xGrid(:);
+    yData = Shearing(timeIdx, :)';
+end
+
+function plotShearingRadialTrace(Shearing, xGrid, tDiag, opt)
+    [xData, yData, radialIdx, radialX] = calculateShearingRadialTraceData(Shearing, xGrid, tDiag, opt);
+    drawLinePlot(linePlotData(xData, yData, '$t_a$', '$\gamma_E\;[\mathrm{s}^{-1}]$', ...
+        '$\mathrm{Hahm\mbox{-}Burrell\;shearing}$', [], ''), opt);
+
+    fprintf('[plot] Shearing trace: x=%.6g, radialIndex=%d\n', radialX, radialIdx);
+end
+
+function plotShearingRadialTraceInteractive(Shearing, xGrid, tDiag, opt, dynamicUpdate)
+    nRadial = size(Shearing, 2);
+    radialIndex0 = parseIndex(opt.radialIndex, nRadial, 'radialIndex');
+    controls = integerSliderControl('radialIndex', 'radialIndex', radialIndex0, 1, nRadial);
+    plotInteractiveLineWithSliders('Shearing trace', controls, dynamicUpdate, opt, @computePlotData);
+
+    function data = computePlotData(values)
+        tempOpt = opt;
+        tempOpt.radialIndex = values.radialIndex;
+        [xData, yData, ~, radialX] = calculateShearingRadialTraceData(Shearing, xGrid, tDiag, tempOpt);
+        data = linePlotData(xData, yData, '$t_a$', '$\gamma_E\;[\mathrm{s}^{-1}]$', ...
+            '$\mathrm{Hahm\mbox{-}Burrell\;shearing}$', [], ...
+            sprintf('x = %.6g, radialIndex = %d', radialX, tempOpt.radialIndex));
+    end
+end
+
+function [xData, yData, radialIdx, radialX] = calculateShearingRadialTraceData(Shearing, xGrid, tDiag, opt)
+    nTime = size(Shearing, 1);
+    nRadial = size(Shearing, 2);
+    assert(numel(tDiag) == nTime, 'tDiag 长度必须匹配 Shearing 时间维度。');
+    assert(numel(xGrid) == nRadial, 'xGrid 长度必须匹配 Shearing 径向维度。');
+
+    radialIdx = parseIndex(opt.radialIndex, nRadial, 'radialIndex');
+    radialX = xGrid(radialIdx);
+    xData = tDiag(:);
+    yData = Shearing(:, radialIdx);
+end
+
+function plotShearingMap(Shearing, xGrid, tDiag, opt)
+    plotData = calculateShearingMapData(Shearing, xGrid, tDiag);
+    drawFrequencyMap(plotData, opt);
+
+    fprintf('[plot] Shearing map: nTime=%d, gridNx=%d\n', size(Shearing, 1), size(Shearing, 2));
+end
+
+function plotData = calculateShearingMapData(Shearing, xGrid, tDiag)
+    nTime = size(Shearing, 1);
+    nRadial = size(Shearing, 2);
+    assert(numel(tDiag) == nTime, 'tDiag 长度必须匹配 Shearing 时间维度。');
+    assert(numel(xGrid) == nRadial, 'xGrid 长度必须匹配 Shearing 径向维度。');
+
+    plotData = frequencyMapPlotData(xGrid(:).', tDiag(:), Shearing, '$x$', '$t_a$', ...
+        '$\gamma_E\;[\mathrm{s}^{-1}]$', '$\mathrm{Hahm\mbox{-}Burrell\;shearing}$', ...
+        sprintf('nTime = %d, gridNx = %d', nTime, nRadial));
 end
 
 function plotZonalDrive(MaxwellDrive, ReynoldsDrive, ZonalDrive, rho, opt)

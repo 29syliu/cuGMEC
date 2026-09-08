@@ -142,6 +142,7 @@ int main(int argc, char* argv[]) {
                  .density = toBool<ifDiagDensity>,
                  .diffusivity = toBool<ifDiagDiffusivity>,
                  .ZFDrive = toBool<ifDiagZFDrive>,
+                 .shearing = toBool<ifDiagShearing>,
                  .checkNAN = toBool<ifCheckNAN>},
         .output = {.Phi = toBool<ifOutputPhi>,
                    .A = toBool<ifOutputA>,
@@ -237,7 +238,7 @@ int main(int argc, char* argv[]) {
     REF(Ion_values_in);   REF(Ion_values_out);
     REF(Beam_values_in);  REF(Beam_values_out);
 
-    REF(amplitude); REF(frequency); REF(modeReal); REF(modeImag); REF(Epara); REF(EparaES);
+    REF(amplitude); REF(frequency); REF(shearing); REF(modeReal); REF(modeImag); REF(Epara); REF(EparaES);
     REF(MaxwellDrive); REF(ReynoldsDrive); REF(dwdtTotal);
     REF(Maxwell); REF(Reynolds);
     REF(IonDensity);     REF(AlphaDensity);     REF(BeamDensity);
@@ -636,6 +637,23 @@ int main(int argc, char* argv[]) {
         if constexpr (std::is_same_v<ifDiagFrequency, trueType>) {
             forEachDev([&](int i) {
                 MHDDiagFrequency<<<1, gridNx, 0, 0>>>(Phi_midl[i], frequency[i] + diagIdx / diagSteps * gridNx);
+            });
+        }
+
+        if constexpr (std::is_same_v<ifDiagShearing, trueType>) {
+            static constexpr std::array<std::tuple<int, int, int>, 1> selectNM_Phi00 = {{{0, 0, 0}}};
+
+            forEachDev([&](int i) {
+                CUDACHECK(cudaMemcpyAsync(Phi_midr[i], Phi_midl[i], sizeof(mhdReal) * (devNy + 2 * gridGhost) * gridNxz,
+                                          cudaMemcpyDeviceToDevice, 0));
+            });
+
+            filterModeN.template operator()<trueType>(Phi_midr, 0, 0);
+            selectModeNM.template operator()<selectNM_Phi00>(Phi_midr);
+
+            forEachDev([&](int i) {
+                MHDDiagShearing<<<1, gridNx, 0, 0>>>(pic1d[i], pic2d[i], Phi_midr[i],
+                                                     shearing[i] + diagIdx / diagSteps * gridNx);
             });
         }
 
