@@ -175,6 +175,7 @@ using ifDiagEparallel = falseType;
 using ifDiagDensity = falseType;
 using ifDiagDiffusivity = falseType;
 using ifDiagZFDrive = falseType;
+using ifDiagShearing = falseType;
 using ifCheckNAN = falseType;
 
 using ifOutputPhi = falseType;
