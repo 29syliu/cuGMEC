@@ -19,7 +19,7 @@ ifOutputdPi, ifOutputdPa, ifOutputdPb
 
 可能包含：
 amplitude.bin, RealMode.bin, ImagMode.bin, frequency.bin, Epara.bin,
-EparaES.bin, shearing.bin, MaxwellDrive.bin, ReynoldsDrive.bin, ZonalDrive.bin,
+EparaES.bin, MaxwellDrive.bin, ReynoldsDrive.bin, ZonalDrive.bin, shearing.bin,
 Phi.bin, A.bin, dNe.bin, dTe.bin, dPi.bin, dPa.bin, dPb.bin,
 totalPhi.bin, totalA.bin, totaldNe.bin, totaldTe.bin,
 totaldPi.bin, totaldPa.bin, totaldPb.bin
@@ -63,10 +63,11 @@ plotPhi = [];
 if isfield(mhdInput, 'phi')
     plotPhi = mhdInput.phi;
 end
-mhdFieldGeom = mhdFieldPlotGeometry(mhdInput.q, mhdInput.theta_pest, mhdInput.rho, ...
+mhdFieldGeom = buildMHDFieldPlotGeometry(mhdInput.q, mhdInput.theta_pest, mhdInput.rho, ...
     mhdInput.qplot, mhdInput.rhoplot, mhdInput.Rplot, mhdInput.Zplot, ...
     meta.yGrid, meta.zGrid, meta.tubes, meta.gridGhost, meta.NFP, plotPhi);
 mhdData = readAllMHDDiagnostics(inputDir, meta);
+mhdDiagnosticContext = buildMHDDiagnosticContext(meta, mhdInput);
 
 mhdWorkspace = struct();
 mhdWorkspace.input = mhdInput;
@@ -83,11 +84,7 @@ mhdFieldOpt = struct( ...
     'modeN', meta.physicalNAll(1), ...
     'toroidalAngle', 0.0, ...
     'toroidalIndex', 1, ...
-    'colormapIndex', 1, ...
-    'bsplineOrder', 4, ...
-    'titleFontSize', 14, ...
-    'labelFontSize', 14, ...
-    'axisFontSize', 12);
+    'colormapIndex', 1);
 %{
 enabled      : 是否绘图。
 names         : 可选 "Phi", "A", "dNe", "dTe", "dPi", "dPa", "dPb"。
@@ -95,60 +92,38 @@ modeN         : 真实物理环向模数 n；[] 表示全部有效 n；示例 [6
 toroidalAngle : 托卡马克绘图所在环向角 phi。
 toroidalIndex : 仿星器绘图所在环向网格索引。
 colormapIndex : 色表序号，可选 1-5。
-bsplineOrder  : B 样条阶数。
-titleFontSize : 标题字号。
-labelFontSize : 坐标轴标签字号。
-axisFontSize  : 坐标轴字号。
 %}
-mhdWorkspace.field = runMHDFieldPlot(inputDir, meta, mhdFieldGeom, mhdFieldOpt);
-[tmpShifted, tmpAligned, hasFieldResult] = extractShiftedAligned(mhdWorkspace.field);
-if hasFieldResult
-    shifted = tmpShifted;
-    aligned = tmpAligned;
-end
+mhdWorkspace.field = runMHDFieldDiagnostic( ...
+    inputDir, meta, mhdInput, mhdFieldGeom, mhdFieldOpt, 'snapshot', 'surface');
+[shifted, aligned] = updateFieldAliases(mhdWorkspace.field, shifted, aligned);
 
-%% 可视化单时间MHD极向模数
+%% 可视化单时间 MHD 极向模数
 
 mhdPoloidalModeOpt = struct( ...
     'enabled', true, ...
     'names', "Phi", ...
-    'modeN', mhdFieldOpt.modeN, ...
-    'toroidalAngle', mhdFieldOpt.toroidalAngle, ...
-    'toroidalIndex', mhdFieldOpt.toroidalIndex, ...
+    'modeN', meta.physicalNAll(1), ...
     'mRange', [1, 20], ...
-    'plotThreshold', 1e-8, ...
-    'minFFT', 0, ...
+    'minFFT', 1e-8, ...
     'normalize', true, ...
-    'radialAxis', 'rho', ...
-    'bsplineOrder', mhdFieldOpt.bsplineOrder, ...
     'xLim', [0, 1], ...
     'xTicks', 0:0.2:1, ...
     'yLim', [0, 1], ...
-    'yTicks', 0:0.25:1, ...
-    'titleFontSize', 14, ...
-    'labelFontSize', 14, ...
-    'axisFontSize', 12);
+    'yTicks', 0:0.25:1);
 %{
 enabled       : 是否绘图。
 names         : 可选 "Phi", "A", "dNe", "dTe", "dPi", "dPa", "dPb"。
 modeN         : 真实物理环向模数 n；[] 表示全部有效 n；示例 [6 18 36]。
-toroidalAngle : 极向模数对所有环向位置取最大，此项不参与诊断。
-toroidalIndex : 极向模数对所有环向位置取最大，此项不参与诊断。
 mRange        : 绘制的极向模数 m 范围；示例 [1 20]。
-plotThreshold : 只绘制峰值超过全局峰值该比例的 m。
-minFFT        : 只绘制归一化峰值超过该值的 m。
+minFFT        : 只绘制峰值与全局峰值之比超过该值的 m。
 normalize     : 是否用所选 m 范围内的最大 FFT 幅值归一化。
-radialAxis    : 'rho' 表示横坐标为 sqrt(s)；'psi' 表示近似使用 rho^2。
-bsplineOrder  : B 样条阶数。
 xLim/xTicks   : 横坐标范围和刻度；[] 表示自动。
 yLim/yTicks   : 纵坐标范围和刻度；[] 表示自动。
-titleFontSize : 标题字号。
-labelFontSize : 坐标轴标签字号。
-axisFontSize  : 坐标轴字号。
 %}
-mhdWorkspace.poloidalMode = runMHDPoloidalModePlot(inputDir, meta, mhdInput, mhdFieldGeom, mhdPoloidalModeOpt);
+mhdWorkspace.poloidalMode = runMHDFieldDiagnostic( ...
+    inputDir, meta, mhdInput, mhdFieldGeom, mhdPoloidalModeOpt, 'snapshot', 'poloidal');
 
-%% 可视化 amplitude
+%% 可视化 MHD 幅值（amplitude）
 
 mhdAmplitudeOpt = struct( ...
     'enabled', meta.switch.ifDiagAmplitude, ...
@@ -159,10 +134,7 @@ mhdAmplitudeOpt = struct( ...
     'growthUnit', '1/wa', ...
     'yLim', [-10 0], ...
     'yTicks', -8:2:0, ...
-    'interactive', 2, ...
-    'titleFontSize', 16, ...
-    'labelFontSize', 14, ...
-    'axisFontSize', 12);
+    'interactive', 2);
 %{
 enabled       : 是否绘图。
 timeAxis      : 'ta', 'ms' 或 'steps'。
@@ -173,14 +145,10 @@ growthUnit    : '1/wa' 或 '1/s'。
 yLim          : [] 表示自动范围；示例 [-8 -2]。
 yTicks        : [] 表示自动刻度；示例 -8:1:-2。
 interactive   : 0 不交互；1 滑块释放后更新；2 拖动滑块时连续更新。
-titleFontSize : 标题字号。
-labelFontSize : 坐标轴标签字号。
-axisFontSize  : 坐标轴字号。
 %}
-mhdWorkspace.amplitude = runMHDAmplitudePlot(mhdData, meta, mhdInput, mhdAmplitudeOpt);
+mhdWorkspace.amplitude = runMHDAmplitudePlot(mhdData, mhdDiagnosticContext, mhdAmplitudeOpt);
 
-
-%% 可视化短时傅里叶频率
+%% 可视化 MHD 短时傅里叶频率
 
 mhdMultipleFrequencyOpt = struct( ...
     'enabled', meta.switch.ifDiagAmplitude, ...
@@ -193,10 +161,7 @@ mhdMultipleFrequencyOpt = struct( ...
     'frequencyRangeHz', [], ...
     'windowType', 'hann', ...
     'removeMean', true, ...
-    'interactive', 2, ...
-    'titleFontSize', 14, ...
-    'labelFontSize', 14, ...
-    'axisFontSize', 12);
+    'interactive', 2);
 %{
 enabled         : 是否绘图。
 timeAxis        : 'ta', 'ms' 或 'steps'。
@@ -209,14 +174,11 @@ frequencyRangeHz: 选峰频率范围，单位 Hz；示例 [-2e5 2e5]。
 windowType      : 'hann' 或 'rect'。
 removeMean      : 每个窗口内去除复信号均值。
 interactive     : 0 不交互；1 滑块释放后更新；2 拖动滑块时连续更新。
-titleFontSize   : 标题字号。
-labelFontSize   : 坐标轴标签字号。
-axisFontSize    : 坐标轴字号。
 %}
-mhdWorkspace.multipleFrequency = runMHDMultipleFrequencyPlot(mhdData, meta, mhdInput, mhdMultipleFrequencyOpt);
+mhdWorkspace.multipleFrequency = runMHDMultipleFrequencyPlot( ...
+    mhdData, mhdDiagnosticContext, mhdMultipleFrequencyOpt);
 
-
-%% 可视化相位频率
+%% 可视化 MHD 相位频率
 
 mhdPhaseFrequencyOpt = struct( ...
     'enabled', meta.switch.ifDiagAmplitude, ...
@@ -228,10 +190,7 @@ mhdPhaseFrequencyOpt = struct( ...
     'amplitudeFloor', 0, ...
     'yLim', [], ...
     'yTicks', [], ...
-    'interactive', 0, ...
-    'titleFontSize', 14, ...
-    'labelFontSize', 14, ...
-    'axisFontSize', 12);
+    'interactive', 0);
 %{
 enabled       : 是否绘图。
 timeAxis      : 'ta', 'ms' 或 'steps'。
@@ -243,13 +202,10 @@ amplitudeFloor: 信号幅度低于该值时对应频率置为 NaN。
 yLim          : [] 表示自动范围；示例 [0 2e5]。
 yTicks        : [] 表示自动刻度；示例 0:5e4:2e5。
 interactive   : 0 不交互；1 滑块释放后更新；2 拖动滑块时连续更新。
-titleFontSize : 标题字号。
-labelFontSize : 坐标轴标签字号。
-axisFontSize  : 坐标轴字号。
 %}
-mhdWorkspace.phaseFrequency = runMHDPhaseFrequencyPlot(mhdData, meta, mhdInput, mhdPhaseFrequencyOpt);
+mhdWorkspace.phaseFrequency = runMHDPhaseFrequencyPlot(mhdData, mhdDiagnosticContext, mhdPhaseFrequencyOpt);
 
-%% 可视化等高线频率诊断
+%% 可视化 MHD 等高线频率诊断
 
 mhdContourFrequencyOpt = struct( ...
     'enabled', meta.switch.ifDiagAmplitude, ...
@@ -259,10 +215,7 @@ mhdContourFrequencyOpt = struct( ...
     'contourLevels', linspace(0.2, 1, 10), ...
     'showContourLine', true, ...
     'yLim', [0 1], ...
-    'yTicks', 0:0.2:0.8, ...
-    'titleFontSize', 14, ...
-    'labelFontSize', 14, ...
-    'axisFontSize', 12);
+    'yTicks', 0:0.2:0.8);
 %{
 enabled       : 是否绘图。
 modeN         : 真实物理环向模数 n；一次绘制一个 n；示例 6。
@@ -272,97 +225,71 @@ contourLevels : 归一化 FFT 强度等值级别；示例 linspace(0.2, 1, 10)�
 showContourLine: 是否显示等高线边界；false 时只显示填色色块。
 yLim          : [] 表示自动范围；单位跟随 frequencyUnit；示例 [0 1]。
 yTicks        : [] 表示自动刻度；单位跟随 frequencyUnit；示例 0:0.2:0.8。
-titleFontSize : 标题字号。
-labelFontSize : 坐标轴标签字号。
-axisFontSize  : 坐标轴字号。
 %}
-mhdWorkspace.contourFrequency = runMHDContourFrequencyPlot(mhdData, meta, mhdInput, mhdContourFrequencyOpt);
+mhdWorkspace.contourFrequency = runMHDContourFrequencyPlot( ...
+    mhdData, mhdDiagnosticContext, mhdContourFrequencyOpt);
 
-%% 可视化单点 Phi 信号
+%% 可视化单点 MHD Phi 信号
 
 mhdSingleSignalOpt = struct( ...
     'enabled', meta.switch.ifDiagFrequency, ...
     'timeAxis', 'ta', ...
     'radialIndex', 128, ...
     'logFloor', realmin, ...
-    'interactive', 2, ...
-    'titleFontSize', 16, ...
-    'labelFontSize', 14, ...
-    'axisFontSize', 12);
+    'interactive', 2);
 %{
 enabled       : 是否绘图。
 timeAxis      : 'ta', 'ms' 或 'steps'。
 radialIndex   : 固定径向索引（1 到 gridNx）。
 logFloor      : 避免 log(0)。
 interactive   : 0 不交互；1 滑块释放后更新；2 拖动滑块时连续更新。
-titleFontSize : 标题字号。
-labelFontSize : 坐标轴标签字号。
-axisFontSize  : 坐标轴字号。
 %}
-mhdWorkspace.singleSignal = runMHDSingleSignalPlot(mhdData, meta, mhdInput, mhdSingleSignalOpt);
+mhdWorkspace.singleSignal = runMHDSingleSignalPlot(mhdData, mhdDiagnosticContext, mhdSingleSignalOpt);
 
-%% 可视化 Epara / EparaES
+%% 可视化 MHD Epara / EparaES
 
 mhdEparaOpt = struct( ...
     'enabled', meta.switch.ifDiagEparallel, ...
     'timeIndex', 12000, ...
-    'interactive', 2, ...
-    'titleFontSize', 16, ...
-    'labelFontSize', 14, ...
-    'axisFontSize', 12);
+    'interactive', 2);
 %{
 enabled       : 是否绘图。
 timeIndex     : 固定诊断时间索引（1 到 nDiagTime）。
 interactive   : 0 不交互；1 滑块释放后更新；2 拖动滑块时连续更新。
-titleFontSize : 标题字号。
-labelFontSize : 坐标轴标签字号。
-axisFontSize  : 坐标轴字号。
 %}
-mhdWorkspace.epara = runMHDEparaPlot(mhdData, mhdInput, mhdEparaOpt);
+mhdWorkspace.epara = runMHDEparaPlot(mhdData, mhdDiagnosticContext, mhdEparaOpt);
 
-%% 可视化 shearing
+%% 可视化 MHD 剪切率（shearing）
 
 mhdShearingOpt = struct( ...
     'enabled', meta.switch.ifDiagShearing, ...
     'plotType', 1, ...
     'timeIndex', 12000, ...
     'radialIndex', 90, ...
-    'interactive', 2, ...
-    'titleFontSize', 16, ...
-    'labelFontSize', 14, ...
-    'axisFontSize', 12);
+    'interactive', 2);
 %{
 enabled       : 是否绘图。
 plotType      : 1 固定 t 的 x 剖面；2 固定 x 的 t 剖面；3 x-t 二维图。
 timeIndex     : plotType = 1 时的固定诊断时间索引（1 到 nDiagTime）。
 radialIndex   : plotType = 2 时的固定径向索引（1 到 gridNx）。
 interactive   : 0 不交互；1 滑块释放后更新；2 拖动滑块时连续更新。
-titleFontSize : 标题字号。
-labelFontSize : 坐标轴标签字号。
-axisFontSize  : 坐标轴字号。
 %}
-mhdWorkspace.shearing = runMHDShearingPlot(mhdData, meta, mhdInput, mhdShearingOpt);
+mhdWorkspace.shearing = runMHDShearingPlot(mhdData, mhdDiagnosticContext, mhdShearingOpt);
 
-%% 可视化 MaxwellDrive / ReynoldsDrive / ZonalDrive
+%% 可视化 MHD MaxwellDrive / ReynoldsDrive / ZonalDrive
 
 mhdZonalDriveOpt = struct( ...
     'enabled', meta.switch.ifDiagZFDrive, ...
     'timeIndex', 15000, ...
-    'interactive', 2, ...
-    'titleFontSize', 16, ...
-    'labelFontSize', 14, ...
-    'axisFontSize', 12);
+    'interactive', 2);
 %{
 enabled       : 是否绘图。
 timeIndex     : 固定诊断时间索引（1 到 nDiagTime）。
 interactive   : 0 不交互；1 滑块释放后更新；2 拖动滑块时连续更新。
-titleFontSize : 标题字号。
-labelFontSize : 坐标轴标签字号。
-axisFontSize  : 坐标轴字号。
 %}
-mhdWorkspace.zonalDrive = runMHDZonalDrivePlot(mhdData, mhdInput, mhdZonalDriveOpt);
+mhdWorkspace.zonalDrive = runMHDZonalDrivePlot(mhdData, mhdDiagnosticContext, mhdZonalDriveOpt);
 
-%% 可视化 totalPhi / totalA / totaldNe / totaldTe / totaldPi / totaldPa / totaldPb
+%% 可视化单时间 total MHD 场量
 
 mhdTotalFieldOpt = struct( ...
     'enabled', true, ...
@@ -371,11 +298,7 @@ mhdTotalFieldOpt = struct( ...
     'modeN', meta.physicalNAll, ...
     'toroidalAngle', 0.0, ...
     'toroidalIndex', 1, ...
-    'colormapIndex', 3, ...
-    'bsplineOrder', 4, ...
-    'titleFontSize', 14, ...
-    'labelFontSize', 14, ...
-    'axisFontSize', 12);
+    'colormapIndex', 3);
 %{
 enabled      : 是否绘图。
 names         : 可选 "Phi", "A", "dNe", "dTe", "dPi", "dPa", "dPb"。
@@ -384,86 +307,58 @@ modeN         : 真实物理环向模数 n；[] 表示全部有效 n；示例 [6
 toroidalAngle : 托卡马克绘图所在环向角 phi。
 toroidalIndex : 仿星器绘图所在环向网格索引。
 colormapIndex : 色表序号，可选 1-5。
-bsplineOrder  : B 样条阶数。
-titleFontSize : 标题字号。
-labelFontSize : 坐标轴标签字号。
-axisFontSize  : 坐标轴字号。
 %}
-mhdWorkspace.totalField = runMHDTotalFieldPlot(mhdData.total, meta, mhdFieldGeom, mhdTotalFieldOpt);
-[tmpShifted, tmpAligned, hasTotalFieldResult] = extractShiftedAligned(mhdWorkspace.totalField);
-if hasTotalFieldResult
-    shifted = tmpShifted;
-    aligned = tmpAligned;
-end
-clear tmpShifted tmpAligned hasFieldResult hasTotalFieldResult
+mhdWorkspace.totalField = runMHDFieldDiagnostic( ...
+    mhdData.total, meta, mhdInput, mhdFieldGeom, mhdTotalFieldOpt, 'total', 'surface');
+[shifted, aligned] = updateFieldAliases(mhdWorkspace.totalField, shifted, aligned);
 
-%% 可视化单时间MHD极向模数
+%% 可视化单时间 total MHD 极向模数
 
 mhdTotalPoloidalModeOpt = struct( ...
     'enabled', true, ...
-    'names', mhdTotalFieldOpt.names, ...
+    'names', "Phi", ...
     'timeIndex', meta.nOutputTime, ...
-    'modeN', mhdTotalFieldOpt.modeN, ...
-    'toroidalAngle', mhdTotalFieldOpt.toroidalAngle, ...
-    'toroidalIndex', mhdTotalFieldOpt.toroidalIndex, ...
+    'modeN', meta.physicalNAll, ...
     'mRange', [1, 20], ...
-    'plotThreshold', 1e-8, ...
-    'minFFT', 0, ...
+    'minFFT', 1e-8, ...
     'normalize', true, ...
-    'radialAxis', 'rho', ...
-    'bsplineOrder', mhdTotalFieldOpt.bsplineOrder, ...
     'xLim', [0, 1], ...
     'xTicks', 0:0.2:1, ...
     'yLim', [0, 1], ...
-    'yTicks', 0:0.25:1, ...
-    'titleFontSize', 14, ...
-    'labelFontSize', 14, ...
-    'axisFontSize', 12);
+    'yTicks', 0:0.25:1);
 %{
 enabled       : 是否绘图。
 names         : 可选 "Phi", "A", "dNe", "dTe", "dPi", "dPa", "dPb"；对应 totalPhi 等 total 场。
 timeIndex     : total 场量输出时间索引（1 到 nOutputTime）。
 modeN         : 真实物理环向模数 n；[] 表示全部有效 n；示例 [6 18 36]。
-toroidalAngle : 极向模数对所有环向位置取最大，此项不参与诊断。
-toroidalIndex : 极向模数对所有环向位置取最大，此项不参与诊断。
 mRange        : 绘制的极向模数 m 范围；示例 [1 20]。
-plotThreshold : 只绘制峰值超过全局峰值该比例的 m。
-minFFT        : 只绘制归一化峰值超过该值的 m。
+minFFT        : 只绘制峰值与全局峰值之比超过该值的 m。
 normalize     : 是否用所选 m 范围内的最大 FFT 幅值归一化。
-radialAxis    : 'rho' 表示横坐标为 sqrt(s)，'psi' 表示近似使用 rho^2。
-bsplineOrder  : B 样条阶数。
 xLim/xTicks   : 横坐标范围和刻度；[] 表示自动。
 yLim/yTicks   : 纵坐标范围和刻度；[] 表示自动。
-titleFontSize : 标题字号。
-labelFontSize : 坐标轴标签字号。
-axisFontSize  : 坐标轴字号。
 %}
-mhdWorkspace.totalPoloidalMode = runMHDPoloidalModePlot(mhdData.total, meta, mhdInput, mhdFieldGeom, mhdTotalPoloidalModeOpt);
+mhdWorkspace.totalPoloidalMode = runMHDFieldDiagnostic( ...
+    mhdData.total, meta, mhdInput, mhdFieldGeom, mhdTotalPoloidalModeOpt, 'total', 'poloidal');
 
 %% 局部函数
 
 function [standardFile, plotFile, normalizationFile, equilibriumDim] = resolveMHDInputFiles(inputDir)
 
-    standard3DFile = fullfile(inputDir, 'standard3D.mat');
-    plot3DFile = fullfile(inputDir, 'plot3D.mat');
-    normalization3DFile = fullfile(inputDir, 'normalization3D.mat');
-
-    if isfile(standard3DFile) && isfile(plot3DFile) && isfile(normalization3DFile)
-        standardFile = standard3DFile;
-        plotFile = plot3DFile;
-        normalizationFile = normalization3DFile;
+    [standardFile, plotFile, normalizationFile] = buildMHDInputFileSet(inputDir, 3);
+    if isfile(standardFile) && isfile(plotFile) && isfile(normalizationFile)
         equilibriumDim = 3;
         return;
     end
 
-    standard2DFile = fullfile(inputDir, 'standard2D.mat');
-    plot2DFile = fullfile(inputDir, 'plot2D.mat');
-    normalization2DFile = fullfile(inputDir, 'normalization2D.mat');
-
-    standardFile = standard2DFile;
-    plotFile = plot2DFile;
-    normalizationFile = normalization2DFile;
+    [standardFile, plotFile, normalizationFile] = buildMHDInputFileSet(inputDir, 2);
     equilibriumDim = 2;
+end
+
+function [standardFile, plotFile, normalizationFile] = buildMHDInputFileSet(inputDir, equilibriumDim)
+    dimensionSuffix = sprintf('%dD.mat', equilibriumDim);
+    standardFile = fullfile(inputDir, ['standard' dimensionSuffix]);
+    plotFile = fullfile(inputDir, ['plot' dimensionSuffix]);
+    normalizationFile = fullfile(inputDir, ['normalization' dimensionSuffix]);
 end
 
 function NFP = readNormalizationNFP(mhdInput)
@@ -474,31 +369,14 @@ function NFP = readNormalizationNFP(mhdInput)
         'NFP 必须为正整数。');
 end
 
-function [shifted, aligned, hasResult] = extractShiftedAligned(workspace)
+function [shifted, aligned] = updateFieldAliases(workspace, shifted, aligned)
 
-    shifted = [];
-    aligned = [];
-    hasResult = false;
-
-    if ~isstruct(workspace)
-        return;
-    end
-
-    if isfield(workspace, 'shifted') && isfield(workspace, 'aligned')
-        shifted = workspace.shifted;
-        aligned = workspace.aligned;
-        hasResult = true;
-        return;
-    end
-
-    fields = fieldnames(workspace);
-    for iField = 1:numel(fields)
-        fieldName = fields{iField};
-        fieldValue = workspace.(fieldName);
-        if isstruct(fieldValue) && isfield(fieldValue, 'shifted') && isfield(fieldValue, 'aligned')
-            shifted = fieldValue.shifted;
-            aligned = fieldValue.aligned;
-            hasResult = true;
+    fieldNames = fieldnames(workspace);
+    for iField = 1:numel(fieldNames)
+        fieldResult = workspace.(fieldNames{iField});
+        if isstruct(fieldResult) && isfield(fieldResult, 'shifted') && isfield(fieldResult, 'aligned')
+            shifted = fieldResult.shifted;
+            aligned = fieldResult.aligned;
             return;
         end
     end
@@ -529,16 +407,11 @@ end
 
 function meta = readMHDMetadata(paramText)
 
-    meta.gridNx = readIntParam(paramText, 'gridNx');
-    meta.gridNy = readIntParam(paramText, 'gridNy');
-    meta.gridNz = readIntParam(paramText, 'gridNz');
-    meta.leftN = readIntParam(paramText, 'leftN');
-    meta.rightN = readIntParam(paramText, 'rightN');
-    meta.tubes = readIntParam(paramText, 'tubes');
+    integerNames = {'gridNx', 'gridNy', 'gridNz', 'leftN', 'rightN', 'tubes'};
+    meta = readNamedMHDParameters(struct(), paramText, integerNames, @readIntParam);
     meta.gridGhost = 2;
-    meta.totalSteps = readIntParam(paramText, 'totalSteps');
-    meta.diagSteps = readIntParam(paramText, 'diagSteps');
-    meta.outputSteps = readIntParam(paramText, 'outputSteps');
+    stepNames = {'totalSteps', 'diagSteps', 'outputSteps'};
+    meta = readNamedMHDParameters(meta, paramText, stepNames, @readIntParam);
     meta.dt = readFloatParam(paramText, 'dt');
     meta.mhdPrecision = readPrecisionParam(paramText);
 
@@ -549,18 +422,10 @@ function meta = readMHDMetadata(paramText)
     assert(meta.totalSteps >= 0 && meta.diagSteps > 0 && meta.outputSteps > 0, ...
         'totalSteps/diagSteps/outputSteps 取值不合法。');
 
-    meta.switch.ifDiagAmplitude = readSwitchParam(paramText, 'ifDiagAmplitude');
-    meta.switch.ifDiagFrequency = readSwitchParam(paramText, 'ifDiagFrequency');
-    meta.switch.ifDiagEparallel = readSwitchParam(paramText, 'ifDiagEparallel');
-    meta.switch.ifDiagZFDrive = readSwitchParam(paramText, 'ifDiagZFDrive');
-    meta.switch.ifDiagShearing = readSwitchParam(paramText, 'ifDiagShearing');
-    meta.switch.ifOutputPhi = readSwitchParam(paramText, 'ifOutputPhi');
-    meta.switch.ifOutputA = readSwitchParam(paramText, 'ifOutputA');
-    meta.switch.ifOutputdNe = readSwitchParam(paramText, 'ifOutputdNe');
-    meta.switch.ifOutputdTe = readSwitchParam(paramText, 'ifOutputdTe');
-    meta.switch.ifOutputdPi = readSwitchParam(paramText, 'ifOutputdPi');
-    meta.switch.ifOutputdPa = readSwitchParam(paramText, 'ifOutputdPa');
-    meta.switch.ifOutputdPb = readSwitchParam(paramText, 'ifOutputdPb');
+    switchNames = { ...
+        'ifDiagAmplitude', 'ifDiagFrequency', 'ifDiagEparallel', 'ifDiagZFDrive', 'ifDiagShearing', ...
+        'ifOutputPhi', 'ifOutputA', 'ifOutputdNe', 'ifOutputdTe', 'ifOutputdPi', 'ifOutputdPa', 'ifOutputdPb'};
+    meta.switch = readNamedMHDParameters(struct(), paramText, switchNames, @readSwitchParam);
 
     meta.nDiagTime = floor(meta.totalSteps / meta.diagSteps) + 1;
     meta.nOutputTime = floor(meta.totalSteps / meta.outputSteps) + 1;
@@ -574,20 +439,14 @@ function meta = readMHDMetadata(paramText)
     meta.zGrid = ((0:meta.gridNz - 1) + 0.5) / meta.gridNz * 2 * pi / meta.tubes - pi / meta.tubes;
 end
 
-function data = readAllMHDDiagnostics(inputDir, meta)
+function values = readNamedMHDParameters(values, paramText, names, readerFcn)
+    for iName = 1:numel(names)
+        name = names{iName};
+        values.(name) = readerFcn(paramText, name);
+    end
+end
 
-    data = struct( ...
-        'amplitude', [], ...
-        'RealMode', [], ...
-        'ImagMode', [], ...
-        'frequency', [], ...
-        'Epara', [], ...
-        'EparaES', [], ...
-        'Shearing', [], ...
-        'MaxwellDrive', [], ...
-        'ReynoldsDrive', [], ...
-        'ZonalDrive', [], ...
-        'total', struct());
+function data = readAllMHDDiagnostics(inputDir, meta)
 
     diagnosticSpecs = { ...
         'amplitude', 'ifDiagAmplitude', 'amplitude.bin', 'mode'; ...
@@ -599,16 +458,38 @@ function data = readAllMHDDiagnostics(inputDir, meta)
         'Shearing', 'ifDiagShearing', 'shearing.bin', 'radial'; ...
         'MaxwellDrive', 'ifDiagZFDrive', 'MaxwellDrive.bin', 'radial'; ...
         'ReynoldsDrive', 'ifDiagZFDrive', 'ReynoldsDrive.bin', 'radial'; ...
-        'ZonalDrive', 'ifDiagZFDrive', 'ZonalDrive.bin', 'radial'};
+        'ZonalDrive', 'ifDiagZFDrive', 'ZonalDrive.bin', 'radial'; ...
+        'Phi', 'ifOutputPhi', 'totalPhi.bin', 'output'; ...
+        'A', 'ifOutputA', 'totalA.bin', 'output'; ...
+        'dNe', 'ifOutputdNe', 'totaldNe.bin', 'output'; ...
+        'dTe', 'ifOutputdTe', 'totaldTe.bin', 'output'; ...
+        'dPi', 'ifOutputdPi', 'totaldPi.bin', 'output'; ...
+        'dPa', 'ifOutputdPa', 'totaldPa.bin', 'output'; ...
+        'dPb', 'ifOutputdPb', 'totaldPb.bin', 'output'};
+
+    ordinaryNames = diagnosticSpecs(1:10, 1);
+    data = cell2struct(repmat({[]}, size(ordinaryNames)), ordinaryNames, 1);
+    data.total = struct();
+    readerFcns.mode = @(filePath) readModeDiagnosticAsTXN( ...
+        filePath, meta.mhdPrecision, meta.nDiagTime, meta.gridNx, meta.nMode);
+    readerFcns.radial = @(filePath) readRadialDiagnosticAsTX( ...
+        filePath, meta.mhdPrecision, meta.nDiagTime, meta.gridNx);
+    readerFcns.output = @(filePath) readOutputAsTYXZ( ...
+        filePath, meta.mhdPrecision, meta.nOutputTime, meta.gridNy, meta.gridNx, meta.gridNz);
 
     for iSpec = 1:size(diagnosticSpecs, 1)
         fieldName = diagnosticSpecs{iSpec, 1};
         switchName = diagnosticSpecs{iSpec, 2};
         fileName = diagnosticSpecs{iSpec, 3};
         dataKind = diagnosticSpecs{iSpec, 4};
+        isOutput = strcmp(dataKind, 'output');
+        logName = fieldName;
+        if isOutput
+            logName = ['total' fieldName];
+        end
 
         if ~meta.switch.(switchName)
-            logSkipped(fieldName, ['开关 ' switchName ' 为 false']);
+            logSkipped(logName, ['开关 ' switchName ' 为 false']);
             continue;
         end
 
@@ -618,50 +499,21 @@ function data = readAllMHDDiagnostics(inputDir, meta)
             continue;
         end
 
-        switch dataKind
-            case 'mode'
-                data.(fieldName) = readModeDiagnosticAsTXN(filePath, ...
-                    meta.mhdPrecision, meta.nDiagTime, meta.gridNx, meta.nMode);
-            case 'radial'
-                data.(fieldName) = readRadialDiagnosticAsTX(filePath, ...
-                    meta.mhdPrecision, meta.nDiagTime, meta.gridNx);
-            otherwise
-                error('未知 MHD 诊断类型：%s。', dataKind);
-        end
-        logLoaded(fieldName, data.(fieldName));
-    end
+        readerFcn = readerFcns.(dataKind);
+        loadedData = readerFcn(filePath);
 
-    totalSpecs = { ...
-        'Phi', 'ifOutputPhi', 'totalPhi.bin'; ...
-        'A', 'ifOutputA', 'totalA.bin'; ...
-        'dNe', 'ifOutputdNe', 'totaldNe.bin'; ...
-        'dTe', 'ifOutputdTe', 'totaldTe.bin'; ...
-        'dPi', 'ifOutputdPi', 'totaldPi.bin'; ...
-        'dPa', 'ifOutputdPa', 'totaldPa.bin'; ...
-        'dPb', 'ifOutputdPb', 'totaldPb.bin'};
-    for iSpec = 1:size(totalSpecs, 1)
-        fieldName = totalSpecs{iSpec, 1};
-        switchName = totalSpecs{iSpec, 2};
-        fileName = totalSpecs{iSpec, 3};
-        if ~meta.switch.(switchName)
-            logSkipped(['total' fieldName], ['开关 ' switchName ' 为 false']);
-            continue;
+        if isOutput
+            data.total.(fieldName) = loadedData;
+        else
+            data.(fieldName) = loadedData;
         end
-
-        filePath = fullfile(inputDir, fileName);
-        if ~isfile(filePath)
-            logSkipped(fileName, '文件不存在');
-            continue;
-        end
-
-        data.total.(fieldName) = readOutputAsTNYXZ(filePath, ...
-            meta.mhdPrecision, meta.nOutputTime, meta.gridNy, meta.gridNx, meta.gridNz);
-        logLoaded(['total' fieldName], data.total.(fieldName));
+        logLoaded(logName, loadedData);
     end
 end
 
 function runInteractivePlot(interactiveMode, staticPlotFcn, interactivePlotFcn)
 
+    interactiveMode = requireIntegerInRange(interactiveMode, 0, 2, 'interactive');
     switch interactiveMode
         case 0
             staticPlotFcn();
@@ -671,86 +523,140 @@ function runInteractivePlot(interactiveMode, staticPlotFcn, interactivePlotFcn)
             else
                 interactivePlotFcn(interactiveMode == 2);
             end
-        otherwise
-            error('interactive 必须为 0、1 或 2。');
     end
 end
 
-function workspace = runMHDFieldPlot(inputDir, meta, mhdFieldGeom, opt)
+function [workspace, ready] = beginMHDDiagnostic(opt, data, requiredFields, plotName, missingReason)
 
     workspace = struct('options', opt);
-    if ~opt.enabled
-        logSkipped('MHD field plot', '绘图开关为 false');
+    ready = false;
+    if ~requireLogicalScalar(opt.enabled, 'enabled')
+        logSkipped(plotName, '绘图开关为 false');
         return;
     end
-    if ~hasBSpline()
-        logSkipped('MHD field plot', '缺少 bspline');
+    if ~hasMHDDataFields(data, requiredFields)
+        logSkipped(plotName, missingReason);
+        return;
+    end
+    ready = true;
+end
+
+function value = getOptionValue(opt, fieldName, defaultValue)
+
+    value = defaultValue;
+    if isfield(opt, fieldName) && ~isempty(opt.(fieldName))
+        value = opt.(fieldName);
+    end
+end
+
+function value = requireLogicalScalar(value, label)
+
+    isLogicalLike = (islogical(value) || isnumeric(value)) && isreal(value) && isscalar(value);
+    assert(isLogicalLike && isfinite(double(value)) && (double(value) == 0 || double(value) == 1), ...
+        '%s 必须是逻辑标量 true/false（或 0/1）。', label);
+    value = logical(value);
+end
+
+function value = requireFiniteScalarInRange(value, minValue, maxValue, label)
+
+    assert(isnumeric(value) && isreal(value) && isscalar(value) && isfinite(value), ...
+        '%s 必须是有限数值标量。', label);
+    value = double(value);
+    assert(value >= minValue && value <= maxValue, ...
+        '%s 必须位于 [%g, %g]。', label, minValue, maxValue);
+end
+
+function value = requireIntegerInRange(value, minValue, maxValue, label)
+
+    value = requireFiniteScalarInRange(value, minValue, maxValue, label);
+    assert(value == floor(value), '%s 必须是整数。', label);
+end
+
+function workspace = runMHDFieldDiagnostic( ...
+    inputSource, meta, mhdInput, mhdFieldGeom, opt, sourceKind, diagnosticKind)
+
+    workspace = struct('options', opt);
+    switch sourceKind
+        case 'snapshot'
+            useTotalField = false;
+        case 'total'
+            useTotalField = true;
+        otherwise
+            error('未知 MHD 场量来源：%s。', sourceKind);
+    end
+    switch diagnosticKind
+        case 'surface'
+            isSurface = true;
+        case 'poloidal'
+            isSurface = false;
+        otherwise
+            error('未知 MHD 场量诊断类型：%s。', diagnosticKind);
+    end
+    if isSurface && useTotalField
+        plotName = 'total field plot';
+        modeContext = 'total 场量';
+    elseif isSurface
+        plotName = 'MHD field plot';
+        modeContext = 'MHD 场量';
+    else
+        plotName = 'MHD poloidal mode plot';
+        modeContext = 'MHD 极向模数';
+    end
+    if ~requireLogicalScalar(opt.enabled, 'enabled')
+        logSkipped(plotName, '绘图开关为 false');
+        return;
+    end
+    if isSurface && ~hasBSpline()
+        logSkipped(plotName, '缺少 bspline');
         return;
     end
 
-    fieldNames = string(opt.names);
+    fieldSource = struct();
+    fieldSource.kind = sourceKind;
+    fieldSource.input = inputSource;
+    fieldSource.meta = meta;
+    fieldSource.options = opt;
+    fieldNames = parseMHDFieldNames(opt.names);
     for iField = 1:numel(fieldNames)
-        fieldName = fieldNames(iField);
-        fieldNameText = char(fieldName);
-        fieldFile = fullfile(inputDir, [fieldNameText '.bin']);
-        if ~isfile(fieldFile)
-            logSkipped(fieldNameText, '文件不存在');
+        [fieldZXY, sourceInfo, ready] = readMHDFieldSource(fieldSource, fieldNames(iField));
+        if ~ready
             continue;
         end
 
-        fieldZYX = readMHDFieldAsZYX(inputDir, fieldName, meta.mhdPrecision, meta.gridNy, meta.gridNx, meta.gridNz);
-        fieldNYXZ = mhdFieldZYXToNYXZ(fieldZYX);
-        logLoaded(fieldNameText, fieldNYXZ);
-        [fieldModeIndex, fieldPhysicalN] = parseModeN(opt.modeN, meta.modeIndexAll, meta.physicalNAll, 'MHD 场量');
-        fieldZYX = filterMHDToroidalModes(fieldZYX, meta.modeIndexAll, fieldModeIndex);
-        [shifted, aligned] = plotMHDFieldOnPoloidalPlane(fieldZYX, fieldName, mhdFieldGeom, opt, fieldPhysicalN);
-
-        workspace.(fieldNameText) = struct( ...
-            'fieldNYXZ', fieldNYXZ, ...
-            'shifted', shifted, ...
-            'aligned', aligned, ...
-            'physicalN', fieldPhysicalN);
-    end
-end
-
-function workspace = runMHDPoloidalModePlot(inputSource, meta, mhdInput, mhdFieldGeom, opt)
-
-    workspace = struct('options', opt);
-    if ~opt.enabled
-        logSkipped('MHD poloidal mode plot', '绘图开关为 false');
-        return;
-    end
-    useTotalField = isstruct(inputSource) && isfield(opt, 'timeIndex') && ~isempty(opt.timeIndex);
-    fieldNames = string(opt.names);
-    for iField = 1:numel(fieldNames)
-        fieldName = fieldNames(iField);
-        fieldNameText = char(fieldName);
-        if useTotalField
-            if ~isfield(inputSource, fieldNameText) || isempty(inputSource.(fieldNameText))
-                logSkipped(['total' fieldNameText], '未读取该场量');
-                continue;
-            end
-            totalData = inputSource.(fieldNameText);
-            timeIdx = parseTimeIndex(opt.timeIndex, size(totalData, 1));
-            fieldZYX = totalMHDFieldTimeSliceAsZYX(totalData, timeIdx);
-            fieldNameTextForPlot = ['total' fieldNameText];
-        else
-            fieldFile = fullfile(inputSource, [fieldNameText '.bin']);
-            if ~isfile(fieldFile)
-                logSkipped(fieldNameText, '文件不存在');
-                continue;
-            end
-
-            fieldZYX = readMHDFieldAsZYX(inputSource, fieldName, meta.mhdPrecision, meta.gridNy, meta.gridNx, meta.gridNz);
-            fieldNameTextForPlot = fieldNameText;
+        if isSurface && ~useTotalField
+            fieldYXZ = mhdFieldZXYToYXZ(fieldZXY);
+            logLoaded(sourceInfo.fieldName, fieldYXZ);
         end
-        [fieldModeIndex, fieldPhysicalN] = parseModeN(opt.modeN, meta.modeIndexAll, meta.physicalNAll, 'MHD 极向模数');
-        fieldZYX = filterMHDToroidalModes(fieldZYX, meta.modeIndexAll, fieldModeIndex);
+        [fieldModeIndex, fieldPhysicalN] = parseModeN( ...
+            opt.modeN, meta.modeIndexAll, meta.physicalNAll, modeContext);
+        fieldZXY = filterMHDToroidalModes(fieldZXY, fieldModeIndex);
+
+        if isSurface
+            plotContext = '';
+            if useTotalField
+                plotContext = sprintf('timeIndex=%d, t_a=%.6g', ...
+                    sourceInfo.timeIndex, meta.tOutput(sourceInfo.timeIndex));
+            end
+            [shifted, aligned] = plotMHDFieldOnPoloidalPlane(fieldZXY, sourceInfo.plotName, ...
+                mhdFieldGeom, opt, fieldPhysicalN, plotContext);
+            fieldResult = struct();
+            if useTotalField
+                fieldResult.timeIndex = sourceInfo.timeIndex;
+            else
+                % 保留历史 workspace 字段名；其中数组的实际维序为 YXZ。
+                fieldResult.fieldNYXZ = fieldYXZ;
+            end
+            fieldResult.shifted = shifted;
+            fieldResult.aligned = aligned;
+            fieldResult.physicalN = fieldPhysicalN;
+            workspace.(sourceInfo.fieldName) = fieldResult;
+            continue;
+        end
 
         [plotField, fftField, xVec, xLabelText, selectedM, yData, rawAmplitude] = ...
-            calculateMHDPoloidalModeFFT(fieldZYX, mhdInput, mhdFieldGeom, opt);
+            calculateMHDPoloidalModeFFT(fieldZXY, mhdInput, mhdFieldGeom, opt);
         if isempty(selectedM)
-            logSkipped([fieldNameTextForPlot ' poloidal mode plot'], '没有可绘制的极向模数');
+            logSkipped([sourceInfo.plotName ' poloidal mode plot'], '没有可绘制的极向模数');
             continue;
         end
 
@@ -759,22 +665,20 @@ function workspace = runMHDPoloidalModePlot(inputSource, meta, mhdInput, mhdFiel
         else
             yLabelText = '$|\delta\phi_m|$';
         end
-        titleText = sprintf('%s poloidal FFT', fieldNameTextForPlot);
-        legendText = compose('$m=%d$', selectedM);
         if useTotalField
             statusText = sprintf('%s poloidal FFT: timeIndex=%d, t_a=%.6g, n=%s, m=%s', ...
-                fieldNameTextForPlot, timeIdx, meta.tOutput(timeIdx), ...
+                sourceInfo.plotName, sourceInfo.timeIndex, meta.tOutput(sourceInfo.timeIndex), ...
                 formatNumberList(fieldPhysicalN), formatNumberList(selectedM));
         else
             statusText = sprintf('%s poloidal FFT: n=%s, m=%s', ...
-                fieldNameTextForPlot, formatNumberList(fieldPhysicalN), formatNumberList(selectedM));
+                sourceInfo.plotName, formatNumberList(fieldPhysicalN), formatNumberList(selectedM));
         end
-
-        plotData = linePlotData(xVec, yData, xLabelText, yLabelText, titleText, legendText, statusText);
-        drawLinePlot(plotData, opt);
+        plotData = buildLinePlotData(xVec, yData, xLabelText, yLabelText, ...
+            sprintf('%s poloidal FFT', sourceInfo.plotName), compose('$m=%d$', selectedM), statusText);
+        drawPlot(plotData, opt, @renderLinePlot);
         fprintf('[plot] %s\n', statusText);
 
-        workspace.(fieldNameText) = struct( ...
+        workspace.(sourceInfo.fieldName) = struct( ...
             'poloidalPlane', plotField, ...
             'fft', fftField, ...
             'rawAmplitude', rawAmplitude, ...
@@ -783,15 +687,58 @@ function workspace = runMHDPoloidalModePlot(inputSource, meta, mhdInput, mhdFiel
             'm', selectedM, ...
             'physicalN', fieldPhysicalN);
         if useTotalField
-            workspace.(fieldNameText).timeIndex = timeIdx;
+            workspace.(sourceInfo.fieldName).timeIndex = sourceInfo.timeIndex;
         end
     end
 end
 
-function [plotField, fftField, xVec, xLabelText, selectedM, yData, rawAmplitude] = ...
-    calculateMHDPoloidalModeFFT(fieldZYX, mhdInput, geom, opt)
+function [fieldZXY, sourceInfo, ready] = readMHDFieldSource(fieldSource, fieldName)
 
-    pestRefined = prepareMHDPESTField(fieldZYX, geom, opt, geom.nPlotTheta);
+    fieldNameText = char(fieldName);
+    fieldZXY = [];
+    sourceInfo = struct();
+    sourceInfo.fieldName = fieldNameText;
+    sourceInfo.plotName = fieldNameText;
+    sourceInfo.timeIndex = [];
+    ready = false;
+    switch fieldSource.kind
+        case 'total'
+            sourceInfo.plotName = ['total' fieldNameText];
+            if ~isfield(fieldSource.input, fieldNameText) || isempty(fieldSource.input.(fieldNameText))
+                logSkipped(sourceInfo.plotName, '未读取该场量');
+                return;
+            end
+            totalData = fieldSource.input.(fieldNameText);
+            sourceInfo.timeIndex = parseTimeIndex(fieldSource.options.timeIndex, size(totalData, 1));
+            fieldZXY = totalMHDFieldTimeSliceAsZXY(totalData, sourceInfo.timeIndex);
+        case 'snapshot'
+            fieldFile = fullfile(fieldSource.input, [fieldNameText '.bin']);
+            if ~isfile(fieldFile)
+                logSkipped(fieldNameText, '文件不存在');
+                return;
+            end
+            fieldZXY = readMHDFieldAsZXY(fieldSource.input, fieldName, fieldSource.meta.mhdPrecision, ...
+                fieldSource.meta.gridNy, fieldSource.meta.gridNx, fieldSource.meta.gridNz);
+        otherwise
+            error('未知 MHD 场量来源：%s。', fieldSource.kind);
+    end
+    ready = true;
+end
+
+function fieldNames = parseMHDFieldNames(names)
+
+    allowedNames = ["Phi", "A", "dNe", "dTe", "dPi", "dPa", "dPb"];
+    fieldNames = string(names);
+    assert(~isempty(fieldNames) && isvector(fieldNames) && all(ismember(fieldNames(:), allowedNames)), ...
+        'names 必须至少包含一个支持的场量：Phi、A、dNe、dTe、dPi、dPa 或 dPb。');
+    fieldNames = fieldNames(:).';
+end
+
+function [plotField, fftField, xVec, xLabelText, selectedM, yData, rawAmplitude] = ...
+    calculateMHDPoloidalModeFFT(fieldZXY, mhdInput, geom, opt)
+
+    validatePoloidalModeOptions(opt);
+    pestRefined = prepareMHDPESTField(fieldZXY, geom, opt, geom.nPlotTheta);
 
     plotField = squeeze(pestRefined(1, :, :));
     fftField = fft(pestRefined, [], 3);
@@ -822,27 +769,33 @@ function [plotField, fftField, xVec, xLabelText, selectedM, yData, rawAmplitude]
         yData = rawAmplitude;
     end
 
-    [xVec, xLabelText] = poloidalModeRadialAxis(mhdInput, geom, opt, size(amplitude, 1));
+    xVec = radialVectorWithLength(mhdInput, geom, size(amplitude, 1));
+    xLabelText = '$\sqrt{s}$';
 end
 
-function [pestRefined, alignedField, refinedYGrid] = prepareMHDPESTField(fieldZYX, geom, opt, targetThetaCount)
+function validatePoloidalModeOptions(opt)
 
-    if nargin < 4
-        targetThetaCount = [];
-    end
+    mRange = opt.mRange;
+    isValidMRange = isnumeric(mRange) && isreal(mRange) && numel(mRange) == 2 && ...
+        all(isfinite(mRange(:))) && all(mRange(:) == floor(mRange(:))) && all(mRange(:) >= 0);
+    assert(isValidMRange, 'mRange 必须包含两个有限非负整数。');
+    requireFiniteScalarInRange(opt.minFFT, 0, 1, 'minFFT');
+    requireLogicalScalar(getOptionValue(opt, 'normalize', true), 'normalize');
+end
 
-    alignedField = undoMHDFieldAlignedShift(fieldZYX, geom, opt);
-    alignedGhost = buildFieldAlignedGhost(alignedField, geom, opt);
+function [pestRefined, alignedField, refinedYGrid] = prepareMHDPESTField(fieldZXY, geom, opt, targetThetaCount)
+
+    alignedField = undoMHDFieldAlignedShift(fieldZXY, geom);
+    alignedGhost = buildFieldAlignedGhost(alignedField, geom);
     [alignedRefined, refinedYGrid, refinedIndex] = refineFieldAlignedY(alignedGhost, geom, opt, targetThetaCount);
-    pestRefined = shiftAlignedToRefinedPest(alignedRefined, refinedIndex, geom, opt);
+    pestRefined = shiftAlignedToRefinedPest(alignedRefined, refinedIndex, geom);
 end
 
-function alignedGhost = buildFieldAlignedGhost(alignedField, geom, opt)
+function alignedGhost = buildFieldAlignedGhost(alignedField, geom)
 
     [nZ, nX, nY] = size(alignedField);
     gridGhost = geom.gridGhost;
     assert(nY > gridGhost, 'gridNy 必须大于 gridGhost。');
-    assert(isequal(size(geom.qtheta), [nX, nY]), 'qtheta 尺寸必须匹配场量 x/y 维度。');
 
     alignedGhost = zeros(nZ, nX, nY + 2 * gridGhost);
     alignedGhost(:, :, gridGhost + 1:gridGhost + nY) = alignedField;
@@ -853,9 +806,9 @@ function alignedGhost = buildFieldAlignedGhost(alignedField, geom, opt)
             leftSource = nY - gridGhost + iGhost;
             rightSource = iGhost;
             alignedGhost(:, iX, iGhost) = shiftMHDFieldZ(alignedField(:, iX, leftSource), ...
-                -deltaQtheta(iX), geom, opt);
+                -deltaQtheta(iX), geom);
             alignedGhost(:, iX, gridGhost + nY + iGhost) = shiftMHDFieldZ(alignedField(:, iX, rightSource), ...
-                deltaQtheta(iX), geom, opt);
+                deltaQtheta(iX), geom);
         end
     end
 end
@@ -865,9 +818,6 @@ function [alignedRefined, refinedYGrid, refinedIndex] = refineFieldAlignedY(alig
     [nZ, nX, ~] = size(alignedGhost);
     nY = numel(geom.yGrid);
     gridGhost = geom.gridGhost;
-    if nargin < 4
-        targetThetaCount = [];
-    end
     refinedTimes = poloidalFFTRefinedTimes(opt, nY, targetThetaCount);
     refinedNy = nY * refinedTimes;
     dtheta = 2.0 * pi / nY;
@@ -897,7 +847,7 @@ function refinedTimes = poloidalFFTRefinedTimes(opt, gridNy, targetThetaCount)
     end
 
     minRefinedNy = 16 * maxM;
-    if nargin >= 3 && ~isempty(targetThetaCount)
+    if ~isempty(targetThetaCount)
         minRefinedNy = max(minRefinedNy, double(targetThetaCount));
     end
 
@@ -906,10 +856,9 @@ function refinedTimes = poloidalFFTRefinedTimes(opt, gridNy, targetThetaCount)
     end
 end
 
-function pestRefined = shiftAlignedToRefinedPest(alignedRefined, refinedIndex, geom, opt)
+function pestRefined = shiftAlignedToRefinedPest(alignedRefined, refinedIndex, geom)
 
     [nZ, nX, refinedNy] = size(alignedRefined);
-    assert(numel(geom.zGrid) == nZ, 'zGrid 长度必须匹配场量 z 维度。');
 
     qtheta0 = geom.qtheta(:, 1);
     dqtheta = geom.qtheta(:, 2) - geom.qtheta(:, 1);
@@ -918,12 +867,12 @@ function pestRefined = shiftAlignedToRefinedPest(alignedRefined, refinedIndex, g
         qthetaRefined = qtheta0(iX) + refinedIndex * dqtheta(iX);
         for iY = 1:refinedNy
             pestRefined(:, iX, iY) = shiftMHDFieldZ(alignedRefined(:, iX, iY), ...
-                -qthetaRefined(iY), geom, opt);
+                -qthetaRefined(iY), geom);
         end
     end
 end
 
-function fieldShifted = shiftMHDFieldZ(fieldZ, shiftZ, geom, ~)
+function fieldShifted = shiftMHDFieldZ(fieldZ, shiftZ, geom)
 
     nZ = numel(geom.zGrid);
     gridDz = 2.0 * pi / geom.tubes / nZ;
@@ -951,11 +900,7 @@ end
 function candidateM = poloidalModeCandidates(opt, nTheta)
 
     maxM = max(0, floor(nTheta / 2));
-    if isfield(opt, 'mRange') && numel(opt.mRange) >= 2
-        mRange = sort(round(double(opt.mRange(1:2))));
-    else
-        mRange = [0, maxM];
-    end
+    mRange = sort(double(opt.mRange(:)'));
     mRange(1) = max(0, mRange(1));
     mRange(2) = min(maxM, mRange(2));
 
@@ -982,17 +927,7 @@ function selectedM = selectPoloidalModeNumbers(amplitude, candidateM, opt)
         return;
     end
 
-    plotThreshold = 0;
-    if isfield(opt, 'plotThreshold') && ~isempty(opt.plotThreshold)
-        plotThreshold = opt.plotThreshold;
-    end
-    minFFT = 0;
-    if isfield(opt, 'minFFT') && ~isempty(opt.minFFT)
-        minFFT = opt.minFFT;
-    end
-
-    selectedMask = radialMax > globalMax * plotThreshold;
-    selectedMask = selectedMask & (radialMax ./ globalMax > minFFT);
+    selectedMask = radialMax > globalMax * opt.minFFT;
     if ~any(selectedMask)
         [~, maxIndex] = max(radialMax);
         selectedMask(maxIndex) = true;
@@ -1003,28 +938,7 @@ end
 
 function normalizeFFT = useNormalizedPoloidalMode(opt)
 
-    normalizeFFT = true;
-    if isfield(opt, 'normalize') && ~isempty(opt.normalize)
-        normalizeFFT = opt.normalize;
-    end
-end
-
-function [xVec, xLabelText] = poloidalModeRadialAxis(mhdInput, geom, opt, nRadial)
-
-    radialAxis = 'rho';
-    if isfield(opt, 'radialAxis') && ~isempty(opt.radialAxis)
-        radialAxis = char(opt.radialAxis);
-    end
-
-    switch lower(radialAxis)
-        case {'psi', 'psip', 'psi_p'}
-            xVec = radialVectorWithLength(mhdInput, geom, nRadial);
-            xVec = xVec .^ 2;
-            xLabelText = '$\psi_p$';
-        otherwise
-            xVec = radialVectorWithLength(mhdInput, geom, nRadial);
-            xLabelText = '$\sqrt{s}$';
-    end
+    normalizeFFT = logical(getOptionValue(opt, 'normalize', true));
 end
 
 function xVec = radialVectorWithLength(mhdInput, geom, nRadial)
@@ -1053,205 +967,170 @@ function xVec = radialVectorWithLength(mhdInput, geom, nRadial)
     end
 end
 
-function workspace = runMHDAmplitudePlot(mhdData, meta, mhdInput, opt)
+function ctx = buildMHDDiagnosticContext(meta, mhdInput)
 
-    workspace = struct('options', opt);
-    if ~opt.enabled
-        logSkipped('amplitude plot', '绘图开关为 false');
+    ctx = struct();
+    ctx.xGrid = meta.xGrid;
+    ctx.tDiag = meta.tDiag;
+    ctx.diagSteps = meta.diagSteps;
+    ctx.modeIndexAll = meta.modeIndexAll;
+    ctx.physicalNAll = meta.physicalNAll;
+    ctx.B0 = mhdInput.B0;
+    ctx.L0 = mhdInput.L0;
+    ctx.VA0 = mhdInput.VA0;
+    ctx.TeSample = mhdInput.TeSample;
+    ctx.rho = mhdInput.rho;
+end
+
+function validateDiagnosticGrid(ctx, minTime, contextText, data, fieldNames)
+
+    dataSize = size(data.(fieldNames{1}));
+    for iField = 2:numel(fieldNames)
+        assert(isequal(size(data.(fieldNames{iField})), dataSize), ...
+            '%s 诊断数组尺寸必须一致。', contextText);
+    end
+    assert(dataSize(1) >= minTime, '%s 至少需要 %d 个诊断时间点。', contextText, minTime);
+    assert(numel(ctx.tDiag) == dataSize(1), '%s 时间维度必须匹配 tDiag。', contextText);
+    assert(numel(ctx.xGrid) == dataSize(2), '%s 径向维度必须匹配 xGrid。', contextText);
+end
+
+function workspace = runMHDTimeDiagnostic(mhdData, ctx, opt, fieldNames, plotName, ...
+    missingReason, minTime, staticPlotFcn, interactivePlotFcn)
+
+    [workspace, ready] = beginMHDDiagnostic(opt, mhdData, fieldNames, plotName, missingReason);
+    if ~ready
         return;
     end
-    if ~hasMHDDataFields(mhdData, {'amplitude'})
-        logSkipped('amplitude plot', '未读取 amplitude 数据');
+    validateDiagnosticGrid(ctx, minTime, plotName, mhdData, fieldNames);
+    runInteractivePlot(getOptionValue(opt, 'interactive', 0), staticPlotFcn, interactivePlotFcn);
+end
+
+function workspace = runMHDIndexedRadialDiagnostic( ...
+    mhdData, ctx, opt, fieldNames, plotName, missingReason, figName, buildPlotDataFcn)
+
+    [workspace, ready] = beginMHDDiagnostic(opt, mhdData, fieldNames, plotName, missingReason);
+    if ~ready
         return;
     end
+
+    dataSize = size(mhdData.(fieldNames{1}));
+    for iField = 2:numel(fieldNames)
+        assert(isequal(size(mhdData.(fieldNames{iField})), dataSize), ...
+            '%s 诊断数组尺寸必须一致。', plotName);
+    end
+    assert(size(ctx.rho, 1) == dataSize(2), '%s 径向维度必须匹配 rho(:, 1)。', plotName);
 
     runInteractivePlot(opt.interactive, ...
-        @() plotAmplitude(mhdData.amplitude, meta.xGrid, meta.tDiag, meta.diagSteps, ...
-        meta.modeIndexAll, meta.physicalNAll, mhdInput.B0, mhdInput.L0, mhdInput.VA0, mhdInput.TeSample, opt), ...
-        @(dynamicUpdate) plotAmplitudeInteractive(mhdData.amplitude, meta.xGrid, meta.tDiag, meta.diagSteps, ...
-        meta.modeIndexAll, meta.physicalNAll, mhdInput.B0, mhdInput.L0, mhdInput.VA0, mhdInput.TeSample, opt, dynamicUpdate));
+        @() drawStaticDiagnostic(buildPlotDataFcn(opt), opt, @renderLinePlot), ...
+        @(dynamicUpdate) plotIndexOptionInteractive( ...
+        figName, 'timeIndex', dataSize(1), dynamicUpdate, opt, buildPlotDataFcn));
 end
 
-function workspace = runMHDMultipleFrequencyPlot(mhdData, meta, mhdInput, opt)
+function workspace = runMHDAmplitudePlot(mhdData, ctx, opt)
 
-    workspace = struct('options', opt);
-    if ~opt.enabled
-        logSkipped('mode frequency plot', '绘图开关为 false');
-        return;
-    end
-    if ~hasMHDDataFields(mhdData, {'RealMode', 'ImagMode'})
-        logSkipped('mode frequency plot', '未读取 RealMode 或 ImagMode 数据');
-        return;
-    end
-
-    runInteractivePlot(opt.interactive, ...
-        @() plotMultipleFrequency(mhdData.RealMode, mhdData.ImagMode, meta.xGrid, meta.tDiag, meta.diagSteps, ...
-        meta.modeIndexAll, meta.physicalNAll, mhdInput.L0, mhdInput.VA0, opt), ...
-        @(dynamicUpdate) plotMultipleFrequencyInteractive(mhdData.RealMode, mhdData.ImagMode, meta.xGrid, ...
-        meta.tDiag, meta.diagSteps, meta.modeIndexAll, meta.physicalNAll, mhdInput.L0, mhdInput.VA0, opt, dynamicUpdate));
+    workspace = runMHDTimeDiagnostic( ...
+        mhdData, ctx, opt, {'amplitude'}, 'amplitude plot', '未读取 amplitude 数据', 1, ...
+        @() drawStaticDiagnostic(buildAmplitudePlotData(mhdData.amplitude, ctx, opt, false), opt, @renderLinePlot), ...
+        @(dynamicUpdate) plotAmplitudeInteractive(mhdData.amplitude, ctx, opt, dynamicUpdate));
 end
 
-function workspace = runMHDPhaseFrequencyPlot(mhdData, meta, mhdInput, opt)
+function workspace = runMHDMultipleFrequencyPlot(mhdData, ctx, opt)
 
-    workspace = struct('options', opt);
-    if ~opt.enabled
-        logSkipped('phase frequency plot', '绘图开关为 false');
-        return;
-    end
-    if ~hasMHDDataFields(mhdData, {'RealMode', 'ImagMode'})
-        logSkipped('phase frequency plot', '未读取 RealMode 或 ImagMode 数据');
-        return;
-    end
-
-    runInteractivePlot(opt.interactive, ...
-        @() plotPhaseFrequency(mhdData.RealMode, mhdData.ImagMode, meta.xGrid, meta.tDiag, meta.diagSteps, ...
-        meta.modeIndexAll, meta.physicalNAll, mhdInput.L0, mhdInput.VA0, opt), ...
-        @(dynamicUpdate) plotPhaseFrequencyInteractive(mhdData.RealMode, mhdData.ImagMode, meta.xGrid, ...
-        meta.tDiag, meta.diagSteps, meta.modeIndexAll, meta.physicalNAll, mhdInput.L0, mhdInput.VA0, opt, dynamicUpdate));
+    workspace = runMHDTimeDiagnostic( ...
+        mhdData, ctx, opt, {'RealMode', 'ImagMode'}, 'mode frequency plot', ...
+        '未读取 RealMode 或 ImagMode 数据', 2, ...
+        @() drawStaticDiagnostic( ...
+        buildMultipleFrequencyPlotData(mhdData.RealMode, mhdData.ImagMode, ctx, opt), opt, @renderLinePlot), ...
+        @(dynamicUpdate) plotMultipleFrequencyInteractive( ...
+        mhdData.RealMode, mhdData.ImagMode, ctx, opt, dynamicUpdate));
 end
 
-function workspace = runMHDContourFrequencyPlot(mhdData, meta, mhdInput, opt)
+function workspace = runMHDPhaseFrequencyPlot(mhdData, ctx, opt)
 
-    workspace = struct('options', opt);
-    if ~opt.enabled
-        logSkipped('contour frequency plot', '绘图开关为 false');
-        return;
-    end
-    if ~hasMHDDataFields(mhdData, {'amplitude', 'RealMode'})
-        logSkipped('contour frequency plot', '未读取 amplitude 或 RealMode 数据');
-        return;
-    end
-
-    plotContourFrequency(mhdData.amplitude, mhdData.RealMode, meta.xGrid, meta.tDiag, ...
-        meta.modeIndexAll, meta.physicalNAll, mhdInput.L0, mhdInput.VA0, opt);
+    workspace = runMHDTimeDiagnostic( ...
+        mhdData, ctx, opt, {'RealMode', 'ImagMode'}, 'phase frequency plot', ...
+        '未读取 RealMode 或 ImagMode 数据', 2, ...
+        @() drawStaticDiagnostic( ...
+        buildPhaseFrequencyPlotData(mhdData.RealMode, mhdData.ImagMode, ctx, opt), opt, @renderLinePlot), ...
+        @(dynamicUpdate) plotPhaseFrequencyInteractive( ...
+        mhdData.RealMode, mhdData.ImagMode, ctx, opt, dynamicUpdate));
 end
 
-function workspace = runMHDSingleSignalPlot(mhdData, meta, mhdInput, opt)
+function workspace = runMHDContourFrequencyPlot(mhdData, ctx, opt)
 
-    workspace = struct('options', opt);
-    if ~opt.enabled
-        logSkipped('single signal plot', '绘图开关为 false');
-        return;
-    end
-    if ~hasMHDDataFields(mhdData, {'frequency'})
-        logSkipped('single signal plot', '未读取 frequency.bin 数据');
-        return;
-    end
-
-    runInteractivePlot(opt.interactive, ...
-        @() plotSingleSignal(mhdData.frequency, meta.xGrid, meta.tDiag, meta.diagSteps, mhdInput.L0, mhdInput.VA0, opt), ...
-        @(dynamicUpdate) plotSingleSignalInteractive(mhdData.frequency, meta.xGrid, meta.tDiag, ...
-        meta.diagSteps, mhdInput.L0, mhdInput.VA0, opt, dynamicUpdate));
+    workspace = runMHDTimeDiagnostic( ...
+        mhdData, ctx, opt, {'amplitude', 'RealMode'}, 'contour frequency plot', ...
+        '未读取 amplitude 或 RealMode 数据', 2, ...
+        @() drawStaticDiagnostic(buildContourFrequencyPlotData( ...
+        mhdData.amplitude, mhdData.RealMode, ctx, opt), opt, @renderMapPlot), []);
 end
 
-function workspace = runMHDEparaPlot(mhdData, mhdInput, opt)
+function workspace = runMHDSingleSignalPlot(mhdData, ctx, opt)
 
-    workspace = struct('options', opt);
-    if ~opt.enabled
-        logSkipped('Epara plot', '绘图开关为 false');
-        return;
-    end
-    if ~hasMHDDataFields(mhdData, {'Epara', 'EparaES'})
-        logSkipped('Epara plot', '未读取 Epara 或 EparaES 数据');
-        return;
-    end
-
-    runInteractivePlot(opt.interactive, ...
-        @() plotEpara(mhdData.Epara, mhdData.EparaES, mhdInput.rho, opt), ...
-        @(dynamicUpdate) plotEparaInteractive(mhdData.Epara, mhdData.EparaES, mhdInput.rho, opt, dynamicUpdate));
+    workspace = runMHDTimeDiagnostic( ...
+        mhdData, ctx, opt, {'frequency'}, 'single signal plot', '未读取 frequency.bin 数据', ...
+        1, ...
+        @() drawStaticDiagnostic(buildSingleSignalPlotData(mhdData.frequency, ctx, opt), opt, @renderLinePlot), ...
+        @(dynamicUpdate) plotSingleSignalInteractive(mhdData.frequency, ctx, opt, dynamicUpdate));
 end
 
-function workspace = runMHDShearingPlot(mhdData, meta, ~, opt)
+function workspace = runMHDEparaPlot(mhdData, ctx, opt)
 
-    workspace = struct('options', opt);
-    if ~opt.enabled
-        logSkipped('shearing plot', '绘图开关为 false');
+    workspace = runMHDIndexedRadialDiagnostic( ...
+        mhdData, ctx, opt, {'Epara', 'EparaES'}, 'Epara plot', '未读取 Epara 或 EparaES 数据', ...
+        'Epara / EparaES', @(tempOpt) buildEparaPlotData(mhdData.Epara, mhdData.EparaES, ctx, tempOpt));
+end
+
+function workspace = runMHDShearingPlot(mhdData, ctx, opt)
+
+    [workspace, ready] = beginMHDDiagnostic( ...
+        opt, mhdData, {'Shearing'}, 'shearing plot', '未读取 Shearing 数据');
+    if ~ready
         return;
     end
-    if ~hasMHDDataFields(mhdData, {'Shearing'})
-        logSkipped('shearing plot', '未读取 Shearing 数据');
-        return;
-    end
 
-    switch opt.plotType
+    validateDiagnosticGrid(ctx, 1, 'shearing', mhdData, {'Shearing'});
+
+    plotType = requireIntegerInRange(opt.plotType, 1, 3, 'plotType');
+    switch plotType
         case 1
             runInteractivePlot(opt.interactive, ...
-                @() plotShearingTimeSlice(mhdData.Shearing, meta.xGrid, meta.tDiag, opt), ...
-                @(dynamicUpdate) plotShearingTimeSliceInteractive(mhdData.Shearing, meta.xGrid, meta.tDiag, opt, dynamicUpdate));
+                @() drawStaticDiagnostic( ...
+                buildShearingTimeSlicePlotData(mhdData.Shearing, ctx, opt), opt, @renderLinePlot), ...
+                @(dynamicUpdate) plotIndexOptionInteractive( ...
+                'Shearing', 'timeIndex', size(mhdData.Shearing, 1), dynamicUpdate, opt, ...
+                @(tempOpt) buildShearingTimeSlicePlotData(mhdData.Shearing, ctx, tempOpt)));
         case 2
             runInteractivePlot(opt.interactive, ...
-                @() plotShearingRadialTrace(mhdData.Shearing, meta.xGrid, meta.tDiag, opt), ...
-                @(dynamicUpdate) plotShearingRadialTraceInteractive(mhdData.Shearing, meta.xGrid, meta.tDiag, opt, dynamicUpdate));
+                @() drawStaticDiagnostic( ...
+                buildShearingRadialTracePlotData(mhdData.Shearing, ctx, opt), opt, @renderLinePlot), ...
+                @(dynamicUpdate) plotIndexOptionInteractive( ...
+                'Shearing trace', 'radialIndex', size(mhdData.Shearing, 2), dynamicUpdate, opt, ...
+                @(tempOpt) buildShearingRadialTracePlotData(mhdData.Shearing, ctx, tempOpt)));
         case 3
-            plotShearingMap(mhdData.Shearing, meta.xGrid, meta.tDiag, opt);
-        otherwise
-            error('plotType 必须为 1、2 或 3。');
+            runInteractivePlot(opt.interactive, ...
+                @() drawStaticDiagnostic(buildShearingMapPlotData(mhdData.Shearing, ctx), opt, @renderMapPlot), []);
     end
 end
 
-function workspace = runMHDZonalDrivePlot(mhdData, mhdInput, opt)
+function workspace = runMHDZonalDrivePlot(mhdData, ctx, opt)
 
-    workspace = struct('options', opt);
-    if ~opt.enabled
-        logSkipped('ZF drive plot', '绘图开关为 false');
-        return;
-    end
-    if ~hasMHDDataFields(mhdData, {'MaxwellDrive', 'ReynoldsDrive', 'ZonalDrive'})
-        logSkipped('ZF drive plot', '未读取 MaxwellDrive/ReynoldsDrive/ZonalDrive 数据');
-        return;
-    end
-
-    runInteractivePlot(opt.interactive, ...
-        @() plotZonalDrive(mhdData.MaxwellDrive, mhdData.ReynoldsDrive, mhdData.ZonalDrive, mhdInput.rho, opt), ...
-        @(dynamicUpdate) plotZonalDriveInteractive(mhdData.MaxwellDrive, mhdData.ReynoldsDrive, ...
-        mhdData.ZonalDrive, mhdInput.rho, opt, dynamicUpdate));
+    workspace = runMHDIndexedRadialDiagnostic( ...
+        mhdData, ctx, opt, {'MaxwellDrive', 'ReynoldsDrive', 'ZonalDrive'}, ...
+        'ZF drive plot', '未读取 MaxwellDrive/ReynoldsDrive/ZonalDrive 数据', ...
+        'MaxwellDrive / ReynoldsDrive / ZonalDrive', ...
+        @(tempOpt) buildZonalDrivePlotData(mhdData.MaxwellDrive, mhdData.ReynoldsDrive, ...
+        mhdData.ZonalDrive, ctx, tempOpt));
 end
 
-function workspace = runMHDTotalFieldPlot(totalFields, meta, mhdFieldGeom, opt)
-
-    workspace = struct('options', opt);
-    if ~opt.enabled
-        logSkipped('total field plot', '绘图开关为 false');
-        return;
-    end
-    if ~hasBSpline()
-        logSkipped('total field plot', '缺少 bspline');
-        return;
-    end
-
-    totalFieldNames = string(opt.names);
-    for iField = 1:numel(totalFieldNames)
-        fieldName = totalFieldNames(iField);
-        fieldNameText = char(fieldName);
-        if ~isfield(totalFields, fieldNameText) || isempty(totalFields.(fieldNameText))
-            logSkipped(['total' fieldNameText], '未读取该场量');
-            continue;
-        end
-
-        totalData = totalFields.(fieldNameText);
-        timeIdx = parseTimeIndex(opt.timeIndex, size(totalData, 1));
-        fieldZYX = totalMHDFieldTimeSliceAsZYX(totalData, timeIdx);
-        [fieldModeIndex, fieldPhysicalN] = parseModeN(opt.modeN, meta.modeIndexAll, meta.physicalNAll, 'total 场量');
-        fieldZYX = filterMHDToroidalModes(fieldZYX, meta.modeIndexAll, fieldModeIndex);
-        plotContext = sprintf('timeIndex=%d, t_a=%.6g', timeIdx, meta.tOutput(timeIdx));
-        [shifted, aligned] = plotMHDFieldOnPoloidalPlane( ...
-            fieldZYX, "total" + fieldName, mhdFieldGeom, opt, fieldPhysicalN, plotContext);
-
-        workspace.(fieldNameText) = struct( ...
-            'timeIndex', timeIdx, ...
-            'shifted', shifted, ...
-            'aligned', aligned, ...
-            'physicalN', fieldPhysicalN);
-    end
-end
-
-function [modeIndex, physicalN] = parseModeN(modeN, modeIndexAll, physicalNAll, contextText)
+function [modeIndex, physicalN, modePosition] = parseModeN(modeN, modeIndexAll, physicalNAll, contextText)
 
     assert(~isempty(modeIndexAll) && numel(modeIndexAll) == numel(physicalNAll), ...
         '%s modeN 列表为空或尺寸不一致。', contextText);
     if isempty(modeN)
         modeIndex = modeIndexAll;
         physicalN = physicalNAll;
+        modePosition = 1:numel(modeIndexAll);
         return;
     end
 
@@ -1261,14 +1140,17 @@ function [modeIndex, physicalN] = parseModeN(modeN, modeIndexAll, physicalNAll, 
             idx = max(1, round(numel(physicalNAll) / 2));
             modeIndex = modeIndexAll(idx);
             physicalN = physicalNAll(idx);
+            modePosition = idx;
             return;
         elseif ismember(key, {'end', 'last'})
             modeIndex = modeIndexAll(end);
             physicalN = physicalNAll(end);
+            modePosition = numel(modeIndexAll);
             return;
         elseif ismember(key, {'first', 'begin'})
             modeIndex = modeIndexAll(1);
             physicalN = physicalNAll(1);
+            modePosition = 1;
             return;
         else
             physicalN = str2double(key);
@@ -1283,6 +1165,7 @@ function [modeIndex, physicalN] = parseModeN(modeN, modeIndexAll, physicalNAll, 
     assert(all(isMember), '%s modeN 必须位于有效物理 n 集合 [%s]。当前值：[%s]。', ...
         contextText, formatNumberList(physicalNAll), formatNumberList(physicalN));
     modeIndex = modeIndexAll(memberIdx);
+    modePosition = memberIdx;
 end
 
 function idx = parseIndex(indexText, nIndex, label)
@@ -1300,7 +1183,7 @@ function idx = parseIndex(indexText, nIndex, label)
         end
     end
 
-    idx = clampIndex(idx, nIndex, label);
+    idx = requireIndex(idx, nIndex, label);
 end
 
 function idx = parseTimeIndex(timeIndex, nTime)
@@ -1308,12 +1191,9 @@ function idx = parseTimeIndex(timeIndex, nTime)
     idx = parseIndex(timeIndex, nTime, 'timeIndex');
 end
 
-function idx = clampIndex(idx, maxIndex, label)
+function idx = requireIndex(idx, maxIndex, label)
 
-    assert(isscalar(idx) && isfinite(idx) && idx == floor(idx), ...
-        '%s 下标必须是有限整数。', label);
-    assert(idx >= 1 && idx <= maxIndex, ...
-        '%s 下标 %d 超出有效范围 [1, %d]。', label, idx, maxIndex);
+    idx = requireIntegerInRange(idx, 1, maxIndex, [label ' 下标']);
 end
 
 function logLoaded(name, data)
@@ -1332,11 +1212,8 @@ end
 
 function ok = hasMHDDataFields(dataStruct, fieldNames)
 
-    ok = true;
-    for iField = 1:numel(fieldNames)
-        fieldName = fieldNames{iField};
-        ok = ok && isfield(dataStruct, fieldName) && ~isempty(dataStruct.(fieldName));
-    end
+    ok = all(cellfun(@(fieldName) ...
+        isfield(dataStruct, fieldName) && ~isempty(dataStruct.(fieldName)), fieldNames));
 end
 
 function text = formatSize(dataSize)
@@ -1358,7 +1235,9 @@ function value = readIntParam(paramText, name)
 end
 
 function value = readFloatParam(paramText, name)
-    token = regexp(paramText, ['const\s+(?:double|float|mhdReal|picReal)\s+' name '\s*=\s*([-+]?[0-9eE+\-\.]+)\s*;'], ...
+    pattern = ['const\s+(?:double|float|mhdReal|picReal)\s+' name ...
+        '\s*=\s*([-+]?[0-9eE+\-\.]+)\s*;'];
+    token = regexp(paramText, pattern, ...
         'tokens', 'once');
     assert(~isempty(token), '找不到浮点参数：%s', name);
     value = str2double(token{1});
@@ -1397,75 +1276,56 @@ function precisionText = freadPrecision(precision)
     end
 end
 
+% 以下读取函数返回的数组维序为：TXN=[time,x,mode]，TX=[time,x]，
+% TYXZ=[time,y,x,z]，ZXY=[z,x,y]，YXZ=[y,x,z]。
 function data = readModeDiagnosticAsTXN(filePath, precision, nTime, gridNx, nMode)
-    raw = readBinaryVector(filePath, precision);
-    expectedCount = nTime * gridNx * nMode;
-    assert(numel(raw) == expectedCount, ...
-        '%s 尺寸不匹配：读到 %d 个数，期望 %d 个（nTime=%d, gridNx=%d, nMode=%d）。', ...
-        filePath, numel(raw), expectedCount, nTime, gridNx, nMode);
-
-    data = reshape(raw, [nMode, gridNx, nTime]);
-    data = permute(data, [3, 2, 1]);
+    dimensionText = sprintf('nTime=%d, gridNx=%d, nMode=%d', nTime, gridNx, nMode);
+    data = readBinaryArray(filePath, precision, [nMode, gridNx, nTime], [3, 2, 1], dimensionText);
 end
 
 function data = readRadialDiagnosticAsTX(filePath, precision, nTime, gridNx)
-    raw = readBinaryVector(filePath, precision);
-    expectedCount = nTime * gridNx;
-    assert(numel(raw) == expectedCount, ...
-        '%s 尺寸不匹配：读到 %d 个数，期望 %d 个（nTime=%d, gridNx=%d）。', ...
-        filePath, numel(raw), expectedCount, nTime, gridNx);
-
-    data = reshape(raw, [gridNx, nTime]);
-    data = permute(data, [2, 1]);
+    dimensionText = sprintf('nTime=%d, gridNx=%d', nTime, gridNx);
+    data = readBinaryArray(filePath, precision, [gridNx, nTime], [2, 1], dimensionText);
 end
 
-function data = readOutputAsTNYXZ(filePath, precision, nTime, gridNy, gridNx, gridNz)
-    raw = readBinaryVector(filePath, precision);
-    expectedCount = nTime * gridNy * gridNx * gridNz;
-    assert(numel(raw) == expectedCount, ...
-        '%s 尺寸不匹配：读到 %d 个数，期望 %d 个（nTime=%d, gridNy=%d, gridNx=%d, gridNz=%d）。', ...
-        filePath, numel(raw), expectedCount, nTime, gridNy, gridNx, gridNz);
-
-    data = reshape(raw, [gridNz, gridNx, gridNy, nTime]);
-    data = permute(data, [4, 3, 2, 1]);
+function data = readOutputAsTYXZ(filePath, precision, nTime, gridNy, gridNx, gridNz)
+    dimensionText = sprintf('nTime=%d, gridNy=%d, gridNx=%d, gridNz=%d', ...
+        nTime, gridNy, gridNx, gridNz);
+    data = readBinaryArray(filePath, precision, ...
+        [gridNz, gridNx, gridNy, nTime], [4, 3, 2, 1], dimensionText);
 end
 
-function fieldZYX = readMHDFieldAsZYX(inputDir, fieldName, precision, gridNy, gridNx, gridNz)
+function fieldZXY = readMHDFieldAsZXY(inputDir, fieldName, precision, gridNy, gridNx, gridNz)
     fieldNameText = char(fieldName);
     filePath = fullfile(inputDir, [fieldNameText '.bin']);
+    dimensionText = sprintf('gridNy=%d, gridNx=%d, gridNz=%d', gridNy, gridNx, gridNz);
+    fieldZXY = readBinaryArray(filePath, precision, ...
+        [gridNz, gridNx, gridNy], [1, 2, 3], dimensionText);
+end
+
+function data = readBinaryArray(filePath, precision, storageShape, permutation, dimensionText)
     raw = readBinaryVector(filePath, precision);
-    expectedCount = gridNy * gridNx * gridNz;
+    expectedCount = prod(storageShape);
     assert(numel(raw) == expectedCount, ...
-        '%s 尺寸不匹配：读到 %d 个数，期望 %d 个（gridNy=%d, gridNx=%d, gridNz=%d）。', ...
-        filePath, numel(raw), expectedCount, gridNy, gridNx, gridNz);
+        '%s 尺寸不匹配：读到 %d 个数，期望 %d 个（%s）。', ...
+        filePath, numel(raw), expectedCount, dimensionText);
 
-    fieldZYX = reshape(raw, [gridNz, gridNx, gridNy]);
+    data = permute(reshape(raw, storageShape), permutation);
 end
 
-function fieldZYX = totalMHDFieldTimeSliceAsZYX(totalDataTNYXZ, timeIndex)
-    nTime = size(totalDataTNYXZ, 1);
-    assert(isscalar(timeIndex) && timeIndex == floor(timeIndex) && timeIndex >= 1 && timeIndex <= nTime, ...
-        'total timeIndex 必须是 [1, %d] 内的整数。', nTime);
-
-    sliceNYXZ = reshape(totalDataTNYXZ(timeIndex, :, :, :), ...
-        [size(totalDataTNYXZ, 2), size(totalDataTNYXZ, 3), size(totalDataTNYXZ, 4)]);
-    fieldZYX = permute(sliceNYXZ, [3, 2, 1]);
+function fieldZXY = totalMHDFieldTimeSliceAsZXY(totalDataTYXZ, timeIndex)
+    fieldYXZ = reshape(totalDataTYXZ(timeIndex, :, :, :), ...
+        [size(totalDataTYXZ, 2), size(totalDataTYXZ, 3), size(totalDataTYXZ, 4)]);
+    fieldZXY = permute(fieldYXZ, [3, 2, 1]);
 end
 
-function fieldNYXZ = mhdFieldZYXToNYXZ(fieldZYX)
-    fieldNYXZ = permute(fieldZYX, [3, 2, 1]);
+function fieldYXZ = mhdFieldZXYToYXZ(fieldZXY)
+    fieldYXZ = permute(fieldZXY, [3, 2, 1]);
 end
 
-function fieldFilteredZYX = filterMHDToroidalModes(fieldZYX, modeIndexAll, modeIndexKeep)
-    if isempty(modeIndexKeep)
-        modeIndexKeep = modeIndexAll;
-    end
-
+function fieldFilteredZXY = filterMHDToroidalModes(fieldZXY, modeIndexKeep)
     modeIndexKeep = unique(modeIndexKeep(:)');
-    assert(all(modeIndexKeep == floor(modeIndexKeep)), 'modeIndexKeep 必须包含整数模数。');
-    assert(all(ismember(modeIndexKeep, modeIndexAll)), 'modeIndexKeep 必须位于 modeIndexAll 内。');
-
-    nZ = size(fieldZYX, 1);
+    nZ = size(fieldZXY, 1);
     assert(all(abs(modeIndexKeep) <= floor(nZ / 2)), 'modeIndexKeep 超出 z 向 FFT 可解析范围。');
 
     modeMask = false(nZ, 1);
@@ -1477,31 +1337,34 @@ function fieldFilteredZYX = filterMHDToroidalModes(fieldZYX, modeIndexAll, modeI
         end
     end
 
-    fieldSpectrum = fft(fieldZYX, [], 1);
+    fieldSpectrum = fft(fieldZXY, [], 1);
     fieldSpectrum(~modeMask, :, :) = 0;
-    fieldFilteredZYX = real(ifft(fieldSpectrum, [], 1));
+    fieldFilteredZXY = real(ifft(fieldSpectrum, [], 1));
 end
 
-function geom = mhdFieldPlotGeometry(q, theta_pest, rho, qplot, rhoplot, Rplot, Zplot, yGrid, zGrid, tubes, gridGhost, NFP, phi)
+function geom = buildMHDFieldPlotGeometry( ...
+    q, theta_pest, rho, qplot, rhoplot, Rplot, Zplot, yGrid, zGrid, tubes, gridGhost, NFP, phi)
     [nPlotRho, nPlotTheta, nPlotPhi] = size(qplot);
     thetaPlotGrid = (0.5:nPlotTheta - 0.5) / nPlotTheta * 2 * pi - pi;
-    q2D = firstToroidalSlice(q);
-    theta2D = firstToroidalSlice(theta_pest);
-    rho2D = firstToroidalSlice(rho);
+    q2D = mhdPlotToroidalSlice(q, 1);
+    theta2D = mhdPlotToroidalSlice(theta_pest, 1);
+    rho2D = mhdPlotToroidalSlice(rho, 1);
     has3DPlot = (ndims(qplot) >= 3 && nPlotPhi > 1);
-
+    qplot2D = mhdPlotToroidalSlice(qplot, 1);
+    thetaPlot2D = repmat(thetaPlotGrid, nPlotRho, 1);
+    geom = struct();
     geom.qtheta = q2D .* theta2D;
     geom.rhoGrid = rho2D(:, 1);
     geom.qplotAll = qplot;
     geom.rhoplotAll = rhoplot;
     geom.RplotAll = Rplot;
     geom.ZplotAll = Zplot;
-    geom.qplot = firstToroidalSlice(qplot);
-    geom.Rplot = firstToroidalSlice(Rplot);
-    geom.Zplot = firstToroidalSlice(Zplot);
-    geom.rhoplot = firstToroidalSlice(rhoplot);
-    geom.thplot = repmat(thetaPlotGrid, nPlotRho, 1);
-    geom.qthetaplot = geom.qplot .* geom.thplot;
+    geom.qplot = qplot2D;
+    geom.Rplot = mhdPlotToroidalSlice(Rplot, 1);
+    geom.Zplot = mhdPlotToroidalSlice(Zplot, 1);
+    geom.rhoplot = mhdPlotToroidalSlice(rhoplot, 1);
+    geom.thplot = thetaPlot2D;
+    geom.qthetaplot = qplot2D .* thetaPlot2D;
     geom.nPlotTheta = nPlotTheta;
     geom.nPlotPhi = nPlotPhi;
     geom.plotPhiGrid = mhdPlotPhiGrid(phi, nPlotPhi, zGrid);
@@ -1515,19 +1378,9 @@ function geom = mhdFieldPlotGeometry(q, theta_pest, rho, qplot, rhoplot, Rplot, 
     geom.gridGhost = gridGhost;
 end
 
-function value2D = firstToroidalSlice(value)
-
-    if ndims(value) >= 3 && size(value, 3) > 1
-        value2D = value(:, :, 1);
-    else
-        value2D = value;
-    end
-    value2D = squeeze(value2D);
-end
-
 function phiGrid = mhdPlotPhiGrid(phi, nPlotPhi, zGrid)
 
-    if nargin < 1 || isempty(phi)
+    if isempty(phi)
         if nPlotPhi == numel(zGrid)
             phiGrid = zGrid(:);
         else
@@ -1553,18 +1406,13 @@ function [planeGeom, phi0, toroidalIndex] = mhdPlotPlaneGeometry(geom, opt)
 
     if geom.isStellarator
         assert(geom.has3DPlot, '仿星器绘图需要 plot3D.mat。');
-        requestedIndex = 1;
-        if isfield(opt, 'toroidalIndex') && ~isempty(opt.toroidalIndex)
-            requestedIndex = opt.toroidalIndex;
-        end
+        requestedIndex = getOptionValue(opt, 'toroidalIndex', 1);
         toroidalIndex = parseToroidalIndex(requestedIndex, geom.nPlotPhi);
         phi0 = geom.plotPhiGrid(toroidalIndex);
     else
         toroidalIndex = 1;
-        phi0 = 0.0;
-        if isfield(opt, 'toroidalAngle') && ~isempty(opt.toroidalAngle)
-            phi0 = double(opt.toroidalAngle);
-        end
+        phi0 = requireFiniteScalarInRange( ...
+            getOptionValue(opt, 'toroidalAngle', 0.0), -Inf, Inf, 'toroidalAngle');
     end
 
     planeGeom = geom;
@@ -1587,9 +1435,7 @@ end
 function toroidalIndex = parseToroidalIndex(toroidalIndex, nPlotPhi)
 
     toroidalIndex = double(toroidalIndex);
-    assert(isscalar(toroidalIndex) && isfinite(toroidalIndex) && ...
-        toroidalIndex == floor(toroidalIndex) && toroidalIndex >= 1 && toroidalIndex <= nPlotPhi, ...
-        'toroidalIndex 必须是 [1, %d] 内的整数。', nPlotPhi);
+    toroidalIndex = requireIndex(toroidalIndex, nPlotPhi, 'toroidalIndex');
 end
 
 function text = mhdToroidalLocationText(geom, phi0, toroidalIndex)
@@ -1601,52 +1447,49 @@ function text = mhdToroidalLocationText(geom, phi0, toroidalIndex)
     end
 end
 
-function [shifted, aligned] = plotMHDFieldOnPoloidalPlane(fieldZYX, fieldName, geom, opt, physicalN, contextText)
-    if nargin < 5
-        physicalN = opt.modeN;
-    end
-    if nargin < 6
-        contextText = '';
-    end
-
-    [pestRefined, fieldNonShiftZYX, refinedYGrid] = prepareMHDPESTField(fieldZYX, geom, opt, geom.nPlotTheta);
-    shifted = mhdFieldZYXToNYXZ(fieldZYX);
-    aligned = mhdFieldZYXToNYXZ(fieldNonShiftZYX);
-    fieldPlotZYX = normalizeMHDFieldForPlot(pestRefined);
-    [result, planeGeom, phi0, toroidalIndex] = interpolateMHDFieldToPlotGrid(fieldPlotZYX, refinedYGrid, geom, opt);
+function [shifted, aligned] = plotMHDFieldOnPoloidalPlane(fieldZXY, fieldName, geom, opt, physicalN, contextText)
+    [pestRefined, fieldNonShiftZXY, refinedYGrid] = prepareMHDPESTField( ...
+        fieldZXY, geom, opt, geom.nPlotTheta);
+    shifted = mhdFieldZXYToYXZ(fieldZXY);
+    aligned = mhdFieldZXYToYXZ(fieldNonShiftZXY);
+    fieldPlotZXY = normalizeMHDFieldForPlot(pestRefined);
+    [result, planeGeom, phi0, toroidalIndex] = interpolateMHDFieldToPlotGrid( ...
+        fieldPlotZXY, refinedYGrid, geom, opt);
     drawMHDFieldSurface(result, fieldName, planeGeom, opt);
 
     if strlength(string(contextText)) > 0
         contextText = [char(contextText), ', '];
     end
     fprintf('[plot] %s: %s%s, n=[%s]\n', ...
-        char(fieldName), char(contextText), mhdToroidalLocationText(geom, phi0, toroidalIndex), formatNumberList(physicalN));
+        char(fieldName), char(contextText), ...
+        mhdToroidalLocationText(geom, phi0, toroidalIndex), formatNumberList(physicalN));
 end
 
-function fieldPlotZYX = normalizeMHDFieldForPlot(fieldZYX)
-    scale = max(abs(fieldZYX(:)));
-    fieldPlotZYX = fieldZYX;
+function fieldPlotZXY = normalizeMHDFieldForPlot(fieldZXY)
+    scale = max(abs(fieldZXY(:)));
+    fieldPlotZXY = fieldZXY;
     if isfinite(scale) && scale > 0
-        fieldPlotZYX = fieldZYX / scale;
+        fieldPlotZXY = fieldZXY / scale;
     end
 end
 
-function fieldNonShiftZYX = undoMHDFieldAlignedShift(fieldZYX, geom, opt)
-    [nZ, nX, nY] = size(fieldZYX);
+function fieldNonShiftZXY = undoMHDFieldAlignedShift(fieldZXY, geom)
+    [nZ, nX, nY] = size(fieldZXY);
     assert(numel(geom.zGrid) == nZ, 'zGrid 长度必须匹配场量 z 维度。');
     assert(isequal(size(geom.qtheta), [nX, nY]), 'qtheta 尺寸必须匹配场量 x/y 维度。');
 
-    fieldNonShiftZYX = zeros(size(fieldZYX));
+    fieldNonShiftZXY = zeros(size(fieldZXY));
 
     for iX = 1:nX
         for iY = 1:nY
-            fieldNonShiftZYX(:, iX, iY) = shiftMHDFieldZ(fieldZYX(:, iX, iY), ...
-                geom.qtheta(iX, iY), geom, opt);
+            fieldNonShiftZXY(:, iX, iY) = shiftMHDFieldZ(fieldZXY(:, iX, iY), ...
+                geom.qtheta(iX, iY), geom);
         end
     end
 end
 
-function [result, planeGeom, phi0, toroidalIndex] = interpolateMHDFieldToPlotGrid(fieldPestZYX, refinedYGrid, geom, opt)
+function [result, planeGeom, phi0, toroidalIndex] = interpolateMHDFieldToPlotGrid( ...
+    fieldPestZXY, refinedYGrid, geom, opt)
     [planeGeom, phi0, toroidalIndex] = mhdPlotPlaneGeometry(geom, opt);
     plotZ = phi0 + zeros(size(planeGeom.rhoplot));
     coordinate3D = [plotZ(:), planeGeom.rhoplot(:), planeGeom.thplot(:)];
@@ -1657,8 +1500,8 @@ function [result, planeGeom, phi0, toroidalIndex] = interpolateMHDFieldToPlotGri
         [geom.rhoGrid(1), geom.rhoGrid(end)]; ...
         [refinedYGrid(1), refinedYGrid(1) + 2 * pi]};
 
-    result = bspline(uint64(opt.bsplineOrder), isPeriodic, rangeZRhoTheta, ...
-        fieldPestZYX, coordinate3D, derivative);
+    result = bspline(uint64(4), isPeriodic, rangeZRhoTheta, ...
+        fieldPestZXY, coordinate3D, derivative);
     result = reshape(result, size(planeGeom.Rplot));
 end
 
@@ -1692,22 +1535,20 @@ function drawMHDFieldSurface(result, fieldName, geom, opt)
     clim(axHandle, [colorMin, colorMax]);
     colormap(axHandle, mhdFieldColormap(opt.colormapIndex, colorMin, colorMax, 256));
 
-    set(axHandle, 'FontName', 'Times New Roman', 'FontSize', opt.axisFontSize, ...
-        'LineWidth', 1.2, 'TickLabelInterpreter', 'latex', ...
-        'XGrid', 'on', 'YGrid', 'on', 'GridLineWidth', 1.0, 'GridAlpha', 0.3, ...
-        'MinorGridAlpha', 0.3, 'GridColor', 'k', 'MinorGridColor', 'k', ...
-        'GridLineStyle', '-', 'MinorGridLineStyle', '-');
+    applyPlotAxesStyle(axHandle);
+    set(axHandle, 'LineWidth', 1.2);
 
     xlabel(axHandle, '$R/\mathrm{m}$', 'Interpreter', 'latex', ...
-        'FontName', 'Times New Roman', 'FontSize', opt.labelFontSize);
+        'FontName', 'Times New Roman', 'FontSize', 14);
     ylabel(axHandle, '$Z/\mathrm{m}$', 'Interpreter', 'latex', ...
-        'FontName', 'Times New Roman', 'FontSize', opt.labelFontSize);
+        'FontName', 'Times New Roman', 'FontSize', 14);
     title(axHandle, char(fieldName), 'Interpreter', 'none', ...
-        'FontName', 'Times New Roman', 'FontSize', opt.titleFontSize);
+        'FontName', 'Times New Roman', 'FontSize', 14);
     box(axHandle, 'on');
 end
 
 function cmap = mhdFieldColormap(colormapIndex, valueMin, valueMax, nColor)
+    colormapIndex = requireIntegerInRange(colormapIndex, 1, 5, 'colormapIndex');
     switch colormapIndex
         case 1
             x = [valueMin, 2 / 3 * valueMin, 1 / 3 * valueMin, 0, 1 / 3 * valueMax, 2 / 3 * valueMax, valueMax];
@@ -1724,8 +1565,6 @@ function cmap = mhdFieldColormap(colormapIndex, valueMin, valueMax, nColor)
         case 5
             cmap = jet(nColor);
             return;
-        otherwise
-            error('colormapIndex 必须是 1 到 5 的整数。');
     end
 
     xq = linspace(valueMin, valueMax, nColor);
@@ -1736,80 +1575,80 @@ function cmap = mhdFieldColormap(colormapIndex, valueMin, valueMax, nColor)
     end
 end
 
-function plotAmplitude(amplitude, xGrid, tDiag, diagSteps, modeIndexAll, physicalNAll, ...
-    B0, L0, VA0, TeSample, opt)
-    [xData, logAmplitude, xLabelText, toroidalModeN, radialX] = ...
-        calculateAmplitudeData(amplitude, xGrid, tDiag, diagSteps, modeIndexAll, physicalNAll, B0, L0, VA0, TeSample, opt);
+function [xData, xLabelText] = diagnosticTimeAxis(tAValues, stepValues, L0, VA0, timeAxis, errorText)
 
-    drawLinePlot(linePlotData(xData, logAmplitude, xLabelText, '', '$e\delta\phi/T_e$', ...
-        compose('$n=%d$', toroidalModeN), ''), opt);
-
-    fprintf('[plot] amplitude: x=%.6g, radialIndex=%d, n=[%s]\n', ...
-        radialX, opt.radialIndex, formatNumberList(toroidalModeN));
+    switch char(lower(timeAxis))
+        case {'ta', 'alfven', 'alfven_time'}
+            xData = tAValues;
+            xLabelText = '$t_a$';
+        case {'ms', 'millisecond', 'milliseconds'}
+            xData = tAValues * L0 / VA0 * 1000;
+            xLabelText = '$t/\mathrm{ms}$';
+        case {'steps', 'step'}
+            xData = stepValues;
+            xLabelText = '$\mathrm{steps}$';
+        otherwise
+            error(errorText, timeAxis);
+    end
 end
 
-function plotAmplitudeInteractive(amplitude, xGrid, tDiag, diagSteps, modeIndexAll, physicalNAll, ...
-    B0, L0, VA0, TeSample, opt, dynamicUpdate)
+function plotAmplitudeInteractive(amplitude, ctx, opt, dynamicUpdate)
     nRadial = size(amplitude, 2);
     radialIndex0 = parseIndex(opt.radialIndex, nRadial, 'radialIndex');
     opt.radialIndex = radialIndex0;
     [xData0, ~, ~, ~, ~] = ...
-        calculateAmplitudeData(amplitude, xGrid, tDiag, diagSteps, modeIndexAll, physicalNAll, B0, L0, VA0, TeSample, opt);
+        calculateAmplitudeData(amplitude, ctx, opt);
     [growthStart0, growthEnd0] = amplitudeGrowthInitialRange(xData0, opt);
     controls = [ ...
-        integerSliderControl('radialIndex', 'radialIndex', radialIndex0, 1, nRadial), ...
-        numericSliderControl('growthStart', 'growthStart', growthStart0, xData0(1), xData0(end), numel(xData0)), ...
-        numericSliderControl('growthEnd', 'growthEnd', growthEnd0, xData0(1), xData0(end), numel(xData0))];
+        buildIntegerSliderControl('radialIndex', 'radialIndex', radialIndex0, 1, nRadial), ...
+        buildNumericSliderControl( ...
+            'growthStart', 'growthStart', growthStart0, xData0(1), xData0(end), numel(xData0)), ...
+        buildNumericSliderControl('growthEnd', 'growthEnd', growthEnd0, xData0(1), xData0(end), numel(xData0))];
     plotInteractiveLineWithSliders('Amplitude', controls, dynamicUpdate, opt, @computePlotData);
 
     function data = computePlotData(values)
         tempOpt = opt;
         tempOpt.radialIndex = values.radialIndex;
         tempOpt.growthRange = sort([values.growthStart, values.growthEnd]);
-        [xData, logAmplitude, xLabelText, toroidalModeN, radialX, lnAmplitude] = ...
-            calculateAmplitudeData(amplitude, xGrid, tDiag, diagSteps, ...
-            modeIndexAll, physicalNAll, B0, L0, VA0, TeSample, tempOpt);
-        [growthRate, growthUnit, growthRange] = ...
-            calculateAmplitudeGrowthRate(lnAmplitude, xData, tDiag, L0, VA0, tempOpt);
-        rangeMask = xData(:) >= growthRange(1) & xData(:) <= growthRange(2);
-        maxItems = compose('n=%d: %.6g', toroidalModeN(:), max(logAmplitude(rangeMask, :), [], 1).');
-        data = linePlotData(xData, logAmplitude, xLabelText, '', '$e\delta\phi/T_e$', ...
-            compose('$n=%d$', toroidalModeN), ...
-            amplitudeGrowthStatus(radialX, tempOpt.radialIndex, growthRange, growthUnit, toroidalModeN, growthRate));
-        data.status = sprintf('%s, max log10(ephi/Te): %s', data.status, strjoin(cellstr(maxItems), ', '));
-        data.xLines = growthRange;
+        data = buildAmplitudePlotData(amplitude, ctx, tempOpt, true);
     end
 end
 
-function [xData, logAmplitude, xLabelText, toroidalModeN, radialX, lnAmplitude] = ...
-    calculateAmplitudeData(amplitude, xGrid, tDiag, diagSteps, modeIndexAll, physicalNAll, ...
-        B0, L0, VA0, TeSample, opt)
-    nTime = size(amplitude, 1);
-    assert(numel(tDiag) == nTime, 'tDiag 长度必须匹配 amplitude 时间维度。');
-
-    [modeIndex, toroidalModeN] = parseModeN(opt.modeN, modeIndexAll, physicalNAll, 'Amplitude');
-
-    nRadial = size(amplitude, 2);
-    assert(numel(xGrid) == nRadial, 'xGrid 长度必须匹配 amplitude 径向维度。');
-    radialIdx = parseIndex(opt.radialIndex, nRadial, 'radialIndex');
-    radialX = xGrid(radialIdx);
-    [~, modeIdx] = ismember(modeIndex, modeIndexAll);
-
-    switch char(lower(opt.timeAxis))
-        case {'ta', 'alfven', 'alfven_time'}
-            xData = tDiag;
-            xLabelText = '$t_a$';
-        case {'ms', 'millisecond', 'milliseconds'}
-            xData = tDiag * L0 / VA0 * 1000;
-            xLabelText = '$t/\mathrm{ms}$';
-        case {'steps', 'step'}
-            xData = (0:nTime - 1) * diagSteps;
-            xLabelText = '$\mathrm{steps}$';
-        otherwise
-            error('未知 amplitude 时间轴：%s。可选 ''ta''、''ms'' 或 ''steps''。', opt.timeAxis);
+function plotData = buildAmplitudePlotData(amplitude, ctx, opt, includeGrowth)
+    [xData, logAmplitude, xLabelText, toroidalModeN, radialX, lnAmplitude] = ...
+        calculateAmplitudeData(amplitude, ctx, opt);
+    plotData = buildLinePlotData(xData, logAmplitude, xLabelText, '', '$e\delta\phi/T_e$', ...
+        compose('$n=%d$', toroidalModeN), '');
+    plotData.logText = sprintf('amplitude: x=%.6g, radialIndex=%d, n=[%s]', ...
+        radialX, opt.radialIndex, formatNumberList(toroidalModeN));
+    if ~includeGrowth
+        return;
     end
 
-    amplitudeScale = B0 * L0 * VA0 / (TeSample(1, 1) * 1000);
+    [growthRate, growthUnit, growthRange] = calculateAmplitudeGrowthRate(lnAmplitude, xData, ctx, opt);
+    rangeMask = xData(:) >= growthRange(1) & xData(:) <= growthRange(2);
+    maxItems = compose('n=%d: %.6g', toroidalModeN(:), max(logAmplitude(rangeMask, :), [], 1).');
+    plotData.status = amplitudeGrowthStatus( ...
+        radialX, opt.radialIndex, growthRange, growthUnit, toroidalModeN, growthRate);
+    plotData.status = sprintf('%s, max log10(ephi/Te): %s', ...
+        plotData.status, strjoin(cellstr(maxItems), ', '));
+    plotData.xLines = growthRange;
+end
+
+function [xData, logAmplitude, xLabelText, toroidalModeN, radialX, lnAmplitude] = ...
+    calculateAmplitudeData(amplitude, ctx, opt)
+    nTime = size(amplitude, 1);
+
+    [~, toroidalModeN, modeIdx] = parseModeN( ...
+        opt.modeN, ctx.modeIndexAll, ctx.physicalNAll, 'Amplitude');
+
+    nRadial = size(amplitude, 2);
+    radialIdx = parseIndex(opt.radialIndex, nRadial, 'radialIndex');
+    radialX = ctx.xGrid(radialIdx);
+    [xData, xLabelText] = diagnosticTimeAxis(ctx.tDiag, (0:nTime - 1) * ctx.diagSteps, ...
+        ctx.L0, ctx.VA0, opt.timeAxis, '未知 amplitude 时间轴：%s。可选 ''ta''、''ms'' 或 ''steps''。');
+
+    amplitudeScale = ctx.B0 * ctx.L0 * ctx.VA0 / (ctx.TeSample(1, 1) * 1000);
     amplitudeToPlot = reshape(amplitude(:, radialIdx, modeIdx), nTime, []);
     scaledAmplitude = amplitudeScale * amplitudeToPlot;
     logAmplitude = log10(scaledAmplitude);
@@ -1838,9 +1677,9 @@ function [growthStart, growthEnd] = amplitudeGrowthInitialRange(xData, opt)
 end
 
 function [growthRate, growthUnit, growthRange] = ...
-    calculateAmplitudeGrowthRate(lnAmplitude, xData, tDiag, L0, VA0, opt)
+    calculateAmplitudeGrowthRate(lnAmplitude, xData, ctx, opt)
     xData = xData(:);
-    tDiag = tDiag(:);
+    tDiag = ctx.tDiag(:);
     growthRange = sort(opt.growthRange);
     growthRange = min(max(growthRange, xData(1)), xData(end));
     assert(growthRange(2) > growthRange(1), 'Amplitude growthRange 必须包含两个不同的 x 位置。');
@@ -1849,13 +1688,10 @@ function [growthRate, growthUnit, growthRange] = ...
     logStart = interp1(xData, lnAmplitude, growthRange(1), 'linear');
     logEnd = interp1(xData, lnAmplitude, growthRange(2), 'linear');
 
-    % Growth rate uses natural log; the plotted curve still uses log10.
+    % 增长率使用自然对数，绘图曲线仍使用 log10。
     growthRate = (logEnd - logStart) / (tRange(2) - tRange(1));
-    growthUnitOpt = '1/wa';
-    if isfield(opt, 'growthUnit') && ~isempty(opt.growthUnit)
-        growthUnitOpt = opt.growthUnit;
-    end
-    [unitScale, growthUnit] = amplitudeGrowthUnitScale(growthUnitOpt, L0, VA0);
+    growthUnitOpt = getOptionValue(opt, 'growthUnit', '1/wa');
+    [unitScale, growthUnit] = amplitudeGrowthUnitScale(growthUnitOpt, ctx.L0, ctx.VA0);
     growthRate = growthRate(:)' * unitScale;
 end
 
@@ -1879,105 +1715,95 @@ function statusText = amplitudeGrowthStatus(radialX, radialIndex, growthRange, g
         radialX, radialIndex, growthRange(1), growthRange(2), growthUnit, strjoin(cellstr(growthItems), ', '));
 end
 
-function plotMultipleFrequency(RealMode, ImagMode, xGrid, tDiag, diagSteps, ...
-    modeIndexAll, physicalNAll, L0, VA0, opt)
+function plotData = buildMultipleFrequencyPlotData(RealMode, ImagMode, ctx, opt)
     [xData, peakFrequencyHz, xLabelText, toroidalModeN, radialX] = ...
-        calculateMultipleFrequencyData(RealMode, ImagMode, xGrid, tDiag, diagSteps, ...
-        modeIndexAll, physicalNAll, L0, VA0, opt);
-
-    drawLinePlot(linePlotData(xData, peakFrequencyHz, xLabelText, '$f/\mathrm{Hz}$', ...
-        '$\mathrm{Short\mbox{-}Time\;Fourier\;Transform}$', compose('$n=%d$', toroidalModeN), ''), opt);
-
-    fprintf('[plot] mode frequency: x=%.6g, radialIndex=%d, n=[%s]\n', ...
+        calculateMultipleFrequencyData(RealMode, ImagMode, ctx, opt);
+    plotData = buildLinePlotData(xData, peakFrequencyHz, xLabelText, '$f/\mathrm{Hz}$', ...
+        '$\mathrm{Short\mbox{-}Time\;Fourier\;Transform}$', compose('$n=%d$', toroidalModeN), ...
+        sprintf('x = %.6g, radialIndex = %d, windowLength = %d, windowStep = %d, nFFT = %d', ...
+        radialX, opt.radialIndex, opt.windowLength, opt.windowStep, multipleFrequencyNFFT(opt, opt.windowLength)));
+    plotData.logText = sprintf('mode frequency: x=%.6g, radialIndex=%d, n=[%s]', ...
         radialX, opt.radialIndex, formatNumberList(toroidalModeN));
 end
 
-function plotMultipleFrequencyInteractive(RealMode, ImagMode, xGrid, tDiag, diagSteps, ...
-    modeIndexAll, physicalNAll, L0, VA0, opt, dynamicUpdate)
+function plotMultipleFrequencyInteractive(RealMode, ImagMode, ctx, opt, dynamicUpdate)
     nTime = size(RealMode, 1);
-    if isempty(opt.nFFT)
-        nFFT0 = 2 ^ nextpow2(opt.windowLength);
-    else
-        nFFT0 = opt.nFFT;
-    end
+    [windowLength0, windowStep0, nFFT0] = parseMultipleFrequencyOptions(opt, nTime);
     nFFTMax = max(nFFT0, 2 ^ nextpow2(nTime));
+    windowStepMax = max(windowStep0, max(1, nTime - 1));
     controls = [ ...
-        integerSliderControl('windowLength', 'windowLength', opt.windowLength, 2, nTime), ...
-        integerSliderControl('windowStep', 'windowStep', opt.windowStep, 1, max(1, nTime - 1)), ...
-        integerSliderControl('nFFT', 'nFFT', nFFT0, 2, nFFTMax)];
+        buildIntegerSliderControl('windowLength', 'windowLength', windowLength0, 2, nTime), ...
+        buildIntegerSliderControl('windowStep', 'windowStep', windowStep0, 1, windowStepMax), ...
+        buildIntegerSliderControl('nFFT', 'nFFT', nFFT0, 2, nFFTMax)];
+    controls(3).minField = 'windowLength';
 
-    plotInteractiveLineWithSliders('Short-Time Fourier Transform', controls, dynamicUpdate, opt, @computePlotData);
-
-    function data = computePlotData(values)
-        tempOpt = opt;
-        tempOpt.windowLength = values.windowLength;
-        tempOpt.windowStep = values.windowStep;
-        tempOpt.nFFT = max(values.nFFT, tempOpt.windowLength);
-        [xData, peakFrequencyHz, xLabelText, toroidalModeN, radialX] = ...
-            calculateMultipleFrequencyData(RealMode, ImagMode, xGrid, tDiag, diagSteps, ...
-            modeIndexAll, physicalNAll, L0, VA0, tempOpt);
-        data = linePlotData(xData, peakFrequencyHz, xLabelText, '$f/\mathrm{Hz}$', ...
-            '$\mathrm{Short\mbox{-}Time\;Fourier\;Transform}$', compose('$n=%d$', toroidalModeN), ...
-            sprintf('x = %.6g, radialIndex = %d, windowLength = %d, windowStep = %d, nFFT = %d', ...
-            radialX, tempOpt.radialIndex, tempOpt.windowLength, tempOpt.windowStep, tempOpt.nFFT));
-    end
+    plotInteractiveOptionsWithSliders('Short-Time Fourier Transform', controls, dynamicUpdate, opt, ...
+        @(tempOpt) buildMultipleFrequencyPlotData(RealMode, ImagMode, ctx, tempOpt));
 end
 
 function nFFT = multipleFrequencyNFFT(opt, windowLength)
 
-    if isempty(opt.nFFT)
-        nFFT = 2 ^ nextpow2(windowLength);
-    else
-        nFFT = opt.nFFT;
+    nFFT = getOptionValue(opt, 'nFFT', 2 ^ nextpow2(windowLength));
+end
+
+function [windowLength, windowStep, nFFT, frequencyRangeHz, windowType, removeMean] = ...
+    parseMultipleFrequencyOptions(opt, nTime)
+
+    windowLength = requireIntegerInRange(opt.windowLength, 2, nTime, 'windowLength');
+    windowStep = requireIntegerInRange(opt.windowStep, 1, Inf, 'windowStep');
+    nFFT = requireIntegerInRange(multipleFrequencyNFFT(opt, windowLength), windowLength, Inf, 'nFFT');
+    removeMean = requireLogicalScalar(opt.removeMean, 'removeMean');
+
+    frequencyRangeHz = opt.frequencyRangeHz;
+    if ~isempty(frequencyRangeHz)
+        isValidRange = isnumeric(frequencyRangeHz) && isreal(frequencyRangeHz) && ...
+            numel(frequencyRangeHz) == 2 && all(isfinite(frequencyRangeHz(:)));
+        assert(isValidRange && frequencyRangeHz(1) <= frequencyRangeHz(2), ...
+            'frequencyRangeHz 必须是按升序排列的两个有限数，或使用 []。');
+        frequencyRangeHz = double(frequencyRangeHz(:)');
     end
+
+    windowTypeInput = opt.windowType;
+    isTextScalar = (ischar(windowTypeInput) && isrow(windowTypeInput)) || ...
+        (isstring(windowTypeInput) && isscalar(windowTypeInput));
+    assert(isTextScalar, 'windowType 必须为字符向量或字符串标量。');
+    windowType = lower(string(windowTypeInput));
+    assert(any(windowType == ["hann", "rect"]), ...
+        'windowType 必须为 ''hann'' 或 ''rect''。');
 end
 
 function [xData, peakFrequencyHz, xLabelText, toroidalModeN, radialX] = ...
-    calculateMultipleFrequencyData(RealMode, ImagMode, xGrid, tDiag, diagSteps, ...
-        modeIndexAll, physicalNAll, L0, VA0, opt)
+    calculateMultipleFrequencyData(RealMode, ImagMode, ctx, opt)
     nTime = size(RealMode, 1);
-    assert(isequal(size(RealMode), size(ImagMode)), 'RealMode 和 ImagMode 尺寸必须一致。');
-    assert(numel(tDiag) == nTime, 'tDiag 长度必须匹配 RealMode 时间维度。');
-    assert(nTime >= 2, '频率分析至少需要两个诊断时间点。');
+    [windowLength, windowStep, nFFT, frequencyRangeHz, windowType, removeMean] = ...
+        parseMultipleFrequencyOptions(opt, nTime);
 
-    [modeIndex, toroidalModeN] = parseModeN(opt.modeN, modeIndexAll, physicalNAll, 'Mode frequency');
+    [~, toroidalModeN, modeIdx] = parseModeN( ...
+        opt.modeN, ctx.modeIndexAll, ctx.physicalNAll, 'Mode frequency');
 
     nRadial = size(RealMode, 2);
-    assert(numel(xGrid) == nRadial, 'xGrid 长度必须匹配 RealMode 径向维度。');
     radialIdx = parseIndex(opt.radialIndex, nRadial, 'radialIndex');
-    radialX = xGrid(radialIdx);
+    radialX = ctx.xGrid(radialIdx);
 
-    windowLength = opt.windowLength;
-    windowStep = opt.windowStep;
-    assert(windowLength >= 2 && windowLength == floor(windowLength) && windowLength <= nTime, ...
-        'windowLength 必须是 [2, %d] 内的整数。', nTime);
-    assert(windowStep >= 1 && windowStep == floor(windowStep), 'windowStep 必须是正整数。');
-
-    nFFT = multipleFrequencyNFFT(opt, windowLength);
-    assert(nFFT >= windowLength && nFFT == floor(nFFT), 'nFFT 必须是不小于 windowLength 的整数。');
-
-    dtPhysical = (tDiag(2) - tDiag(1)) * L0 / VA0;
+    dtPhysical = (ctx.tDiag(2) - ctx.tDiag(1)) * ctx.L0 / ctx.VA0;
     sampleRateHz = 1 / dtPhysical;
     frequencyHz = (-floor(nFFT / 2):ceil(nFFT / 2) - 1)' * sampleRateHz / nFFT;
     frequencyMask = true(size(frequencyHz));
-    if ~isempty(opt.frequencyRangeHz)
-        frequencyMask = frequencyHz >= opt.frequencyRangeHz(1) & frequencyHz <= opt.frequencyRangeHz(2);
+    if ~isempty(frequencyRangeHz)
+        frequencyMask = frequencyHz >= frequencyRangeHz(1) & frequencyHz <= frequencyRangeHz(2);
     end
     assert(any(frequencyMask), 'frequencyRangeHz 未包含任何 FFT 频率点。');
 
-    switch char(lower(opt.windowType))
+    switch char(windowType)
         case 'hann'
             windowData = 0.5 - 0.5 * cos(2 * pi * (0:windowLength - 1)' / (windowLength - 1));
         case 'rect'
             windowData = ones(windowLength, 1);
-        otherwise
-            error('未知 windowType：%s。可选 ''hann'' 或 ''rect''。', opt.windowType);
     end
 
     windowStart = 1:windowStep:(nTime - windowLength + 1);
     nWindow = numel(windowStart);
-    [~, modeIdx] = ismember(modeIndex, modeIndexAll);
-    peakFrequencyHz = nan(nWindow, numel(modeIndex));
+    peakFrequencyHz = nan(nWindow, numel(modeIdx));
     centerIndex = windowStart + floor((windowLength - 1) / 2);
 
     for iMode = 1:numel(modeIdx)
@@ -1986,7 +1812,7 @@ function [xData, peakFrequencyHz, xLabelText, toroidalModeN, radialX] = ...
         for iWindow = 1:nWindow
             idx = windowStart(iWindow):(windowStart(iWindow) + windowLength - 1);
             segment = signal(idx);
-            if opt.removeMean
+            if removeMean
                 segment = segment - mean(segment);
             end
 
@@ -1998,93 +1824,57 @@ function [xData, peakFrequencyHz, xLabelText, toroidalModeN, radialX] = ...
         end
     end
 
-    switch char(lower(opt.timeAxis))
-        case {'ta', 'alfven', 'alfven_time'}
-            xData = tDiag(centerIndex);
-            xLabelText = '$t_a$';
-        case {'ms', 'millisecond', 'milliseconds'}
-            xData = tDiag(centerIndex) * L0 / VA0 * 1000;
-            xLabelText = '$t/\mathrm{ms}$';
-        case {'steps', 'step'}
-            xData = (centerIndex - 1) * diagSteps;
-            xLabelText = '$\mathrm{steps}$';
-        otherwise
-            error('未知 mode frequency 时间轴：%s。可选 ''ta''、''ms'' 或 ''steps''。', opt.timeAxis);
-    end
+    [xData, xLabelText] = diagnosticTimeAxis( ...
+        ctx.tDiag(centerIndex), (centerIndex - 1) * ctx.diagSteps, ctx.L0, ctx.VA0, opt.timeAxis, ...
+        '未知 mode frequency 时间轴：%s。可选 ''ta''、''ms'' 或 ''steps''。');
 end
 
-function plotPhaseFrequency(RealMode, ImagMode, xGrid, tDiag, diagSteps, ...
-    modeIndexAll, physicalNAll, L0, VA0, opt)
+function plotData = buildPhaseFrequencyPlotData(RealMode, ImagMode, ctx, opt)
     [xData, phaseFrequencyHz, xLabelText, toroidalModeN, radialX] = ...
-        calculatePhaseFrequencyData(RealMode, ImagMode, xGrid, tDiag, diagSteps, ...
-        modeIndexAll, physicalNAll, L0, VA0, opt);
-
-    drawLinePlot(linePlotData(xData, phaseFrequencyHz, xLabelText, '$f/\mathrm{Hz}$', ...
-        '', compose('$n=%d$', toroidalModeN), ''), opt);
-
-    fprintf('[plot] phase frequency: x=%.6g, radialIndex=%d, n=[%s], phaseStep=%d\n', ...
+        calculatePhaseFrequencyData(RealMode, ImagMode, ctx, opt);
+    plotData = buildLinePlotData(xData, phaseFrequencyHz, xLabelText, '$f/\mathrm{Hz}$', ...
+        '', compose('$n=%d$', toroidalModeN), ...
+        sprintf('x = %.6g, radialIndex = %d, phaseStep = %d, smoothWindow = %d', ...
+        radialX, opt.radialIndex, opt.phaseStep, getOptionValue(opt, 'smoothWindow', 1)));
+    plotData.logText = sprintf('phase frequency: x=%.6g, radialIndex=%d, n=[%s], phaseStep=%d', ...
         radialX, opt.radialIndex, formatNumberList(toroidalModeN), opt.phaseStep);
 end
 
-function plotPhaseFrequencyInteractive(RealMode, ImagMode, xGrid, tDiag, diagSteps, ...
-    modeIndexAll, physicalNAll, L0, VA0, opt, dynamicUpdate)
+function plotPhaseFrequencyInteractive(RealMode, ImagMode, ctx, opt, dynamicUpdate)
     nTime = size(RealMode, 1);
+    [phaseStep0, smoothWindow0] = parsePhaseFrequencyOptions(opt, nTime);
+    smoothWindowMax = max(smoothWindow0, max(1, min(1001, nTime - 1)));
     controls = [ ...
-        integerSliderControl('phaseStep', 'phaseStep', opt.phaseStep, 1, nTime - 1), ...
-        integerSliderControl('smoothWindow', 'smoothWindow', opt.smoothWindow, 1, max(1, min(1001, nTime - 1)))];
-    plotInteractiveLineWithSliders('Phase Frequency', controls, dynamicUpdate, opt, @computePlotData);
+        buildIntegerSliderControl('phaseStep', 'phaseStep', phaseStep0, 1, nTime - 1), ...
+        buildIntegerSliderControl('smoothWindow', 'smoothWindow', smoothWindow0, 1, smoothWindowMax)];
+    plotInteractiveOptionsWithSliders('Phase Frequency', controls, dynamicUpdate, opt, ...
+        @(tempOpt) buildPhaseFrequencyPlotData(RealMode, ImagMode, ctx, tempOpt));
+end
 
-    function data = computePlotData(values)
-        tempOpt = opt;
-        tempOpt.phaseStep = values.phaseStep;
-        tempOpt.smoothWindow = values.smoothWindow;
-        [xData, phaseFrequencyHz, xLabelText, toroidalModeN, radialX] = ...
-            calculatePhaseFrequencyData(RealMode, ImagMode, xGrid, tDiag, diagSteps, ...
-            modeIndexAll, physicalNAll, L0, VA0, tempOpt);
-        data = linePlotData(xData, phaseFrequencyHz, xLabelText, '$f/\mathrm{Hz}$', ...
-            '', compose('$n=%d$', toroidalModeN), ...
-            sprintf('x = %.6g, radialIndex = %d, phaseStep = %d, smoothWindow = %d', ...
-            radialX, tempOpt.radialIndex, tempOpt.phaseStep, tempOpt.smoothWindow));
-    end
+function [phaseStep, smoothWindow, amplitudeFloor] = parsePhaseFrequencyOptions(opt, nTime)
+
+    phaseStep = requireIntegerInRange(opt.phaseStep, 1, nTime - 1, 'phaseStep');
+    smoothWindow = requireIntegerInRange(getOptionValue(opt, 'smoothWindow', 1), 1, Inf, 'smoothWindow');
+    amplitudeFloor = requireFiniteScalarInRange( ...
+        getOptionValue(opt, 'amplitudeFloor', 0), 0, Inf, 'amplitudeFloor');
 end
 
 function [xData, phaseFrequencyHz, xLabelText, toroidalModeN, radialX] = ...
-    calculatePhaseFrequencyData(RealMode, ImagMode, xGrid, tDiag, diagSteps, ...
-        modeIndexAll, physicalNAll, L0, VA0, opt)
+    calculatePhaseFrequencyData(RealMode, ImagMode, ctx, opt)
     nTime = size(RealMode, 1);
-    assert(isequal(size(RealMode), size(ImagMode)), 'RealMode 和 ImagMode 尺寸必须一致。');
-    assert(numel(tDiag) == nTime, 'tDiag 长度必须匹配 RealMode 时间维度。');
-    assert(nTime >= 2, '相位频率分析至少需要两个诊断时间点。');
+    [phaseStep, smoothWindow, amplitudeFloor] = parsePhaseFrequencyOptions(opt, nTime);
 
-    [modeIndex, toroidalModeN] = parseModeN(opt.modeN, modeIndexAll, physicalNAll, 'Phase frequency');
+    [~, toroidalModeN, modeIdx] = parseModeN( ...
+        opt.modeN, ctx.modeIndexAll, ctx.physicalNAll, 'Phase frequency');
 
     nRadial = size(RealMode, 2);
-    assert(numel(xGrid) == nRadial, 'xGrid 长度必须匹配 RealMode 径向维度。');
     radialIdx = parseIndex(opt.radialIndex, nRadial, 'radialIndex');
-    radialX = xGrid(radialIdx);
+    radialX = ctx.xGrid(radialIdx);
 
-    phaseStep = opt.phaseStep;
-    assert(isscalar(phaseStep) && phaseStep == floor(phaseStep) && phaseStep >= 1 && phaseStep <= nTime - 1, ...
-        'phaseStep 必须是 [1, %d] 内的整数。', nTime - 1);
-
-    smoothWindow = opt.smoothWindow;
-    if isempty(smoothWindow)
-        smoothWindow = 1;
-    end
-    assert(isscalar(smoothWindow) && smoothWindow == floor(smoothWindow) && smoothWindow >= 1, ...
-        'smoothWindow 必须是正整数。');
-
-    amplitudeFloor = opt.amplitudeFloor;
-    if isempty(amplitudeFloor)
-        amplitudeFloor = 0;
-    end
-    assert(isscalar(amplitudeFloor) && amplitudeFloor >= 0, 'amplitudeFloor 必须非负。');
-
-    dtPhysical = (tDiag(2) - tDiag(1)) * L0 / VA0;
+    dtPhysical = (ctx.tDiag(2) - ctx.tDiag(1)) * ctx.L0 / ctx.VA0;
     startIndex = (1:(nTime - phaseStep))';
     endIndex = startIndex + phaseStep;
-    [~, modeIdx] = ismember(modeIndex, modeIndexAll);
-    phaseFrequencyHz = nan(numel(startIndex), numel(modeIndex));
+    phaseFrequencyHz = nan(numel(startIndex), numel(modeIdx));
 
     for iMode = 1:numel(modeIdx)
         signal = RealMode(:, radialIdx, modeIdx(iMode)) + 1i * ImagMode(:, radialIdx, modeIdx(iMode));
@@ -2105,53 +1895,28 @@ function [xData, phaseFrequencyHz, xLabelText, toroidalModeN, radialX] = ...
         end
     end
 
-    switch char(lower(opt.timeAxis))
-        case {'ta', 'alfven', 'alfven_time'}
-            xData = 0.5 * (tDiag(startIndex) + tDiag(endIndex));
-            xLabelText = '$t_a$';
-        case {'ms', 'millisecond', 'milliseconds'}
-            xData = 0.5 * (tDiag(startIndex) + tDiag(endIndex)) * L0 / VA0 * 1000;
-            xLabelText = '$t/\mathrm{ms}$';
-        case {'steps', 'step'}
-            xData = ((startIndex - 1) + phaseStep / 2) * diagSteps;
-            xLabelText = '$\mathrm{steps}$';
-        otherwise
-            error('未知 phase frequency 时间轴：%s。可选 ''ta''、''ms'' 或 ''steps''。', opt.timeAxis);
-    end
+    tACenter = 0.5 * (ctx.tDiag(startIndex) + ctx.tDiag(endIndex));
+    stepCenter = ((startIndex - 1) + phaseStep / 2) * ctx.diagSteps;
+    [xData, xLabelText] = diagnosticTimeAxis(tACenter, stepCenter, ctx.L0, ctx.VA0, opt.timeAxis, ...
+        '未知 phase frequency 时间轴：%s。可选 ''ta''、''ms'' 或 ''steps''。');
 end
 
-function plotContourFrequency(amplitude, RealMode, xGrid, tDiag, ...
-    modeIndexAll, physicalNAll, L0, VA0, opt)
-
-    plotData = calculateContourFrequencyData(amplitude, RealMode, xGrid, tDiag, ...
-        modeIndexAll, physicalNAll, L0, VA0, opt);
-    drawFrequencyMap(plotData, opt);
-
-    fprintf('[plot] contour frequency: n=%d, timeIndexRange=[%d %d], frequencyUnit=%s\n', ...
-        plotData.toroidalModeN, plotData.timeIndexRange(1), plotData.timeIndexRange(2), plotData.frequencyUnit);
-end
-
-function plotData = calculateContourFrequencyData(amplitude, RealMode, xGrid, tDiag, ...
-    modeIndexAll, physicalNAll, L0, VA0, opt)
+function plotData = buildContourFrequencyPlotData(amplitude, RealMode, ctx, opt)
 
     nTime = size(RealMode, 1);
-    assert(isequal(size(amplitude), size(RealMode)), 'amplitude 和 RealMode 尺寸必须一致。');
-    assert(numel(tDiag) == nTime, 'tDiag 长度必须匹配 RealMode 时间维度。');
-    assert(nTime >= 2, '等高线频率诊断至少需要两个诊断时间点。');
 
-    [modeIndex, toroidalModeN] = parseModeN(opt.modeN, modeIndexAll, physicalNAll, 'Contour frequency');
-    assert(isscalar(modeIndex), 'Contour frequency modeN 一次只能选择一个物理环向模数。');
-
-    nRadial = size(RealMode, 2);
-    assert(numel(xGrid) == nRadial, 'xGrid 长度必须匹配 RealMode 径向维度。');
-    [~, modeIdx] = ismember(modeIndex, modeIndexAll);
+    [~, toroidalModeN, modeIdx] = parseModeN( ...
+        opt.modeN, ctx.modeIndexAll, ctx.physicalNAll, 'Contour frequency');
+    assert(isscalar(modeIdx), 'Contour frequency modeN 一次只能选择一个物理环向模数。');
 
     timeIndexRange = opt.timeIndexRange;
     if isempty(timeIndexRange)
         timeIndex = 1:nTime;
     else
         timeIndexRange = sort(reshape(double(timeIndexRange), 1, []));
-        assert(numel(timeIndexRange) == 2 && all(isfinite(timeIndexRange)) && all(timeIndexRange == floor(timeIndexRange)), ...
+        isValidRange = numel(timeIndexRange) == 2 && all(isfinite(timeIndexRange)) && ...
+            all(timeIndexRange == floor(timeIndexRange));
+        assert(isValidRange, ...
             'Contour frequency timeIndexRange 必须为两个有限整数。');
         assert(timeIndexRange(1) >= 1 && timeIndexRange(2) <= nTime && timeIndexRange(2) > timeIndexRange(1), ...
             'Contour frequency timeIndexRange 必须位于 [1, %d] 且至少包含两个时间点。', nTime);
@@ -2160,7 +1925,7 @@ function plotData = calculateContourFrequencyData(amplitude, RealMode, xGrid, tD
 
     amplitude2D = amplitude(timeIndex, :, modeIdx);
     field2D = RealMode(timeIndex, :, modeIdx);
-    tDiag = tDiag(timeIndex);
+    tDiag = ctx.tDiag(timeIndex);
     nTime = numel(timeIndex);
 
     fieldRMax = max(amplitude2D, [], 2);
@@ -2189,242 +1954,123 @@ function plotData = calculateContourFrequencyData(amplitude, RealMode, xGrid, tD
             yLabelText = '$\omega/\omega_A$';
             frequencyUnit = 'omegaA';
         case {'khz'}
-            frequencyVec = omegaVec * VA0 / L0 / (2 * pi) / 1000;
+            frequencyVec = omegaVec * ctx.VA0 / ctx.L0 / (2 * pi) / 1000;
             yLabelText = '$f/\mathrm{kHz}$';
             frequencyUnit = 'kHz';
         otherwise
             error('未知 frequencyUnit：%s。可选 ''omegaA'' 或 ''kHz''。', opt.frequencyUnit);
     end
 
-    plotData = frequencyMapPlotData(xGrid(:).', frequencyVec, frequencyIntensity, '$r/a$', ...
-        yLabelText, '$I/I_{\mathrm{max}}$', '$\mathrm{Frequency\;contour}$', ...
-        sprintf('n = %d, timeIndexRange = [%d %d], frequencyUnit = %s', ...
-        toroidalModeN, timeIndex(1), timeIndex(end), frequencyUnit));
-    plotData.toroidalModeN = toroidalModeN;
-    plotData.timeIndexRange = [timeIndex(1), timeIndex(end)];
-    plotData.frequencyUnit = frequencyUnit;
+    plotData = buildMapPlotData(ctx.xGrid(:).', frequencyVec, frequencyIntensity, '$r/a$', ...
+        yLabelText, '$I/I_{\mathrm{max}}$', '$\mathrm{Frequency\;contour}$');
+    plotData.logText = sprintf('contour frequency: n=%d, timeIndexRange=[%d %d], frequencyUnit=%s', ...
+        toroidalModeN, timeIndex(1), timeIndex(end), frequencyUnit);
 end
 
-function plotSingleSignal(singlePointPhi, xGrid, tDiag, diagSteps, L0, VA0, opt)
-    [xData, yData, xLabelText, radialX] = calculateSingleSignalData(singlePointPhi, xGrid, tDiag, diagSteps, L0, VA0, opt);
-    drawLinePlot(linePlotData(xData, yData, xLabelText, '', '$\log(|\delta\phi|)$', [], ''), opt);
-
-    fprintf('[plot] single signal: x=%.6g, radialIndex=%d\n', radialX, opt.radialIndex);
+function plotData = buildSingleSignalPlotData(singlePointPhi, ctx, opt)
+    [xData, yData, xLabelText, radialX] = calculateSingleSignalData(singlePointPhi, ctx, opt);
+    plotData = buildLinePlotData(xData, yData, xLabelText, '', '$\log(|\delta\phi|)$', [], ...
+        sprintf('x = %.6g, radialIndex = %d', radialX, opt.radialIndex));
+    plotData.logText = sprintf('single signal: x=%.6g, radialIndex=%d', radialX, opt.radialIndex);
 end
 
-function plotSingleSignalInteractive(singlePointPhi, xGrid, tDiag, diagSteps, L0, VA0, opt, dynamicUpdate)
+function plotSingleSignalInteractive(singlePointPhi, ctx, opt, dynamicUpdate)
     nRadial = size(singlePointPhi, 2);
     radialIndex0 = parseIndex(opt.radialIndex, nRadial, 'radialIndex');
-    controls = integerSliderControl('radialIndex', 'radialIndex', radialIndex0, 1, nRadial);
-    plotInteractiveLineWithSliders('singlePointPhi', controls, dynamicUpdate, opt, @computePlotData);
-
-    function data = computePlotData(values)
-        tempOpt = opt;
-        tempOpt.radialIndex = values.radialIndex;
-        [xData, yData, xLabelText, radialX] = calculateSingleSignalData(singlePointPhi, xGrid, tDiag, diagSteps, L0, VA0, tempOpt);
-        data = linePlotData(xData, yData, xLabelText, '', '$\log(|\delta\phi|)$', [], ...
-            sprintf('x = %.6g, radialIndex = %d', radialX, tempOpt.radialIndex));
-    end
+    controls = buildIntegerSliderControl('radialIndex', 'radialIndex', radialIndex0, 1, nRadial);
+    plotInteractiveOptionsWithSliders('singlePointPhi', controls, dynamicUpdate, opt, ...
+        @(tempOpt) buildSingleSignalPlotData(singlePointPhi, ctx, tempOpt));
 end
 
-function [xData, yData, xLabelText, radialX] = calculateSingleSignalData(singlePointPhi, xGrid, tDiag, diagSteps, L0, VA0, opt)
+function [xData, yData, xLabelText, radialX] = calculateSingleSignalData(singlePointPhi, ctx, opt)
     nTime = size(singlePointPhi, 1);
-    assert(numel(tDiag) == nTime, 'tDiag 长度必须匹配 singlePointPhi 时间维度。');
 
     nRadial = size(singlePointPhi, 2);
-    assert(numel(xGrid) == nRadial, 'xGrid 长度必须匹配 singlePointPhi 径向维度。');
 
     radialIdx = parseIndex(opt.radialIndex, nRadial, 'radialIndex');
-    radialX = xGrid(radialIdx);
+    radialX = ctx.xGrid(radialIdx);
     assert(isscalar(opt.logFloor) && opt.logFloor > 0, 'single signal logFloor 必须为正数。');
 
-    switch char(lower(opt.timeAxis))
-        case {'ta', 'alfven', 'alfven_time'}
-            xData = tDiag;
-            xLabelText = '$t_a$';
-        case {'ms', 'millisecond', 'milliseconds'}
-            xData = tDiag * L0 / VA0 * 1000;
-            xLabelText = '$t/\mathrm{ms}$';
-        case {'steps', 'step'}
-            xData = (0:nTime - 1) * diagSteps;
-            xLabelText = '$\mathrm{steps}$';
-        otherwise
-            error('single signal 的 timeAxis 必须为 "ta"、"ms" 或 "steps"。当前值：%s。', opt.timeAxis);
-    end
+    [xData, xLabelText] = diagnosticTimeAxis(ctx.tDiag, (0:nTime - 1) * ctx.diagSteps, ...
+        ctx.L0, ctx.VA0, opt.timeAxis, 'single signal 的 timeAxis 必须为 "ta"、"ms" 或 "steps"。当前值：%s。');
 
     yData = log(max(abs(singlePointPhi(:, radialIdx)), opt.logFloor));
 end
 
-function plotEpara(Epara, EparaES, rho, opt)
-    assert(isequal(size(Epara), size(EparaES)), 'Epara 和 EparaES 尺寸必须一致。');
-
-    nTime = size(Epara, 1);
-    nRadial = size(Epara, 2);
-    timeIdx = parseTimeIndex(opt.timeIndex, nTime);
-    opt.timeIndex = timeIdx;
-    assert(size(rho, 1) == nRadial, 'rho(:, 1) 长度必须匹配 Epara 径向维度。');
-
-    [xData, yData] = calculateEparaData(Epara, EparaES, rho, opt);
-    drawLinePlot(linePlotData(xData, yData, '$r/a$', '', '', ...
-        {'$E_{\parallel}$', '$E_{\parallel}^{\mathrm{ES}}$', '$\partial \delta A_{\parallel}/\partial t$'}, ''), opt);
-
-    fprintf('[plot] Epara/EparaES: timeIndex=%d\n', timeIdx);
+function plotIndexOptionInteractive(figName, optionField, nIndex, dynamicUpdate, opt, buildPlotDataFcn)
+    initialIndex = parseIndex(opt.(optionField), nIndex, optionField);
+    controls = buildIntegerSliderControl(optionField, optionField, initialIndex, 1, nIndex);
+    plotInteractiveOptionsWithSliders(figName, controls, dynamicUpdate, opt, buildPlotDataFcn);
 end
 
-function plotEparaInteractive(Epara, EparaES, rho, opt, dynamicUpdate)
-    nTime = size(Epara, 1);
-    timeIndex0 = parseTimeIndex(opt.timeIndex, nTime);
-    controls = integerSliderControl('timeIndex', 'timeIndex', timeIndex0, 1, nTime);
-    plotInteractiveLineWithSliders('Epara / EparaES', controls, dynamicUpdate, opt, @computePlotData);
-
-    function data = computePlotData(values)
-        tempOpt = opt;
-        tempOpt.timeIndex = values.timeIndex;
-        [xData, yData] = calculateEparaData(Epara, EparaES, rho, tempOpt);
-        data = linePlotData(xData, yData, '$r/a$', '', '', ...
-            {'$E_{\parallel}$', '$E_{\parallel}^{\mathrm{ES}}$', '$\partial \delta A_{\parallel}/\partial t$'}, ...
-            sprintf('timeIndex = %d', tempOpt.timeIndex));
-    end
+function plotData = buildEparaPlotData(Epara, EparaES, ctx, opt)
+    [xData, yData, timeIdx] = calculateEparaData(Epara, EparaES, ctx, opt);
+    plotData = buildLinePlotData(xData, yData, '$r/a$', '', '', ...
+        {'$E_{\parallel}$', '$E_{\parallel}^{\mathrm{ES}}$', '$\partial \delta A_{\parallel}/\partial t$'}, ...
+        sprintf('timeIndex = %d', timeIdx));
+    plotData.logText = sprintf('Epara/EparaES: timeIndex=%d', timeIdx);
 end
 
-function [xData, yData] = calculateEparaData(Epara, EparaES, rho, opt)
-    nTime = size(Epara, 1);
-    timeIdx = parseTimeIndex(opt.timeIndex, nTime);
-    xData = rho(:, 1);
+function [xData, yData, timeIdx] = calculateEparaData(Epara, EparaES, ctx, opt)
+    timeIdx = parseTimeIndex(opt.timeIndex, size(Epara, 1));
+    xData = ctx.rho(:, 1);
     yData = [Epara(timeIdx, :)', EparaES(timeIdx, :)', (EparaES(timeIdx, :) - Epara(timeIdx, :))'];
 end
 
-function plotShearingTimeSlice(Shearing, xGrid, tDiag, opt)
-    [xData, yData, timeIdx] = calculateShearingTimeSliceData(Shearing, xGrid, tDiag, opt);
-    drawLinePlot(linePlotData(xData, yData, '$x$', '$\gamma_E\;[\mathrm{s}^{-1}]$', ...
-        '$\mathrm{Hahm\mbox{-}Burrell\;shearing}$', [], ''), opt);
-
-    fprintf('[plot] Shearing: timeIndex=%d\n', timeIdx);
+function plotData = buildShearingTimeSlicePlotData(Shearing, ctx, opt)
+    [xData, yData, timeIdx] = calculateShearingTimeSliceData(Shearing, ctx, opt);
+    plotData = buildLinePlotData(xData, yData, '$x$', '$\gamma_E\;[\mathrm{s}^{-1}]$', ...
+        '$\mathrm{Hahm\mbox{-}Burrell\;shearing}$', [], sprintf('timeIndex = %d', timeIdx));
+    plotData.logText = sprintf('Shearing: timeIndex=%d', timeIdx);
 end
 
-function plotShearingTimeSliceInteractive(Shearing, xGrid, tDiag, opt, dynamicUpdate)
-    nTime = size(Shearing, 1);
-    timeIndex0 = parseTimeIndex(opt.timeIndex, nTime);
-    controls = integerSliderControl('timeIndex', 'timeIndex', timeIndex0, 1, nTime);
-    plotInteractiveLineWithSliders('Shearing', controls, dynamicUpdate, opt, @computePlotData);
-
-    function data = computePlotData(values)
-        tempOpt = opt;
-        tempOpt.timeIndex = values.timeIndex;
-        [xData, yData] = calculateShearingTimeSliceData(Shearing, xGrid, tDiag, tempOpt);
-        data = linePlotData(xData, yData, '$x$', '$\gamma_E\;[\mathrm{s}^{-1}]$', ...
-            '$\mathrm{Hahm\mbox{-}Burrell\;shearing}$', [], ...
-            sprintf('timeIndex = %d', tempOpt.timeIndex));
-    end
-end
-
-function [xData, yData, timeIdx] = calculateShearingTimeSliceData(Shearing, xGrid, tDiag, opt)
-    nTime = size(Shearing, 1);
-    nRadial = size(Shearing, 2);
-    assert(numel(tDiag) == nTime, 'tDiag 长度必须匹配 Shearing 时间维度。');
-    assert(numel(xGrid) == nRadial, 'xGrid 长度必须匹配 Shearing 径向维度。');
-
-    timeIdx = parseTimeIndex(opt.timeIndex, nTime);
-    xData = xGrid(:);
+function [xData, yData, timeIdx] = calculateShearingTimeSliceData(Shearing, ctx, opt)
+    timeIdx = parseTimeIndex(opt.timeIndex, size(Shearing, 1));
+    xData = ctx.xGrid(:);
     yData = Shearing(timeIdx, :)';
 end
 
-function plotShearingRadialTrace(Shearing, xGrid, tDiag, opt)
-    [xData, yData, radialIdx, radialX] = calculateShearingRadialTraceData(Shearing, xGrid, tDiag, opt);
-    drawLinePlot(linePlotData(xData, yData, '$t_a$', '$\gamma_E\;[\mathrm{s}^{-1}]$', ...
-        '$\mathrm{Hahm\mbox{-}Burrell\;shearing}$', [], ''), opt);
-
-    fprintf('[plot] Shearing trace: x=%.6g, radialIndex=%d\n', radialX, radialIdx);
+function plotData = buildShearingRadialTracePlotData(Shearing, ctx, opt)
+    [xData, yData, radialIdx, radialX] = calculateShearingRadialTraceData(Shearing, ctx, opt);
+    plotData = buildLinePlotData(xData, yData, '$t_a$', '$\gamma_E\;[\mathrm{s}^{-1}]$', ...
+        '$\mathrm{Hahm\mbox{-}Burrell\;shearing}$', [], ...
+        sprintf('x = %.6g, radialIndex = %d', radialX, radialIdx));
+    plotData.logText = sprintf('Shearing trace: x=%.6g, radialIndex=%d', radialX, radialIdx);
 end
 
-function plotShearingRadialTraceInteractive(Shearing, xGrid, tDiag, opt, dynamicUpdate)
-    nRadial = size(Shearing, 2);
-    radialIndex0 = parseIndex(opt.radialIndex, nRadial, 'radialIndex');
-    controls = integerSliderControl('radialIndex', 'radialIndex', radialIndex0, 1, nRadial);
-    plotInteractiveLineWithSliders('Shearing trace', controls, dynamicUpdate, opt, @computePlotData);
-
-    function data = computePlotData(values)
-        tempOpt = opt;
-        tempOpt.radialIndex = values.radialIndex;
-        [xData, yData, ~, radialX] = calculateShearingRadialTraceData(Shearing, xGrid, tDiag, tempOpt);
-        data = linePlotData(xData, yData, '$t_a$', '$\gamma_E\;[\mathrm{s}^{-1}]$', ...
-            '$\mathrm{Hahm\mbox{-}Burrell\;shearing}$', [], ...
-            sprintf('x = %.6g, radialIndex = %d', radialX, tempOpt.radialIndex));
-    end
-end
-
-function [xData, yData, radialIdx, radialX] = calculateShearingRadialTraceData(Shearing, xGrid, tDiag, opt)
-    nTime = size(Shearing, 1);
-    nRadial = size(Shearing, 2);
-    assert(numel(tDiag) == nTime, 'tDiag 长度必须匹配 Shearing 时间维度。');
-    assert(numel(xGrid) == nRadial, 'xGrid 长度必须匹配 Shearing 径向维度。');
-
-    radialIdx = parseIndex(opt.radialIndex, nRadial, 'radialIndex');
-    radialX = xGrid(radialIdx);
-    xData = tDiag(:);
+function [xData, yData, radialIdx, radialX] = calculateShearingRadialTraceData(Shearing, ctx, opt)
+    radialIdx = parseIndex(opt.radialIndex, size(Shearing, 2), 'radialIndex');
+    radialX = ctx.xGrid(radialIdx);
+    xData = ctx.tDiag(:);
     yData = Shearing(:, radialIdx);
 end
 
-function plotShearingMap(Shearing, xGrid, tDiag, opt)
-    plotData = calculateShearingMapData(Shearing, xGrid, tDiag);
-    drawFrequencyMap(plotData, opt);
-
-    fprintf('[plot] Shearing map: nTime=%d, gridNx=%d\n', size(Shearing, 1), size(Shearing, 2));
-end
-
-function plotData = calculateShearingMapData(Shearing, xGrid, tDiag)
+function plotData = buildShearingMapPlotData(Shearing, ctx)
     nTime = size(Shearing, 1);
     nRadial = size(Shearing, 2);
-    assert(numel(tDiag) == nTime, 'tDiag 长度必须匹配 Shearing 时间维度。');
-    assert(numel(xGrid) == nRadial, 'xGrid 长度必须匹配 Shearing 径向维度。');
-
-    plotData = frequencyMapPlotData(xGrid(:).', tDiag(:), Shearing, '$x$', '$t_a$', ...
-        '$\gamma_E\;[\mathrm{s}^{-1}]$', '$\mathrm{Hahm\mbox{-}Burrell\;shearing}$', ...
-        sprintf('nTime = %d, gridNx = %d', nTime, nRadial));
+    plotData = buildMapPlotData(ctx.xGrid(:).', ctx.tDiag(:), Shearing, '$x$', '$t_a$', ...
+        '$\gamma_E\;[\mathrm{s}^{-1}]$', '$\mathrm{Hahm\mbox{-}Burrell\;shearing}$');
+    plotData.logText = sprintf('Shearing map: nTime=%d, gridNx=%d', nTime, nRadial);
 end
 
-function plotZonalDrive(MaxwellDrive, ReynoldsDrive, ZonalDrive, rho, opt)
-    assert(isequal(size(MaxwellDrive), size(ReynoldsDrive), size(ZonalDrive)), ...
-        'MaxwellDrive、ReynoldsDrive 和 ZonalDrive 尺寸必须一致。');
-
-    nTime = size(MaxwellDrive, 1);
-    nRadial = size(MaxwellDrive, 2);
-    timeIdx = parseTimeIndex(opt.timeIndex, nTime);
-    opt.timeIndex = timeIdx;
-    assert(size(rho, 1) == nRadial, 'rho(:, 1) 长度必须匹配 zonal drive 径向维度。');
-
-    [xData, yData] = calculateZonalDriveData(MaxwellDrive, ReynoldsDrive, ZonalDrive, rho, opt);
-    drawLinePlot(linePlotData(xData, yData, '$r/a$', '', '$\mathrm{zonal\;flow\;drive}$', ...
-        {'$\mathrm{MaxwellDrive}$', '$\mathrm{ReynoldsDrive}$', '$\mathrm{ZonalDrive}$'}, ''), opt);
-
-    fprintf('[plot] ZF drive: timeIndex=%d\n', timeIdx);
+function plotData = buildZonalDrivePlotData(MaxwellDrive, ReynoldsDrive, ZonalDrive, ctx, opt)
+    [xData, yData, timeIdx] = calculateZonalDriveData( ...
+        MaxwellDrive, ReynoldsDrive, ZonalDrive, ctx, opt);
+    plotData = buildLinePlotData(xData, yData, '$r/a$', '', '$\mathrm{zonal\;flow\;drive}$', ...
+        {'$\mathrm{MaxwellDrive}$', '$\mathrm{ReynoldsDrive}$', '$\mathrm{ZonalDrive}$'}, ...
+        sprintf('timeIndex = %d', timeIdx));
+    plotData.logText = sprintf('ZF drive: timeIndex=%d', timeIdx);
 end
 
-function plotZonalDriveInteractive(MaxwellDrive, ReynoldsDrive, ZonalDrive, rho, opt, dynamicUpdate)
-    nTime = size(MaxwellDrive, 1);
-    timeIndex0 = parseTimeIndex(opt.timeIndex, nTime);
-    controls = integerSliderControl('timeIndex', 'timeIndex', timeIndex0, 1, nTime);
-    plotInteractiveLineWithSliders('MaxwellDrive / ReynoldsDrive / ZonalDrive', controls, dynamicUpdate, opt, @computePlotData);
-
-    function data = computePlotData(values)
-        tempOpt = opt;
-        tempOpt.timeIndex = values.timeIndex;
-        [xData, yData] = calculateZonalDriveData(MaxwellDrive, ReynoldsDrive, ZonalDrive, rho, tempOpt);
-        data = linePlotData(xData, yData, '$r/a$', '', '$\mathrm{zonal\;flow\;drive}$', ...
-            {'$\mathrm{MaxwellDrive}$', '$\mathrm{ReynoldsDrive}$', '$\mathrm{ZonalDrive}$'}, ...
-            sprintf('timeIndex = %d', tempOpt.timeIndex));
-    end
-end
-
-function [xData, yData] = calculateZonalDriveData(MaxwellDrive, ReynoldsDrive, ZonalDrive, rho, opt)
-    nTime = size(MaxwellDrive, 1);
-    timeIdx = parseTimeIndex(opt.timeIndex, nTime);
-    xData = rho(:, 1);
+function [xData, yData, timeIdx] = calculateZonalDriveData( ...
+    MaxwellDrive, ReynoldsDrive, ZonalDrive, ctx, opt)
+    timeIdx = parseTimeIndex(opt.timeIndex, size(MaxwellDrive, 1));
+    xData = ctx.rho(:, 1);
     yData = [MaxwellDrive(timeIdx, :)', ReynoldsDrive(timeIdx, :)', ZonalDrive(timeIdx, :)'];
 end
 
 function applyLinePlotColorOrder(axHandle)
-    set(axHandle, 'ColorOrder', preferredLineColors(), 'NextPlot', 'replacechildren');
+    set(axHandle, 'ColorOrder', getPreferredLineColors(), 'NextPlot', 'replacechildren');
 end
 
 function value = clampInteger(value, minValue, maxValue)
@@ -2433,18 +2079,15 @@ function value = clampInteger(value, minValue, maxValue)
 end
 
 function value = clampSliderValue(value, control)
-    if isfield(control, 'allowedValues') && ~isempty(control.allowedValues)
-        allowedValues = double(control.allowedValues(:));
-        [~, nearestIndex] = min(abs(allowedValues - double(value)));
-        value = allowedValues(nearestIndex);
-    elseif control.isInteger
+    if control.isInteger
         value = clampInteger(value, control.min, control.max);
     else
         value = min(max(value, control.min), control.max);
     end
 end
 
-function control = integerSliderControl(fieldName, labelText, value, minValue, maxValue)
+function control = buildIntegerSliderControl(fieldName, labelText, value, minValue, maxValue)
+    control = struct();
     control.field = fieldName;
     control.label = labelText;
     control.value = clampInteger(value, minValue, maxValue);
@@ -2452,14 +2095,11 @@ function control = integerSliderControl(fieldName, labelText, value, minValue, m
     control.max = maxValue;
     control.isInteger = true;
     control.nStep = [];
-    control.allowedValues = [];
+    control.minField = '';
 end
 
-function control = numericSliderControl(fieldName, labelText, value, minValue, maxValue, nStep)
-    if nargin < 6
-        nStep = [];
-    end
-
+function control = buildNumericSliderControl(fieldName, labelText, value, minValue, maxValue, nStep)
+    control = struct();
     control.field = fieldName;
     control.label = labelText;
     control.value = min(max(value, minValue), maxValue);
@@ -2467,10 +2107,11 @@ function control = numericSliderControl(fieldName, labelText, value, minValue, m
     control.max = maxValue;
     control.isInteger = false;
     control.nStep = nStep;
-    control.allowedValues = [];
+    control.minField = '';
 end
 
-function plotData = linePlotData(xData, yData, xLabelText, yLabelText, titleText, legendText, statusText)
+function plotData = buildLinePlotData(xData, yData, xLabelText, yLabelText, titleText, legendText, statusText)
+    plotData = struct();
     plotData.xVec = xData;
     plotData.yVec = yData;
     plotData.xlabelText = xLabelText;
@@ -2480,7 +2121,8 @@ function plotData = linePlotData(xData, yData, xLabelText, yLabelText, titleText
     plotData.status = statusText;
 end
 
-function plotData = frequencyMapPlotData(xData, yData, zData, xLabelText, yLabelText, colorbarLabel, titleText, statusText)
+function plotData = buildMapPlotData(xData, yData, zData, xLabelText, yLabelText, colorbarLabel, titleText)
+    plotData = struct();
     plotData.xVec = xData;
     plotData.yVec = yData;
     plotData.Z = zData;
@@ -2488,46 +2130,46 @@ function plotData = frequencyMapPlotData(xData, yData, zData, xLabelText, yLabel
     plotData.ylabelText = yLabelText;
     plotData.colorbarLabel = colorbarLabel;
     plotData.titleText = titleText;
-    plotData.status = statusText;
 end
 
-function drawLinePlot(plotData, opt)
+function drawPlot(plotData, opt, renderFcn)
     figure;
     axHandle = gca;
-    renderLinePlot(axHandle, plotData, opt);
+    renderFcn(axHandle, plotData, opt);
 end
 
-function drawFrequencyMap(plotData, opt)
-    figure;
-    axHandle = gca;
-    renderFrequencyMap(axHandle, plotData, opt);
+function drawStaticDiagnostic(plotData, opt, renderFcn)
+    drawPlot(plotData, opt, renderFcn);
+    fprintf('[plot] %s\n', plotData.logText);
 end
 
-function renderFrequencyMap(axHandle, plotData, opt)
+function renderMapPlot(axHandle, plotData, opt)
     figHandle = ancestor(axHandle, 'figure');
     delete(findall(figHandle, 'Type', 'ColorBar'));
     delete(allchild(axHandle));
 
-    if isfield(opt, 'contourLevels') && ~isempty(opt.contourLevels)
-        if isfield(opt, 'showContourLine') && ~opt.showContourLine
-            contourf(axHandle, plotData.xVec, plotData.yVec, plotData.Z, opt.contourLevels, 'LineStyle', 'none');
+    contourLevels = getOptionValue(opt, 'contourLevels', []);
+    if ~isempty(contourLevels)
+        showContourLine = requireLogicalScalar(getOptionValue(opt, 'showContourLine', true), 'showContourLine');
+        if ~showContourLine
+            contourf(axHandle, plotData.xVec, plotData.yVec, plotData.Z, contourLevels, 'LineStyle', 'none');
         else
-            contourf(axHandle, plotData.xVec, plotData.yVec, plotData.Z, opt.contourLevels);
+            contourf(axHandle, plotData.xVec, plotData.yVec, plotData.Z, contourLevels);
         end
     else
         imagesc(axHandle, plotData.xVec, plotData.yVec, plotData.Z);
     end
     set(axHandle, 'YDir', 'normal');
     colormap(axHandle, jet(256));
-    cb = colorbar(axHandle);
-    cb.FontName = 'Times New Roman';
-    cb.FontSize = opt.axisFontSize;
-    ylabel(cb, plotData.colorbarLabel, 'Interpreter', 'latex', ...
-        'FontName', 'Times New Roman', 'FontSize', opt.labelFontSize);
+    colorbarHandle = colorbar(axHandle);
+    colorbarHandle.FontName = 'Times New Roman';
+    colorbarHandle.FontSize = 12;
+    ylabel(colorbarHandle, plotData.colorbarLabel, 'Interpreter', 'latex', ...
+        'FontName', 'Times New Roman', 'FontSize', 14);
 
     finiteZ = plotData.Z(isfinite(plotData.Z));
-    if isfield(opt, 'contourLevels') && ~isempty(opt.contourLevels)
-        clim(axHandle, [min(opt.contourLevels), max(opt.contourLevels)]);
+    if ~isempty(contourLevels)
+        clim(axHandle, [min(contourLevels), max(contourLevels)]);
     elseif isempty(finiteZ)
         clim(axHandle, [0, 1]);
     elseif min(finiteZ) == max(finiteZ)
@@ -2538,23 +2180,12 @@ function renderFrequencyMap(axHandle, plotData, opt)
         clim(axHandle, [min(finiteZ), max(finiteZ)]);
     end
 
-    if isfield(opt, 'frequencyRangeHz') && ~isempty(opt.frequencyRangeHz)
-        ylim(axHandle, sort(opt.frequencyRangeHz));
-    elseif isfield(opt, 'yLim') && ~isempty(opt.yLim)
-        ylim(axHandle, opt.yLim);
-    end
-    if isfield(opt, 'yTicks') && ~isempty(opt.yTicks)
-        yticks(axHandle, opt.yTicks);
-    end
+    applyOptionalAxesSetting(axHandle, opt, 'yLim', @ylim);
+    applyOptionalAxesSetting(axHandle, opt, 'yTicks', @yticks);
 
     box(axHandle, 'on');
-    applyLinePlotAxesStyle(axHandle, opt.axisFontSize);
-    xlabel(axHandle, plotData.xlabelText, 'Interpreter', 'latex', ...
-        'FontName', 'Times New Roman', 'FontSize', opt.labelFontSize);
-    ylabel(axHandle, plotData.ylabelText, 'Interpreter', 'latex', ...
-        'FontName', 'Times New Roman', 'FontSize', opt.labelFontSize);
-    title(axHandle, plotData.titleText, 'Interpreter', 'latex', ...
-        'FontName', 'Times New Roman', 'FontSize', opt.titleFontSize);
+    applyPlotAxesStyle(axHandle);
+    applyPlotText(axHandle, plotData);
 end
 
 function renderLinePlot(axHandle, plotData, opt)
@@ -2562,38 +2193,34 @@ function renderLinePlot(axHandle, plotData, opt)
     applyLinePlotColorOrder(axHandle);
     lineHandles = plot(axHandle, plotData.xVec, plotData.yVec, 'LineWidth', 1.5);
     box(axHandle, 'on');
-    applyLinePlotAxesStyle(axHandle, opt.axisFontSize);
+    applyPlotAxesStyle(axHandle);
 
-    if isfield(opt, 'yLim') && ~isempty(opt.yLim)
-        ylim(axHandle, opt.yLim);
-    end
-    if isfield(opt, 'yTicks') && ~isempty(opt.yTicks)
-        yticks(axHandle, opt.yTicks);
-    end
-    if isfield(opt, 'xLim') && ~isempty(opt.xLim)
-        xlim(axHandle, opt.xLim);
-    end
-    if isfield(opt, 'xTicks') && ~isempty(opt.xTicks)
-        xticks(axHandle, opt.xTicks);
-    end
+    applyOptionalAxesSetting(axHandle, opt, 'yLim', @ylim);
+    applyOptionalAxesSetting(axHandle, opt, 'yTicks', @yticks);
+    applyOptionalAxesSetting(axHandle, opt, 'xLim', @xlim);
+    applyOptionalAxesSetting(axHandle, opt, 'xTicks', @xticks);
 
     if isfield(plotData, 'xLines') && ~isempty(plotData.xLines)
         drawVerticalReferenceLines(axHandle, plotData.xLines);
     end
 
+    applyPlotText(axHandle, plotData);
+    if ~isempty(plotData.legendText)
+        legend(lineHandles, plotData.legendText, 'Interpreter', 'latex', ...
+            'FontName', 'Times New Roman', 'FontSize', 12, 'Location', 'best');
+    end
+end
+
+function applyPlotText(axHandle, plotData)
     xlabel(axHandle, plotData.xlabelText, 'Interpreter', 'latex', ...
-        'FontName', 'Times New Roman', 'FontSize', opt.labelFontSize);
+        'FontName', 'Times New Roman', 'FontSize', 14);
     if ~isempty(plotData.ylabelText)
         ylabel(axHandle, plotData.ylabelText, 'Interpreter', 'latex', ...
-            'FontName', 'Times New Roman', 'FontSize', opt.labelFontSize);
+            'FontName', 'Times New Roman', 'FontSize', 14);
     end
     if ~isempty(plotData.titleText)
         title(axHandle, plotData.titleText, 'Interpreter', 'latex', ...
-            'FontName', 'Times New Roman', 'FontSize', opt.titleFontSize);
-    end
-    if ~isempty(plotData.legendText)
-        legend(lineHandles, plotData.legendText, 'Interpreter', 'latex', ...
-            'FontName', 'Times New Roman', 'FontSize', opt.axisFontSize, 'Location', 'best');
+            'FontName', 'Times New Roman', 'FontSize', 14);
     end
 end
 
@@ -2610,7 +2237,14 @@ function drawVerticalReferenceLines(axHandle, xLines)
     end
 end
 
-function plotInteractiveLineWithSliders(figName, controls, dynamicUpdate, opt, computePlotData)
+function applyOptionalAxesSetting(axHandle, opt, fieldName, setterFcn)
+    value = getOptionValue(opt, fieldName, []);
+    if ~isempty(value)
+        setterFcn(axHandle, value);
+    end
+end
+
+function plotInteractiveLineWithSliders(figName, controls, dynamicUpdate, opt, buildPlotDataFcn)
     figHandle = figure('Name', figName, 'Color', 'w', 'Position', [120, 120, 920, 620]);
     nControl = numel(controls);
     controlBottom = 0.035;
@@ -2621,7 +2255,7 @@ function plotInteractiveLineWithSliders(figName, controls, dynamicUpdate, opt, c
         'Position', [0.10, axesBottom, 0.86, 0.93 - axesBottom]);
     statusText = uicontrol(figHandle, 'Style', 'text', 'Units', 'normalized', ...
         'Position', [0.10, statusBottom, 0.86, 0.035], 'BackgroundColor', 'w', ...
-        'HorizontalAlignment', 'left', 'FontName', 'Times New Roman', 'FontSize', opt.axisFontSize);
+        'HorizontalAlignment', 'left', 'FontName', 'Times New Roman', 'FontSize', 12);
     sliderLabels = gobjects(nControl, 1);
     sliders = gobjects(nControl, 1);
 
@@ -2631,7 +2265,7 @@ function plotInteractiveLineWithSliders(figName, controls, dynamicUpdate, opt, c
             'Position', [0.10, yPos - 0.01, 0.19, 0.035], ...
             'String', sliderLabelText(controls(iControl), controls(iControl).value), ...
             'BackgroundColor', 'w', 'HorizontalAlignment', 'left', ...
-            'FontName', 'Times New Roman', 'FontSize', opt.axisFontSize);
+            'FontName', 'Times New Roman', 'FontSize', 12);
         sliders(iControl) = uicontrol(figHandle, 'Style', 'slider', 'Units', 'normalized', ...
             'Position', [0.30, yPos, 0.61, 0.025], 'Min', controls(iControl).min, ...
             'Max', controls(iControl).max, 'Value', controls(iControl).value, ...
@@ -2643,7 +2277,8 @@ function plotInteractiveLineWithSliders(figName, controls, dynamicUpdate, opt, c
         dynamicListeners = {};
         try
             for iControl = 1:nControl
-                dynamicListeners{end + 1} = addlistener(sliders(iControl), 'ContinuousValueChange', @refreshPlot); %#ok<AGROW>
+                dynamicListeners{end + 1} = addlistener( ...
+                    sliders(iControl), 'ContinuousValueChange', @refreshPlot); %#ok<AGROW>
             end
             setappdata(figHandle, 'dynamicSliderListeners', dynamicListeners);
         catch
@@ -2662,7 +2297,17 @@ function plotInteractiveLineWithSliders(figName, controls, dynamicUpdate, opt, c
 
         values = struct();
         for iSlider = 1:nControl
-            sliderValue = clampSliderValue(get(sliders(iSlider), 'Value'), controls(iSlider));
+            control = controls(iSlider);
+            sliderValue = get(sliders(iSlider), 'Value');
+            if ~isempty(control.minField)
+                control.min = max(control.min, values.(control.minField));
+                if sliderValue < control.min
+                    sliderValue = control.min;
+                    set(sliders(iSlider), 'Value', sliderValue);
+                end
+                set(sliders(iSlider), 'Min', control.min);
+            end
+            sliderValue = clampSliderValue(sliderValue, control);
             values.(controls(iSlider).field) = sliderValue;
             if ~dynamicUpdate
                 set(sliders(iSlider), 'Value', sliderValue);
@@ -2670,9 +2315,22 @@ function plotInteractiveLineWithSliders(figName, controls, dynamicUpdate, opt, c
             set(sliderLabels(iSlider), 'String', sliderLabelText(controls(iSlider), sliderValue));
         end
 
-        data = computePlotData(values);
+        data = buildPlotDataFcn(values);
         renderLinePlot(axHandle, data, opt);
         set(statusText, 'String', data.status);
+    end
+end
+
+function plotInteractiveOptionsWithSliders(figName, controls, dynamicUpdate, opt, buildPlotDataFcn)
+    plotInteractiveLineWithSliders(figName, controls, dynamicUpdate, opt, @applySliderValues);
+
+    function data = applySliderValues(values)
+        tempOpt = opt;
+        valueNames = fieldnames(values);
+        for iValue = 1:numel(valueNames)
+            tempOpt.(valueNames{iValue}) = values.(valueNames{iValue});
+        end
+        data = buildPlotDataFcn(tempOpt);
     end
 end
 
@@ -2685,26 +2343,24 @@ function text = sliderLabelText(control, value)
 end
 
 function step = sliderStepForControl(control)
-    if isfield(control, 'allowedValues') && ~isempty(control.allowedValues)
-        step = sliderStep(numel(control.allowedValues));
-    elseif control.isInteger
-        step = sliderStep(control.max - control.min + 1);
+    if control.isInteger
+        step = calculateSliderStep(control.max - control.min + 1);
     elseif isfield(control, 'nStep') && ~isempty(control.nStep) && control.nStep > 1
-        step = sliderStep(control.nStep);
+        step = calculateSliderStep(control.nStep);
     else
         step = [0.005, 0.05];
     end
 end
 
-function applyLinePlotAxesStyle(axHandle, axisFontSize)
-    set(axHandle, 'FontName', 'Times New Roman', 'FontSize', axisFontSize, ...
+function applyPlotAxesStyle(axHandle)
+    set(axHandle, 'FontName', 'Times New Roman', 'FontSize', 12, ...
         'TickLabelInterpreter', 'latex', ...
         'XGrid', 'on', 'YGrid', 'on', 'GridLineWidth', 1.0, 'GridAlpha', 0.3, ...
         'MinorGridAlpha', 0.3, 'GridColor', 'k', 'MinorGridColor', 'k', ...
         'GridLineStyle', '-', 'MinorGridLineStyle', '-');
 end
 
-function step = sliderStep(maxValue)
+function step = calculateSliderStep(maxValue)
     if maxValue <= 1
         step = [1, 1];
     else
@@ -2714,14 +2370,14 @@ function step = sliderStep(maxValue)
     end
 end
 
-function colors = preferredLineColors()
+function colors = getPreferredLineColors()
     colors = [ ...
         1.0000, 0.0000, 0.0000;  % #FF0000
-    0.0000, 0.0000, 1.0000;  % #0000FF
-    0.0000, 0.5020, 0.0000;  % #008000
-    0.0000, 1.0000, 0.0000;  % #00FF00
-    1.0000, 0.6471, 0.0000;  % #FFA500
-    0.5020, 0.0000, 0.5020;  % #800080
-    0.0000, 1.0000, 1.0000;  % #00FFFF
-    1.0000, 0.7529, 0.7961]; % #FFC0CB
+        0.0000, 0.0000, 1.0000;  % #0000FF
+        0.0000, 0.5020, 0.0000;  % #008000
+        0.0000, 1.0000, 0.0000;  % #00FF00
+        1.0000, 0.6471, 0.0000;  % #FFA500
+        0.5020, 0.0000, 0.5020;  % #800080
+        0.0000, 1.0000, 1.0000;  % #00FFFF
+        1.0000, 0.7529, 0.7961]; % #FFC0CB
 end
