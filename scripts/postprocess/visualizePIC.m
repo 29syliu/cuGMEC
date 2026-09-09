@@ -8,11 +8,12 @@
 将相关输入、诊断和输出文件放在同一个 inputDir 中。
 
 必须包含：
-cuGMEC_param.h, normalization2D.mat
+cuGMEC_param.h, normalization2D.mat, NTP.mat,
+plot2D.mat 或 plot3D.mat
 
 按开关读取：
 ifIon, ifAlpha, ifBeam,
-ifDiagDiffusivity,
+ifDiagDensity, ifDiagDiffusivity,
 ifOutputPhaseSpaceOrbit, ifOutputPhaseSpaceJacobian, ifOutputPhaseSpaceF0,
 ifOutputPhaseSpaceDeltaF, ifOutputPhaseSpacePower,
 ifOutputPitchSpaceJacobian, ifOutputPitchSpaceF0,
@@ -28,7 +29,9 @@ Ion/Alpha/BeamPitchSpaceJacobian.bin,
 Ion/Alpha/BeamPitchSpaceF0.bin,
 Ion/Alpha/BeamPitchDeltaF.bin,
 Ion/Alpha/BeamPitchPower.bin,
-Ion/Alpha/BeamDiffusivity.bin
+Ion/Alpha/BeamDiffusivity.bin,
+Ion/Alpha/BeamDensity.bin,
+Ion/Alpha/BeamPhaseSpaceMapping.bin
 %}
 
 %% 用户设置
@@ -39,7 +42,8 @@ inputDir = 'C:\Users\Desktop\test';
 
 paramFile = fullfile(inputDir, 'cuGMEC_param.h');
 normalizationFile = fullfile(inputDir, 'normalization2D.mat');
-NTPFile = fullfile(inputDir, 'NTP.mat');
+ntpFile = fullfile(inputDir, 'NTP.mat');
+resonanceDetuningPlotFile = fullfile(inputDir, 'plot2D.mat');
 
 speciesList = {'Ion', 'Alpha', 'Beam'};
 
@@ -52,23 +56,29 @@ assert(isfolder(inputDir), '缺少输入目录：%s', inputDir);
 paramText = fileread(paramFile);
 normData = load(normalizationFile);
 ntpData = struct();
-if isfile(NTPFile)
-    ntpData = load(NTPFile);
+if isfile(ntpFile)
+    ntpData = load(ntpFile);
 end
 meta = readPICMetadata(paramText, normData);
 speciesList = enabledPICSpecies(speciesList, meta);
 searchDirs = {inputDir};
 
-picPhaseData = initializePhaseSpaceData(speciesList, normData, meta);
-picPitchData = initializePitchSpaceData(speciesList, paramText, meta);
-picDiffusivityData = initializeDiffusivityData(speciesList, meta);
-picDensityData = initializeDensityData(speciesList, meta, ntpData);
+picPhaseData = initializePICSpeciesData(speciesList, ...
+    @(speciesName) initializePhaseSpecies(speciesName, normData, meta));
+picPitchData = initializePICSpeciesData(speciesList, ...
+    @(speciesName) initializePitchSpecies(speciesName, paramText, meta));
+picDiffusivityData = initializePICSpeciesData(speciesList, ...
+    @(speciesName) initializeDiffusivitySpecies(speciesName, meta));
+picDensityData = initializePICSpeciesData(speciesList, ...
+    @(speciesName) initializeDensitySpecies(speciesName, meta, ntpData));
 
 orbitRaw = readAllOrbitRaw(speciesList, searchDirs, meta);
 picPhaseData = readAllPhaseDiagnostics(picPhaseData, speciesList, searchDirs, meta);
 picPitchData = readAllPitchDiagnostics(picPitchData, speciesList, searchDirs, meta);
 picDiffusivityData = readAllDiffusivityDiagnostics(picDiffusivityData, speciesList, searchDirs, meta);
 picDensityData = readAllDensityDiagnostics(picDensityData, speciesList, searchDirs, meta);
+picResonanceDetuningInput = readAllResonanceDetuningInputs( ...
+    resonanceDetuningPlotFile, inputDir, speciesList, meta);
 
 picWorkspace = struct();
 picWorkspace.meta = meta;
@@ -88,18 +98,18 @@ plotConservationDiagnostics: 是否绘制守恒量误差。
 %}
 
 phaseSpaceOrbit = struct();
-PhaseSpaceOrbitSummary = struct();
+phaseSpaceOrbitSummary = struct();
 
 if picOrbitProcessOpt.enabled
-    [phaseSpaceOrbit, PhaseSpaceOrbitSummary] = processAllOrbitRaw( ...
+    [phaseSpaceOrbit, phaseSpaceOrbitSummary] = processAllOrbitRaw( ...
         orbitRaw, speciesList, picPhaseData, picOrbitProcessOpt);
-    printOrbitSummaryIndex(PhaseSpaceOrbitSummary);
+    printOrbitSummarySpecies(phaseSpaceOrbitSummary);
 else
     logSkipped('PhaseSpaceOrbit processing', '处理开关为 false');
 end
 
 picWorkspace.orbit = phaseSpaceOrbit;
-picWorkspace.orbitSummary = PhaseSpaceOrbitSummary;
+picWorkspace.orbitSummary = phaseSpaceOrbitSummary;
 
 %% 可视化轨道频率
 
@@ -216,7 +226,7 @@ picWorkspace.phaseQuantity = runPICPhaseQuantityPlot(picPhaseData, phaseSpaceOrb
 picResonanceDetuningOpt = struct( ...
     'enabled', false, ...
     'species', 'Alpha', ...
-    'plotFile', fullfile(inputDir, 'plot2D.mat'), ...
+    'plotFile', resonanceDetuningPlotFile, ...
     'branch', 'trapped', ...
     'frequencyHz', 65e3, ...
     'toroidalMode', 30, ...
@@ -245,7 +255,7 @@ deltaPphiRight     : 图上 Pphi 向右采样长度。
 sampleCount        : Pphi 路径采样点数，建议为奇数。
 %}
 picWorkspace.resonanceDetuning = runPICResonanceDetuningPlot( ...
-    picPhaseData, phaseSpaceOrbit, meta, inputDir, picResonanceDetuningOpt);
+    picPhaseData, phaseSpaceOrbit, meta, picResonanceDetuningInput, picResonanceDetuningOpt);
 
 %% 可视化 phase power
 
@@ -351,7 +361,7 @@ radialAxis    : 'rho' 或 'x'。
 colormapIndex : 二维图非负色表，可选 1-2；有正负固定红蓝。
 interactive   : 0 不交互；1 滑块释放后更新；2 拖动滑块时连续更新。
 %}
-picWorkspace.diffusivityPlot = runPICDiffusivityPlot(picDiffusivityData, meta, picDiffusivityOpt);
+picWorkspace.diffusivityPlot = runPICDiffusivityPlot(picDiffusivityData, picDiffusivityOpt);
 
 %% 可视化扰动密度
 
@@ -378,7 +388,7 @@ radialDensityMode : 'delta' 画扰动密度；'total' 在径向图同画初始�
 colormapIndex : 二维图非负色表，可选 1-2；有正负固定红蓝。
 interactive   : 0 不交互；1 滑块释放后更新；2 拖动滑块时连续更新。
 %}
-picWorkspace.densityPlot = runPICDensityPlot(picDensityData, meta, picDensityOpt);
+picWorkspace.densityPlot = runPICDensityPlot(picDensityData, picDensityOpt);
 
 %% 局部函数
 
@@ -400,74 +410,45 @@ end
 
 function workspace = runPICOrbitFrequencyPlot(phaseSpaceOrbit, meta, opt)
 
-    workspace = struct('options', opt);
-    if ~opt.enabled
-        logSkipped('orbit frequency plot', '绘图开关为 false');
-        return;
-    end
-    if ~hasSpeciesData(phaseSpaceOrbit, opt.species)
-        logSkipped('orbit frequency plot', '未读取对应物种的 orbit 数据');
-        return;
-    end
-
-    runInteractivePlot(opt.interactive, ...
-        @() plotOrbitFrequency(phaseSpaceOrbit, meta, opt), ...
-        @(dynamicUpdate) plotOrbitFrequencyInteractive(phaseSpaceOrbit, meta, opt, dynamicUpdate));
+    workspace = runPICPlotDiagnostic(opt, 'orbit frequency plot', ...
+        @() hasSpeciesFields(phaseSpaceOrbit, opt.species, {}), '未读取对应物种的 orbit 数据', ...
+        @(dynamicUpdate) plotOrbitFrequency(phaseSpaceOrbit, meta, opt, dynamicUpdate));
 end
 
 function workspace = runPICResonanceLinePlot(phaseSpaceOrbit, meta, opt)
 
-    workspace = struct('options', opt);
-    if ~opt.enabled
-        logSkipped('resonance line plot', '绘图开关为 false');
-        return;
-    end
-    if ~hasSpeciesData(phaseSpaceOrbit, opt.species)
-        logSkipped('resonance line plot', '未读取对应物种的 orbit 数据');
-        return;
-    end
-
-    runInteractivePlot(opt.interactive, ...
-        @() plotResonanceLine(phaseSpaceOrbit, meta, opt), ...
-        @(dynamicUpdate) plotResonanceLineInteractive(phaseSpaceOrbit, meta, opt, dynamicUpdate));
+    workspace = runPICPlotDiagnostic(opt, 'resonance line plot', ...
+        @() hasSpeciesFields(phaseSpaceOrbit, opt.species, {}), '未读取对应物种的 orbit 数据', ...
+        @(dynamicUpdate) plotResonanceLine(phaseSpaceOrbit, meta, opt, dynamicUpdate));
 end
 
 function workspace = runPICPhaseQuantityPlot(picPhaseData, phaseSpaceOrbit, meta, opt)
 
-    workspace = struct('options', opt);
-    if ~opt.enabled
-        logSkipped('phase quantity plot', '绘图开关为 false');
-        return;
-    end
-    if ~hasRequestedPhaseQuantity(picPhaseData, opt.species, opt.quantity)
-        logSkipped('phase quantity plot', '未读取所需 phase 数据');
-        return;
-    end
-
-    runInteractivePlot(opt.interactive, ...
-        @() plotPhaseQuantity(picPhaseData, phaseSpaceOrbit, meta, opt), ...
-        @(dynamicUpdate) plotPhaseQuantityInteractive(picPhaseData, phaseSpaceOrbit, meta, opt, dynamicUpdate));
+    workspace = runPICPlotDiagnostic(opt, 'phase quantity plot', ...
+        @() hasRequestedPICQuantity(picPhaseData, opt.species, opt.quantity), '未读取所需 phase 数据', ...
+        @(dynamicUpdate) plotPhaseQuantity(picPhaseData, phaseSpaceOrbit, meta, opt, dynamicUpdate));
 end
 
-function workspace = runPICResonanceDetuningPlot(picPhaseData, phaseSpaceOrbit, meta, inputDir, opt)
+function workspace = runPICResonanceDetuningPlot( ...
+    picPhaseData, phaseSpaceOrbit, meta, detuningInput, opt)
 
     workspace = struct('options', opt, 'residualHz', [], 'mapping', [], 'gridPoint', [], ...
         'center', [], 'path', [], 'fit', []);
     if ~opt.enabled
-        logSkipped('resonance detuning plot', '缁樺浘寮€鍏充负 false');
+        logSkipped('resonance detuning plot', '绘图开关为 false');
         return;
     end
-    if ~hasSpeciesData(picPhaseData, opt.species)
-        logSkipped('resonance detuning plot', '鏈鍙栧搴旂墿绉嶇殑 phase 鏁版嵁');
+    if ~hasSpeciesFields(picPhaseData, opt.species, {})
+        logSkipped('resonance detuning plot', '未读取对应物种的 phase 数据');
         return;
     end
-    if ~hasSpeciesData(phaseSpaceOrbit, opt.species)
-        logSkipped('resonance detuning plot', '鏈鍙栧搴旂墿绉嶇殑 orbit 鏁版嵁');
+    if ~hasSpeciesFields(phaseSpaceOrbit, opt.species, {})
+        logSkipped('resonance detuning plot', '未读取对应物种的 orbit 数据');
         return;
     end
 
-    opt = validatedResonanceDetuningOptions(opt, meta);
-    plotInput = readResonanceDetuningPlotInput(opt.plotFile, meta);
+    opt = normalizeResonanceDetuningOptions(opt, meta);
+    plotInput = buildResonanceDetuningPlotInput(detuningInput.plot, opt.plotFile, meta);
     [speciesData, speciesLabel] = resolveSpeciesData(picPhaseData, opt.species, 'phase');
     [orbitData, ~] = resolveSpeciesData(phaseSpaceOrbit, speciesLabel, 'orbit');
 
@@ -479,7 +460,8 @@ function workspace = runPICResonanceDetuningPlot(picPhaseData, phaseSpaceOrbit, 
         'harmonic', opt.harmonic);
     [residualHz, ~] = calculateResonanceResidualField(orbitData, resOpt, meta);
 
-    mapping = readResonanceDetuningMapping(inputDir, speciesLabel, speciesData, opt.branch, plotInput, meta);
+    mapping = buildResonanceDetuningMapping( ...
+        detuningInput.mapping, speciesLabel, speciesData, opt.branch, plotInput, meta);
     gridPoint = nearestResonanceDetuningGridPoint(speciesData, mapping, residualHz, opt);
     center = projectResonanceDetuningCenter(speciesData, mapping, residualHz, gridPoint);
     workspace.options = opt;
@@ -503,113 +485,51 @@ end
 
 function workspace = runPICPhasePowerPlot(picPhaseData, phaseSpaceOrbit, meta, opt)
 
-    workspace = struct('options', opt);
-    if ~opt.enabled
-        logSkipped('PhasePower plot', '绘图开关为 false');
-        return;
-    end
-    if ~hasSpeciesFieldData(picPhaseData, opt.species, 'Power')
-        logSkipped('PhasePower plot', '未读取 PhasePower 数据');
-        return;
-    end
-
-    runInteractivePlot(opt.interactive, ...
-        @() plotPhasePower(picPhaseData, phaseSpaceOrbit, meta, opt), ...
-        @(dynamicUpdate) plotPhasePowerInteractive(picPhaseData, phaseSpaceOrbit, meta, opt, dynamicUpdate));
+    workspace = runPICPlotDiagnostic(opt, 'PhasePower plot', ...
+        @() hasSpeciesFields(picPhaseData, opt.species, {'Power'}), '未读取 PhasePower 数据', ...
+        @(dynamicUpdate) plotPhasePower(picPhaseData, phaseSpaceOrbit, meta, opt, dynamicUpdate));
 end
 
 function workspace = runPICPitchQuantityPlot(picPitchData, opt)
 
-    workspace = struct('options', opt);
-    if ~opt.enabled
-        logSkipped('pitch quantity plot', '绘图开关为 false');
-        return;
-    end
-    if ~hasRequestedPhaseQuantity(picPitchData, opt.species, opt.quantity)
-        logSkipped('pitch quantity plot', '未读取所需 pitch 数据');
-        return;
-    end
-
-    runInteractivePlot(opt.interactive, ...
-        @() plotPitchQuantity(picPitchData, opt), ...
-        @(dynamicUpdate) plotPitchQuantityInteractive(picPitchData, opt, dynamicUpdate));
+    workspace = runPICPlotDiagnostic(opt, 'pitch quantity plot', ...
+        @() hasRequestedPICQuantity(picPitchData, opt.species, opt.quantity), '未读取所需 pitch 数据', ...
+        @(dynamicUpdate) plotPitchQuantity(picPitchData, opt, dynamicUpdate));
 end
 
 function workspace = runPICPitchPowerPlot(picPitchData, opt)
 
-    workspace = struct('options', opt);
-    if ~opt.enabled
-        logSkipped('PitchPower plot', '绘图开关为 false');
-        return;
-    end
-    if ~hasSpeciesFieldData(picPitchData, opt.species, 'Power')
-        logSkipped('PitchPower plot', '未读取 PitchPower 数据');
-        return;
-    end
-
-    runInteractivePlot(opt.interactive, ...
-        @() plotPitchPower(picPitchData, opt), ...
-        @(dynamicUpdate) plotPitchPowerInteractive(picPitchData, opt, dynamicUpdate));
+    workspace = runPICPlotDiagnostic(opt, 'PitchPower plot', ...
+        @() hasSpeciesFields(picPitchData, opt.species, {'Power'}), '未读取 PitchPower 数据', ...
+        @(dynamicUpdate) plotPitchPower(picPitchData, opt, dynamicUpdate));
 end
 
-function workspace = runPICDiffusivityPlot(picDiffusivityData, meta, opt)
+function workspace = runPICDiffusivityPlot(picDiffusivityData, opt)
 
-    workspace = struct('options', opt);
-    if ~opt.enabled
-        logSkipped('Diffusivity plot', '绘图开关为 false');
-        return;
-    end
-    if ~hasSpeciesFieldData(picDiffusivityData, opt.species, 'Diffusivity')
-        logSkipped('Diffusivity plot', '未读取 Diffusivity 数据');
-        return;
-    end
-
-    switch opt.plotType
-        case 1
-            runInteractivePlot(opt.interactive, ...
-                @() plotDiffusivityRadial(picDiffusivityData, opt), ...
-                @(dynamicUpdate) plotDiffusivityRadialInteractive(picDiffusivityData, opt, dynamicUpdate));
-        case 2
-            runInteractivePlot(opt.interactive, ...
-                @() plotDiffusivityTime(picDiffusivityData, meta, opt), ...
-                @(dynamicUpdate) plotDiffusivityTimeInteractive(picDiffusivityData, meta, opt, dynamicUpdate));
-        case 3
-            runInteractivePlot(opt.interactive, ...
-                @() plotDiffusivityMap(picDiffusivityData, meta, opt), ...
-                @(dynamicUpdate) plotDiffusivityMapInteractive(picDiffusivityData, meta, opt, dynamicUpdate));
-        otherwise
-            error('plotType 必须为 1、2 或 3。');
-    end
+    workspace = runPICPlotDiagnostic(opt, 'Diffusivity plot', ...
+        @() hasSpeciesFields(picDiffusivityData, opt.species, {'Diffusivity'}), '未读取 Diffusivity 数据', ...
+        @(dynamicUpdate) plotDiffusivity(picDiffusivityData, opt, dynamicUpdate));
 end
 
-function workspace = runPICDensityPlot(picDensityData, meta, opt)
+function workspace = runPICDensityPlot(picDensityData, opt)
+
+    workspace = runPICPlotDiagnostic(opt, 'Density plot', ...
+        @() hasSpeciesFields(picDensityData, opt.species, {'Density'}), '未读取 Density 数据', ...
+        @(dynamicUpdate) plotDensity(picDensityData, opt, dynamicUpdate));
+end
+
+function workspace = runPICPlotDiagnostic(opt, plotName, availabilityFcn, missingReason, plotFcn)
 
     workspace = struct('options', opt);
     if ~opt.enabled
-        logSkipped('Density plot', '绘图开关为 false');
+        logSkipped(plotName, '绘图开关为 false');
         return;
     end
-    if ~hasSpeciesFieldData(picDensityData, opt.species, 'Density')
-        logSkipped('Density plot', '未读取 Density 数据');
+    if ~availabilityFcn()
+        logSkipped(plotName, missingReason);
         return;
     end
-
-    switch opt.plotType
-        case 1
-            runInteractivePlot(opt.interactive, ...
-                @() plotDensityRadial(picDensityData, opt), ...
-                @(dynamicUpdate) plotDensityRadialInteractive(picDensityData, opt, dynamicUpdate));
-        case 2
-            runInteractivePlot(opt.interactive, ...
-                @() plotDensityTime(picDensityData, meta, opt), ...
-                @(dynamicUpdate) plotDensityTimeInteractive(picDensityData, meta, opt, dynamicUpdate));
-        case 3
-            runInteractivePlot(opt.interactive, ...
-                @() plotDensityMap(picDensityData, meta, opt), ...
-                @(dynamicUpdate) plotDensityMapInteractive(picDensityData, meta, opt, dynamicUpdate));
-        otherwise
-            error('plotType 必须为 1、2 或 3。');
-    end
+    runInteractivePlot(opt.interactive, @() plotFcn([]), plotFcn);
 end
 
 function resonance = picResonanceOptions(enabled, branch, frequencyHz, frequencyHzRange, toroidalMode, ...
@@ -645,30 +565,30 @@ end
 
 function meta = readPICMetadata(paramText, normData)
 
-    meta.speciesEnabled.Ion = readSwitchParam(paramText, 'ifIon');
-    meta.speciesEnabled.Alpha = readSwitchParam(paramText, 'ifAlpha');
-    meta.speciesEnabled.Beam = readSwitchParam(paramText, 'ifBeam');
-    meta.switch.ifDiagDensity = readSwitchParam(paramText, 'ifDiagDensity');
-    meta.switch.ifDiagDiffusivity = readSwitchParam(paramText, 'ifDiagDiffusivity');
-    meta.switch.ifOutputPhaseSpaceOrbit = readSwitchParam(paramText, 'ifOutputPhaseSpaceOrbit');
-    meta.switch.ifOutputPhaseSpaceJacobian = readSwitchParam(paramText, 'ifOutputPhaseSpaceJacobian');
-    meta.switch.ifOutputPhaseSpaceF0 = readSwitchParam(paramText, 'ifOutputPhaseSpaceF0');
-    meta.switch.ifOutputPhaseSpaceDeltaF = readSwitchParam(paramText, 'ifOutputPhaseSpaceDeltaF');
-    meta.switch.ifOutputPhaseSpacePower = readSwitchParam(paramText, 'ifOutputPhaseSpacePower');
-    meta.switch.ifOutputPitchSpaceJacobian = readSwitchParam(paramText, 'ifOutputPitchSpaceJacobian');
-    meta.switch.ifOutputPitchSpaceF0 = readSwitchParam(paramText, 'ifOutputPitchSpaceF0');
-    meta.switch.ifOutputPitchSpaceDeltaF = readSwitchParam(paramText, 'ifOutputPitchSpaceDeltaF');
-    meta.switch.ifOutputPitchSpacePower = readSwitchParam(paramText, 'ifOutputPitchSpacePower');
+    speciesNames = {'Ion', 'Alpha', 'Beam'};
+    speciesSwitchNames = {'ifIon', 'ifAlpha', 'ifBeam'};
+    meta.speciesEnabled = readNamedPICParameters( ...
+        struct(), paramText, speciesNames, speciesSwitchNames, @readSwitchParam);
 
-    meta.paramGridE = readIntParam(paramText, 'gridE');
-    meta.paramGridPphi = readIntParam(paramText, 'gridPphi');
-    meta.paramGridLambda = readIntParam(paramText, 'gridLambda');
-    meta.gridVpara = readIntParam(paramText, 'gridVpara');
-    meta.gridVperp = readIntParam(paramText, 'gridVperp');
-    meta.gridNx = readIntParam(paramText, 'gridNx');
-    meta.leftN = readIntParam(paramText, 'leftN');
-    meta.rightN = readIntParam(paramText, 'rightN');
-    meta.tubes = readIntParam(paramText, 'tubes');
+    switchNames = { ...
+        'ifDiagDensity', 'ifDiagDiffusivity', 'ifOutputPhaseSpaceOrbit', ...
+        'ifOutputPhaseSpaceJacobian', 'ifOutputPhaseSpaceF0', ...
+        'ifOutputPhaseSpaceDeltaF', 'ifOutputPhaseSpacePower', ...
+        'ifOutputPitchSpaceJacobian', 'ifOutputPitchSpaceF0', ...
+        'ifOutputPitchSpaceDeltaF', 'ifOutputPitchSpacePower'};
+    meta.switch = readNamedPICParameters( ...
+        struct(), paramText, switchNames, switchNames, @readSwitchParam);
+
+    integerFields = { ...
+        'paramGridE', 'paramGridPphi', 'paramGridLambda', ...
+        'gridVpara', 'gridVperp', 'gridNx', 'leftN', 'rightN', 'tubes', ...
+        'totalSteps', 'outputSteps', 'diagSteps'};
+    integerNames = { ...
+        'gridE', 'gridPphi', 'gridLambda', ...
+        'gridVpara', 'gridVperp', 'gridNx', 'leftN', 'rightN', 'tubes', ...
+        'totalSteps', 'outputSteps', 'diagSteps'};
+    meta = readNamedPICParameters( ...
+        meta, paramText, integerFields, integerNames, @readIntParam);
     assert(meta.leftN <= meta.rightN, 'leftN 必须小于或等于 rightN。');
     assert(meta.tubes > 0, 'tubes 必须为正整数。');
     meta.modeIndexAll = meta.leftN:meta.rightN;
@@ -686,9 +606,6 @@ function meta = readPICMetadata(paramText, normData)
         meta.gridLambda = meta.paramGridLambda;
     end
 
-    meta.totalSteps = readIntParam(paramText, 'totalSteps');
-    meta.outputSteps = readIntParam(paramText, 'outputSteps');
-    meta.diagSteps = readIntParam(paramText, 'diagSteps');
     meta.dt = readFloatParam(paramText, 'dt');
     assert(meta.gridNx > 1, 'gridNx 必须大于 1。');
     assert(meta.totalSteps >= 0 && meta.outputSteps > 0 && meta.diagSteps > 0, ...
@@ -711,20 +628,29 @@ function meta = readPICMetadata(paramText, normData)
         meta.QE = readPositiveScalar(normData, 'QE');
     end
     if isfield(normData, 'NFP')
-        meta.NFP = validateFiniteScalar(normData.NFP, 'NFP');
+        meta.NFP = requireFiniteScalarInRange(normData.NFP, -Inf, Inf, 'NFP');
     else
         meta.NFP = NaN;
     end
     assert(isfield(normData, 'RHO0') && isfield(normData, 'RHO1'), ...
         'normalization2D.mat 缺少 RHO0 或 RHO1。');
-    meta.RHO0 = validateFiniteScalar(normData.RHO0, 'RHO0');
-    meta.RHO1 = validateFiniteScalar(normData.RHO1, 'RHO1');
+    meta.RHO0 = requireFiniteScalarInRange(normData.RHO0, -Inf, Inf, 'RHO0');
+    meta.RHO1 = requireFiniteScalarInRange(normData.RHO1, -Inf, Inf, 'RHO1');
     assert(meta.RHO0 < meta.RHO1, 'RHO0 必须小于 RHO1。');
     meta.tDiag = (0:meta.nDiagTime - 1) * meta.diagSteps * meta.dt;
     meta.timeSeconds = meta.tDiag * meta.L0 / meta.VA0;
     meta.xGrid = linspace(0, 1, meta.gridNx);
     meta.rhoGrid = linspace(meta.RHO0, meta.RHO1, meta.gridNx);
 
+end
+
+function values = readNamedPICParameters(values, paramText, fieldNames, parameterNames, readerFcn)
+
+    assert(numel(fieldNames) == numel(parameterNames), ...
+        'PIC 参数字段名和源参数名数量必须一致。');
+    for parameterIndex = 1:numel(fieldNames)
+        values.(fieldNames{parameterIndex}) = readerFcn(paramText, parameterNames{parameterIndex});
+    end
 end
 
 function speciesList = enabledPICSpecies(speciesList, meta)
@@ -740,104 +666,86 @@ function speciesList = enabledPICSpecies(speciesList, meta)
     speciesList = speciesList(keep);
 end
 
-function picPhaseData = initializePhaseSpaceData(speciesList, normData, meta)
+function speciesData = initializePhaseSpecies(speciesName, normData, meta)
 
-    picPhaseData = struct();
-    for speciesIndex = 1:numel(speciesList)
-        speciesName = char(speciesList{speciesIndex});
-        if ~meta.hasPhaseGrid
-            picPhaseData.(speciesName) = struct('species', speciesName, ...
-                'J', [], 'F0', [], 'DF', [], 'Power', []);
-            continue;
-        end
-        phaseRange = readSpeciesRange(normData, [speciesName 'EPphiLambda']);
-
-        picPhaseData.(speciesName) = struct( ...
-            'species', speciesName, ...
-            'gridE', meta.gridE, ...
-            'gridPphi', meta.gridPphi, ...
-            'gridLambda', meta.gridLambda, ...
-            'modeIndexAll', meta.modeIndexAll, ...
-            'physicalNAll', meta.physicalNAll, ...
-            'tubes', meta.tubes, ...
-            'EPphiLambda', phaseRange, ...
-            'E1d', linspace(phaseRange(1), phaseRange(2), meta.gridE), ...
-            'Pphi1d', linspace(phaseRange(3), phaseRange(4), meta.gridPphi), ...
-            'Lambda1d', linspace(phaseRange(5), phaseRange(6), meta.gridLambda), ...
-            'J', [], ...
-            'F0', [], ...
-            'DF', [], ...
-            'Power', []);
+    if ~meta.hasPhaseGrid
+        speciesData = struct('species', speciesName, ...
+            'J', [], 'F0', [], 'DF', [], 'Power', []);
+        return;
     end
+    phaseRange = readSpeciesRange(normData, [speciesName 'EPphiLambda']);
+    speciesData = struct( ...
+        'species', speciesName, ...
+        'gridE', meta.gridE, ...
+        'gridPphi', meta.gridPphi, ...
+        'gridLambda', meta.gridLambda, ...
+        'modeIndexAll', meta.modeIndexAll, ...
+        'physicalNAll', meta.physicalNAll, ...
+        'tubes', meta.tubes, ...
+        'EPphiLambda', phaseRange, ...
+        'E1d', linspace(phaseRange(1), phaseRange(2), meta.gridE), ...
+        'Pphi1d', linspace(phaseRange(3), phaseRange(4), meta.gridPphi), ...
+        'Lambda1d', linspace(phaseRange(5), phaseRange(6), meta.gridLambda), ...
+        'J', [], 'F0', [], 'DF', [], 'Power', []);
 end
 
-function picPitchData = initializePitchSpaceData(speciesList, paramText, meta)
+function speciesData = initializePitchSpecies(speciesName, paramText, meta)
 
-    picPitchData = struct();
-    for speciesIndex = 1:numel(speciesList)
-        speciesName = char(speciesList{speciesIndex});
-        vmax = readFloatParam(paramText, [speciesName 'Vmax']);
-        if strcmp(speciesName, 'Beam')
-            minVpara = 0;
-        else
-            minVpara = -vmax;
-        end
-
-        picPitchData.(speciesName) = struct( ...
-            'species', speciesName, ...
-            'gridVpara', meta.gridVpara, ...
-            'gridVperp', meta.gridVperp, ...
-            'modeIndexAll', meta.modeIndexAll, ...
-            'physicalNAll', meta.physicalNAll, ...
-            'tubes', meta.tubes, ...
-            'Vpara1d', linspace(minVpara, vmax, meta.gridVpara), ...
-            'Vperp1d', linspace(0, vmax, meta.gridVperp), ...
-            'J', [], ...
-            'F0', [], ...
-            'DF', [], ...
-            'Power', []);
+    vmax = readFloatParam(paramText, [speciesName 'Vmax']);
+    minVpara = -vmax;
+    if strcmp(speciesName, 'Beam')
+        minVpara = 0;
     end
+    speciesData = struct( ...
+        'species', speciesName, ...
+        'gridVpara', meta.gridVpara, ...
+        'gridVperp', meta.gridVperp, ...
+        'modeIndexAll', meta.modeIndexAll, ...
+        'physicalNAll', meta.physicalNAll, ...
+        'tubes', meta.tubes, ...
+        'Vpara1d', linspace(minVpara, vmax, meta.gridVpara), ...
+        'Vperp1d', linspace(0, vmax, meta.gridVperp), ...
+        'J', [], 'F0', [], 'DF', [], 'Power', []);
 end
 
-function picDiffusivityData = initializeDiffusivityData(speciesList, meta)
+function speciesData = initializeDiffusivitySpecies(speciesName, meta)
 
-    picDiffusivityData = struct();
-    for speciesIndex = 1:numel(speciesList)
-        speciesName = char(speciesList{speciesIndex});
-
-        picDiffusivityData.(speciesName) = struct( ...
-            'species', speciesName, ...
-            'gridNx', meta.gridNx, ...
-            'modeIndexAll', meta.modeIndexAll, ...
-            'physicalNAll', meta.physicalNAll, ...
-            'tubes', meta.tubes, ...
-            'diagSteps', meta.diagSteps, ...
-            'xGrid', meta.xGrid, ...
-            'rhoGrid', meta.rhoGrid, ...
-            'tDiag', meta.tDiag, ...
-            'timeSeconds', meta.timeSeconds, ...
-            'Diffusivity', []);
-    end
+    speciesData = struct( ...
+        'species', speciesName, ...
+        'gridNx', meta.gridNx, ...
+        'modeIndexAll', meta.modeIndexAll, ...
+        'physicalNAll', meta.physicalNAll, ...
+        'tubes', meta.tubes, ...
+        'diagSteps', meta.diagSteps, ...
+        'xGrid', meta.xGrid, ...
+        'rhoGrid', meta.rhoGrid, ...
+        'tDiag', meta.tDiag, ...
+        'timeSeconds', meta.timeSeconds, ...
+        'Diffusivity', []);
 end
 
-function picDensityData = initializeDensityData(speciesList, meta, ntpData)
+function speciesData = initializeDensitySpecies(speciesName, meta, ntpData)
 
-    picDensityData = struct();
+    [initialDensity, initialDensityError] = safeInitialDensityFromNTP(ntpData, speciesName, meta.rhoGrid);
+    speciesData = struct( ...
+        'species', speciesName, ...
+        'gridNx', meta.gridNx, ...
+        'diagSteps', meta.diagSteps, ...
+        'xGrid', meta.xGrid, ...
+        'rhoGrid', meta.rhoGrid, ...
+        'tDiag', meta.tDiag, ...
+        'timeSeconds', meta.timeSeconds, ...
+        'InitialDensity', initialDensity, ...
+        'InitialDensityError', initialDensityError, ...
+        'Density', []);
+end
+
+function speciesData = initializePICSpeciesData(speciesList, initializerFcn)
+
+    speciesData = struct();
     for speciesIndex = 1:numel(speciesList)
         speciesName = char(speciesList{speciesIndex});
-        [initialDensity, initialDensityError] = safeInitialDensityFromNTP(ntpData, speciesName, meta.rhoGrid);
-
-        picDensityData.(speciesName) = struct( ...
-            'species', speciesName, ...
-            'gridNx', meta.gridNx, ...
-            'diagSteps', meta.diagSteps, ...
-            'xGrid', meta.xGrid, ...
-            'rhoGrid', meta.rhoGrid, ...
-            'tDiag', meta.tDiag, ...
-            'timeSeconds', meta.timeSeconds, ...
-            'InitialDensity', initialDensity, ...
-            'InitialDensityError', initialDensityError, ...
-            'Density', []);
+        speciesData.(speciesName) = initializerFcn(speciesName);
     end
 end
 
@@ -928,71 +836,69 @@ end
 function picPhaseData = readAllPhaseDiagnostics(picPhaseData, speciesList, searchDirs, meta)
 
     phaseSpecs = { ...
-        'J', 'ifOutputPhaseSpaceJacobian', 'PhaseSpaceJacobian', 'double', 'phase3d'; ...
-        'F0', 'ifOutputPhaseSpaceF0', 'PhaseSpaceF0', 'double', 'phase3d'; ...
-        'DF', 'ifOutputPhaseSpaceDeltaF', 'PhaseDeltaF', meta.mhdPrecision, 'phase4d'; ...
-        'Power', 'ifOutputPhaseSpacePower', 'PhasePower', meta.mhdPrecision, 'phasePower'};
+        'J', 'ifOutputPhaseSpaceJacobian', 'PhaseSpaceJacobian', 'double', ...
+            @(filePath, precision) readPhase3D(filePath, precision, meta.gridE, meta.gridPphi, meta.gridLambda); ...
+        'F0', 'ifOutputPhaseSpaceF0', 'PhaseSpaceF0', 'double', ...
+            @(filePath, precision) readPhase3D(filePath, precision, meta.gridE, meta.gridPphi, meta.gridLambda); ...
+        'DF', 'ifOutputPhaseSpaceDeltaF', 'PhaseDeltaF', meta.mhdPrecision, ...
+            @(filePath, precision) readPhase4D(filePath, precision, meta.gridE, meta.gridPphi, meta.gridLambda, meta.nOutputTime); ...
+        'Power', 'ifOutputPhaseSpacePower', 'PhasePower', meta.mhdPrecision, ...
+            @(filePath, precision) readPhasePower5D(filePath, precision, meta.gridE, meta.gridPphi, ...
+                meta.gridLambda, numel(meta.modeIndexAll), meta.nOutputTime)};
 
     if ~meta.hasPhaseGrid
         logSkipped('PhaseSpace diagnostics', 'normalization2D.mat 缺少相空间网格');
         return;
     end
-
-    for iSpec = 1:size(phaseSpecs, 1)
-        fieldName = phaseSpecs{iSpec, 1};
-        switchName = phaseSpecs{iSpec, 2};
-        fileSuffix = phaseSpecs{iSpec, 3};
-        precision = phaseSpecs{iSpec, 4};
-        dataKind = phaseSpecs{iSpec, 5};
-
-        if ~meta.switch.(switchName)
-            logSkipped(fileSuffix, ['开关 ' switchName ' 为 false']);
-            continue;
-        end
-
-        for speciesIndex = 1:numel(speciesList)
-            speciesName = char(speciesList{speciesIndex});
-            fileName = [speciesName fileSuffix '.bin'];
-            filePath = findExistingFile(searchDirs, fileName);
-            if isempty(filePath)
-                logSkipped(fileName, '文件不存在');
-                continue;
-            end
-
-            switch dataKind
-                case 'phase3d'
-                    picPhaseData.(speciesName).(fieldName) = readPhase3D(filePath, ...
-                        precision, meta.gridE, meta.gridPphi, meta.gridLambda);
-                case 'phase4d'
-                    picPhaseData.(speciesName).(fieldName) = readPhase4D(filePath, ...
-                        precision, meta.gridE, meta.gridPphi, meta.gridLambda, meta.nOutputTime);
-                case 'phasePower'
-                    picPhaseData.(speciesName).(fieldName) = readPhasePower5D(filePath, ...
-                        precision, meta.gridE, meta.gridPphi, meta.gridLambda, numel(meta.modeIndexAll), meta.nOutputTime);
-                otherwise
-                    error('未知 phase 诊断类型：%s。', dataKind);
-            end
-            logLoaded(fileName, picPhaseData.(speciesName).(fieldName));
-        end
-    end
+    picPhaseData = readPICDiagnosticGroup( ...
+        picPhaseData, speciesList, searchDirs, meta.switch, phaseSpecs);
 end
 
 function picPitchData = readAllPitchDiagnostics(picPitchData, speciesList, searchDirs, meta)
 
     pitchSpecs = { ...
-        'J', 'ifOutputPitchSpaceJacobian', 'PitchSpaceJacobian', 'double', 'pitch2d'; ...
-        'F0', 'ifOutputPitchSpaceF0', 'PitchSpaceF0', 'double', 'pitch2d'; ...
-        'DF', 'ifOutputPitchSpaceDeltaF', 'PitchDeltaF', meta.mhdPrecision, 'pitch3d'; ...
-        'Power', 'ifOutputPitchSpacePower', 'PitchPower', meta.mhdPrecision, 'pitchPower'};
+        'J', 'ifOutputPitchSpaceJacobian', 'PitchSpaceJacobian', 'double', ...
+            @(filePath, precision) readPitch2D(filePath, precision, meta.gridVpara, meta.gridVperp); ...
+        'F0', 'ifOutputPitchSpaceF0', 'PitchSpaceF0', 'double', ...
+            @(filePath, precision) readPitch2D(filePath, precision, meta.gridVpara, meta.gridVperp); ...
+        'DF', 'ifOutputPitchSpaceDeltaF', 'PitchDeltaF', meta.mhdPrecision, ...
+            @(filePath, precision) readPitch3D(filePath, precision, meta.gridVpara, meta.gridVperp, meta.nOutputTime); ...
+        'Power', 'ifOutputPitchSpacePower', 'PitchPower', meta.mhdPrecision, ...
+            @(filePath, precision) readPitchPower4D(filePath, precision, meta.gridVpara, ...
+                meta.gridVperp, numel(meta.modeIndexAll), meta.nOutputTime)};
+    picPitchData = readPICDiagnosticGroup( ...
+        picPitchData, speciesList, searchDirs, meta.switch, pitchSpecs);
+end
 
-    for iSpec = 1:size(pitchSpecs, 1)
-        fieldName = pitchSpecs{iSpec, 1};
-        switchName = pitchSpecs{iSpec, 2};
-        fileSuffix = pitchSpecs{iSpec, 3};
-        precision = pitchSpecs{iSpec, 4};
-        dataKind = pitchSpecs{iSpec, 5};
+function picDiffusivityData = readAllDiffusivityDiagnostics(picDiffusivityData, speciesList, searchDirs, meta)
 
-        if ~meta.switch.(switchName)
+    diffusivitySpecs = { ...
+        'Diffusivity', 'ifDiagDiffusivity', 'Diffusivity', meta.mhdPrecision, ...
+            @(filePath, precision) readDiffusivity3D(filePath, precision, ...
+                meta.nDiagTime, numel(meta.modeIndexAll), meta.gridNx)};
+    picDiffusivityData = readPICDiagnosticGroup( ...
+        picDiffusivityData, speciesList, searchDirs, meta.switch, diffusivitySpecs);
+end
+
+function picDensityData = readAllDensityDiagnostics(picDensityData, speciesList, searchDirs, meta)
+
+    densitySpecs = { ...
+        'Density', 'ifDiagDensity', 'Density', meta.mhdPrecision, ...
+            @(filePath, precision) readDensity2D(filePath, precision, meta.nDiagTime, meta.gridNx)};
+    picDensityData = readPICDiagnosticGroup( ...
+        picDensityData, speciesList, searchDirs, meta.switch, densitySpecs);
+end
+
+function diagnosticData = readPICDiagnosticGroup( ...
+    diagnosticData, speciesList, searchDirs, diagnosticSwitches, diagnosticSpecs)
+
+    for diagnosticIndex = 1:size(diagnosticSpecs, 1)
+        fieldName = diagnosticSpecs{diagnosticIndex, 1};
+        switchName = diagnosticSpecs{diagnosticIndex, 2};
+        fileSuffix = diagnosticSpecs{diagnosticIndex, 3};
+        precision = diagnosticSpecs{diagnosticIndex, 4};
+        readerFcn = diagnosticSpecs{diagnosticIndex, 5};
+        if ~diagnosticSwitches.(switchName)
             logSkipped(fileSuffix, ['开关 ' switchName ' 为 false']);
             continue;
         end
@@ -1006,72 +912,17 @@ function picPitchData = readAllPitchDiagnostics(picPitchData, speciesList, searc
                 continue;
             end
 
-            switch dataKind
-                case 'pitch2d'
-                    picPitchData.(speciesName).(fieldName) = readPitch2D(filePath, ...
-                        precision, meta.gridVpara, meta.gridVperp);
-                case 'pitch3d'
-                    picPitchData.(speciesName).(fieldName) = readPitch3D(filePath, ...
-                        precision, meta.gridVpara, meta.gridVperp, meta.nOutputTime);
-                case 'pitchPower'
-                    picPitchData.(speciesName).(fieldName) = readPitchPower4D(filePath, ...
-                        precision, meta.gridVpara, meta.gridVperp, numel(meta.modeIndexAll), meta.nOutputTime);
-                otherwise
-                    error('未知 pitch 诊断类型：%s。', dataKind);
-            end
-            logLoaded(fileName, picPitchData.(speciesName).(fieldName));
+            loadedData = readerFcn(filePath, precision);
+            diagnosticData.(speciesName).(fieldName) = loadedData;
+            logLoaded(fileName, loadedData);
         end
     end
 end
 
-function picDiffusivityData = readAllDiffusivityDiagnostics(picDiffusivityData, speciesList, searchDirs, meta)
-
-    if ~meta.switch.ifDiagDiffusivity
-        logSkipped('Diffusivity', '开关 ifDiagDiffusivity 为 false');
-        return;
-    end
-
-    for speciesIndex = 1:numel(speciesList)
-        speciesName = char(speciesList{speciesIndex});
-        fileName = [speciesName 'Diffusivity.bin'];
-        filePath = findExistingFile(searchDirs, fileName);
-        if isempty(filePath)
-            logSkipped(fileName, '文件不存在');
-            continue;
-        end
-
-        picDiffusivityData.(speciesName).Diffusivity = readDiffusivity3D(filePath, ...
-            meta.mhdPrecision, meta.nDiagTime, numel(meta.modeIndexAll), meta.gridNx);
-        logLoaded(fileName, picDiffusivityData.(speciesName).Diffusivity);
-    end
-end
-
-function picDensityData = readAllDensityDiagnostics(picDensityData, speciesList, searchDirs, meta)
-
-    if ~meta.switch.ifDiagDensity
-        logSkipped('Density', '开关 ifDiagDensity 为 false');
-        return;
-    end
-
-    for speciesIndex = 1:numel(speciesList)
-        speciesName = char(speciesList{speciesIndex});
-        fileName = [speciesName 'Density.bin'];
-        filePath = findExistingFile(searchDirs, fileName);
-        if isempty(filePath)
-            logSkipped(fileName, '文件不存在');
-            continue;
-        end
-
-        picDensityData.(speciesName).Density = readDensity2D(filePath, ...
-            meta.mhdPrecision, meta.nDiagTime, meta.gridNx);
-        logLoaded(fileName, picDensityData.(speciesName).Density);
-    end
-end
-
-function [phaseSpaceOrbit, PhaseSpaceOrbitSummary] = processAllOrbitRaw(orbitRaw, speciesList, picPhaseData, opt)
+function [phaseSpaceOrbit, phaseSpaceOrbitSummary] = processAllOrbitRaw(orbitRaw, speciesList, picPhaseData, opt)
 
     phaseSpaceOrbit = struct();
-    PhaseSpaceOrbitSummary = struct();
+    phaseSpaceOrbitSummary = struct();
     for speciesIndex = 1:numel(speciesList)
         speciesName = char(speciesList{speciesIndex});
         if ~isfield(orbitRaw, speciesName) || isempty(orbitRaw.(speciesName))
@@ -1084,10 +935,10 @@ function [phaseSpaceOrbit, PhaseSpaceOrbitSummary] = processAllOrbitRaw(orbitRaw
 
         result = analyzeSpeciesOrbitRecords(speciesName, orbitRaw.(speciesName), picPhaseData.(speciesName));
         phaseSpaceOrbit.(speciesName) = result.phaseSpaceData;
-        PhaseSpaceOrbitSummary.(speciesName) = result.summary;
+        phaseSpaceOrbitSummary.(speciesName) = result.summary;
         printSpeciesSummary(result.summary);
 
-        if optionOrDefault(opt, 'plotConservationDiagnostics', false)
+        if getOptionValue(opt, 'plotConservationDiagnostics', false)
             plotConservationDiagnostics(speciesName, result.diagnostics, ...
                 result.phaseSpaceData.E1d, result.phaseSpaceData.Pphi1d, result.phaseSpaceData.Lambda1d);
         end
@@ -1218,8 +1069,8 @@ function [classData, diagnostic, summary] = extractTrappedOrbits(classData, plus
         'pairedCandidateCount', numel(pairedLocalIndex), ...
         'bothTrappedCount', sum(trappedOrbit), ...
         'rejectedByDTCount', sum(trappedOrbit & ~accepted), ...
-        'maxAcceptedDTRelDiff', maxOrNaN(dTRelDiff(accepted)), ...
-        'meanAcceptedDTRelDiff', meanOrNaN(dTRelDiff(accepted)));
+        'maxAcceptedDTRelDiff', statisticOrNaN(dTRelDiff(accepted), @max, false), ...
+        'meanAcceptedDTRelDiff', statisticOrNaN(dTRelDiff(accepted), @mean, false));
 end
 
 function [classData, diagnostic, summary] = extractPassingOrbits(targetOrbit, classData, validRecord, localId, ...
@@ -1278,662 +1129,484 @@ function classData = fillOrbitClass(classData, localIds, dthetaValues, dphiTotal
     classData.dT(linearIndex) = dTValues(:);
 end
 
-function plotOrbitFrequency(phaseSpaceOrbit, meta, opt)
+function plotOrbitFrequency(phaseSpaceOrbit, meta, opt, dynamicUpdate)
 
     [orbitData, speciesLabel] = resolveSpeciesData(phaseSpaceOrbit, opt.species, 'orbit');
     branchName = normalizeFrequencyBranch(opt.branch);
     dim = phaseCoordinateToDimension(opt.fixedCoordinate);
-    idx = parsePhaseSlice(opt.slice, dim, orbitData);
+    initialSliceIndex = parsePhaseSlice(opt.slice, dim, orbitData);
     [unitScale, colorbarLabel] = frequencyUnitScale(opt.unit);
     frequency = calculateOrbitFrequencyField(orbitData, branchName, unitScale, meta);
-    [Z, xVec, yVec, xlabelText, ylabelText, sliceTitle] = slicePhaseField(dim, idx, frequency, orbitData);
-
-    if ~any(isfinite(Z(:)))
-        fprintf('[plot] %s %s orbit frequency 在该切片中没有有限值数据。\n', speciesLabel, branchName);
-        return;
+    contourCount = getOptionValue(opt, 'contourCount', 0);
+    baseValues = struct('sliceIndex', initialSliceIndex, 'contourCount', contourCount);
+    controls = struct([]);
+    if ~isempty(dynamicUpdate)
+        controls = [ ...
+            integerSliderControl('sliceIndex', [char(opt.fixedCoordinate) ' index'], ...
+            initialSliceIndex, 1, phaseDimensionSize(dim, orbitData)), ...
+            integerSliderControl('contourCount', 'contours', contourCount, 0, max(40, 2 * contourCount))];
     end
-
-    Z = fillEnclosedBlankRegions(Z);
-    titleText = simpleTitleText(speciesLabel, orbitFrequencyLatex(branchName), sliceTitle, '');
-    plotData = mapPlotData(Z, xVec, yVec, xlabelText, ylabelText, titleText, colorbarLabel, ...
-        opt.colormapIndex, opt.contourCount, sprintf('%s %s orbit frequency', speciesLabel, branchName));
-    drawMapFigure(sprintf('%s %s orbit frequency', speciesLabel, branchName), plotData);
+    figureName = sprintf('%s %s orbit frequency', speciesLabel, branchName);
+    buildPlotData = @(values) buildOrbitFrequencyPlotData(orbitData, speciesLabel, ...
+        branchName, dim, frequency, colorbarLabel, opt, ...
+        applyControlValues(baseValues, values), ~isempty(dynamicUpdate));
+    runPICPlotMode(figureName, controls, dynamicUpdate, buildPlotData, ...
+        @renderMap, sprintf('%s 在该切片中没有有限值数据。', figureName));
 end
 
-function plotOrbitFrequencyInteractive(phaseSpaceOrbit, meta, opt, dynamicUpdate)
+function plotData = buildOrbitFrequencyPlotData(orbitData, speciesLabel, branchName, ...
+    dim, frequency, colorbarLabel, opt, values, showControlStatus)
 
-    [orbitData, speciesLabel] = resolveSpeciesData(phaseSpaceOrbit, opt.species, 'orbit');
-    branchName = normalizeFrequencyBranch(opt.branch);
-    dim = phaseCoordinateToDimension(opt.fixedCoordinate);
-    idx0 = parsePhaseSlice(opt.slice, dim, orbitData);
-    [unitScale, colorbarLabel] = frequencyUnitScale(opt.unit);
-    frequency = calculateOrbitFrequencyField(orbitData, branchName, unitScale, meta);
-    nSlice = phaseDimensionSize(dim, orbitData);
-    contourCount = optionOrDefault(opt, 'contourCount', 0);
-    controls = [ ...
-        integerSliderControl('sliceIndex', [char(opt.fixedCoordinate) ' index'], idx0, 1, nSlice), ...
-        integerSliderControl('contourCount', 'contours', contourCount, 0, max(40, 2 * contourCount))];
-
-    plotInteractiveMap(sprintf('%s %s orbit frequency', speciesLabel, branchName), controls, dynamicUpdate, ...
-        @computePlotData, @renderMap);
-
-    function plotData = computePlotData(values)
-        [Z, xVec, yVec, xlabelText, ylabelText, sliceTitle] = slicePhaseField( ...
-            dim, values.sliceIndex, frequency, orbitData);
-        if any(isfinite(Z(:)))
-            Z = fillEnclosedBlankRegions(Z);
-        end
-        titleText = simpleTitleText(speciesLabel, orbitFrequencyLatex(branchName), sliceTitle, '');
-        statusText = sprintf('%s %s orbit frequency, %s index = %d, contours = %d', ...
-            speciesLabel, branchName, char(opt.fixedCoordinate), values.sliceIndex, values.contourCount);
-        plotData = mapPlotData(Z, xVec, yVec, xlabelText, ylabelText, titleText, colorbarLabel, ...
-            opt.colormapIndex, values.contourCount, statusText);
+    [Z, xVec, yVec, xlabelText, ylabelText, sliceTitle] = slicePhaseField( ...
+        dim, values.sliceIndex, frequency, orbitData);
+    if any(isfinite(Z(:)))
+        Z = fillEnclosedBlankRegions(Z);
     end
+    statusText = sprintf('%s %s orbit frequency', speciesLabel, branchName);
+    if showControlStatus
+        statusText = sprintf('%s, %s index = %d, contours = %d', ...
+            statusText, char(opt.fixedCoordinate), values.sliceIndex, values.contourCount);
+    end
+    frequencyLatex = sprintf('\\mathrm{%s}\\ \\mathrm{orbit}\\ \\mathrm{frequency}', branchName);
+    titleText = simpleTitleText(speciesLabel, frequencyLatex, sliceTitle, '');
+    plotData = buildMapPlotData(Z, xVec, yVec, xlabelText, ylabelText, titleText, ...
+        colorbarLabel, opt.colormapIndex, values.contourCount, statusText);
 end
 
-function plotResonanceLine(phaseSpaceOrbit, meta, opt)
+function plotResonanceLine(phaseSpaceOrbit, meta, opt, dynamicUpdate)
 
     [orbitData, speciesLabel] = resolveSpeciesData(phaseSpaceOrbit, opt.species, 'orbit');
     dim = phaseCoordinateToDimension(opt.fixedCoordinate);
-    idx = parsePhaseSlice(opt.slice, dim, orbitData);
-    resOpt = validatedResonanceOptions(opt);
+    initialSliceIndex = parsePhaseSlice(opt.slice, dim, orbitData);
+    initialResonanceOptions = normalizeResonanceOptions(opt);
+    baseValues = struct('sliceIndex', initialSliceIndex);
+    controls = struct([]);
+    if ~isempty(dynamicUpdate)
+        controls = integerSliderControl('sliceIndex', [char(opt.fixedCoordinate) ' index'], ...
+            initialSliceIndex, 1, phaseDimensionSize(dim, orbitData));
+        controls = appendResonanceControls(controls, initialResonanceOptions);
+    end
+    figureName = sprintf('%s %s resonance residual', speciesLabel, initialResonanceOptions.branch);
+    buildPlotData = @(values) buildResonancePlotData(orbitData, speciesLabel, dim, ...
+        initialResonanceOptions, meta, opt, applyControlValues(baseValues, values));
+    runPICPlotMode(figureName, controls, dynamicUpdate, buildPlotData, ...
+        @renderMap, ...
+        sprintf('%s %s resonance 在该切片中没有有限值数据。', speciesLabel, initialResonanceOptions.branch));
+end
+
+function plotData = buildResonancePlotData(orbitData, speciesLabel, dim, resOpt, meta, opt, values)
+
+    resOpt = resonanceOptionsFromValues(resOpt, values);
     [residualHz, physicalN] = calculateResonanceResidualField(orbitData, resOpt, meta);
-    [Z, xVec, yVec, xlabelText, ylabelText, sliceTitle] = slicePhaseField(dim, idx, residualHz, orbitData);
-
-    if ~any(isfinite(Z(:)))
-        fprintf('[plot] %s %s resonance 在该切片中没有有限值数据。\n', speciesLabel, resOpt.branch);
-        return;
-    end
-
+    [Z, xVec, yVec, xlabelText, ylabelText, sliceTitle] = slicePhaseField( ...
+        dim, values.sliceIndex, residualHz, orbitData);
     titleText = resonanceTitleText(speciesLabel, resOpt, physicalN, sliceTitle);
-    plotData = mapPlotData(Z, xVec, yVec, xlabelText, ylabelText, titleText, ...
+    plotData = buildMapPlotData(Z, xVec, yVec, xlabelText, ylabelText, titleText, ...
         '$\Delta f_{\mathrm{res}}/\mathrm{Hz}$', opt.colormapIndex, 0, ...
         resonanceStatusText(speciesLabel, resOpt, physicalN, residualHasZeroContour(Z)));
     plotData.forceSigned = true;
     plotData.resonanceZ = Z;
-    drawMapFigure(sprintf('%s %s resonance residual', speciesLabel, resOpt.branch), plotData);
 end
 
-function plotResonanceLineInteractive(phaseSpaceOrbit, meta, opt, dynamicUpdate)
-
-    [orbitData, speciesLabel] = resolveSpeciesData(phaseSpaceOrbit, opt.species, 'orbit');
-    dim = phaseCoordinateToDimension(opt.fixedCoordinate);
-    idx0 = parsePhaseSlice(opt.slice, dim, orbitData);
-    resOpt0 = validatedResonanceOptions(opt);
-    controls = [integerSliderControl('sliceIndex', [char(opt.fixedCoordinate) ' index'], ...
-        idx0, 1, phaseDimensionSize(dim, orbitData))];
-    controls = appendResonanceControls(controls, resOpt0);
-
-    plotInteractiveMap(sprintf('%s %s resonance residual', speciesLabel, resOpt0.branch), controls, dynamicUpdate, ...
-        @computePlotData, @renderMap);
-
-    function plotData = computePlotData(values)
-        resOpt = resonanceOptionsFromValues(resOpt0, values);
-        [residualHz, physicalN] = calculateResonanceResidualField(orbitData, resOpt, meta);
-        [Z, xVec, yVec, xlabelText, ylabelText, sliceTitle] = slicePhaseField( ...
-            dim, values.sliceIndex, residualHz, orbitData);
-
-        titleText = resonanceTitleText(speciesLabel, resOpt, physicalN, sliceTitle);
-        hasZero = residualHasZeroContour(Z);
-        plotData = mapPlotData(Z, xVec, yVec, xlabelText, ylabelText, titleText, ...
-            '$\Delta f_{\mathrm{res}}/\mathrm{Hz}$', opt.colormapIndex, 0, ...
-            resonanceStatusText(speciesLabel, resOpt, physicalN, hasZero));
-        plotData.forceSigned = true;
-        plotData.resonanceZ = Z;
-    end
-end
-
-function plotPhaseQuantity(picPhaseData, phaseSpaceOrbit, meta, opt)
+function plotPhaseQuantity(picPhaseData, phaseSpaceOrbit, meta, opt, dynamicUpdate)
 
     [speciesData, speciesLabel] = resolveSpeciesData(picPhaseData, opt.species, 'phase');
-    [quantityData, quantityField, quantityLatex, isTimeDependent] = resolvePhaseQuantity(speciesData, opt.quantity);
-    [fieldData, timeIndexText] = selectQuantityFrame(quantityData, isTimeDependent, opt.timeIndex);
+    [quantityData, quantitySpec] = computePICQuantity(speciesData, opt.quantity);
     dim = phaseCoordinateToDimension(opt.fixedCoordinate);
-    idx = parsePhaseSlice(opt.slice, dim, speciesData);
-    [Z, xVec, yVec, xlabelText, ylabelText, sliceTitle] = slicePhaseField(dim, idx, fieldData, speciesData);
-
-    if ~any(isfinite(Z(:)))
-        fprintf('[plot] %s %s 在该切片中没有有限值数据。\n', speciesLabel, quantityField);
-        return;
+    initialSliceIndex = parsePhaseSlice(opt.slice, dim, speciesData);
+    initialTimeIndex = getOptionValue(opt, 'timeIndex', 1);
+    if quantitySpec.timeDependent
+        initialTimeIndex = parseTimeIndex(initialTimeIndex, timeDimensionSize(quantityData));
     end
-
-    titleText = phaseQuantityTitleText(speciesLabel, quantityLatex, sliceTitle, timeIndexText, opt.resonance);
-    statusText = sprintf('%s %s, %s index = %d%s', speciesLabel, quantityField, char(opt.fixedCoordinate), idx, timeIndexText);
-    plotData = mapPlotData(Z, xVec, yVec, xlabelText, ylabelText, titleText, ...
-        ['$' quantityLatex '$'], opt.colormapIndex, opt.contourCount, statusText);
-    plotData = attachResonanceOverlay(plotData, phaseSpaceOrbit, speciesLabel, dim, idx, opt.resonance, meta);
-    plotData = attachPhaseDetuningLine(plotData, dim, opt.detuningLine, opt.resonance, meta);
-    drawMapFigure(sprintf('%s %s phase-space slice', speciesLabel, quantityField), plotData);
-end
-
-function plotPhaseQuantityInteractive(picPhaseData, phaseSpaceOrbit, meta, opt, dynamicUpdate)
-
-    [speciesData, speciesLabel] = resolveSpeciesData(picPhaseData, opt.species, 'phase');
-    [quantityData, quantityField, quantityLatex, isTimeDependent] = resolvePhaseQuantity(speciesData, opt.quantity);
-    dim = phaseCoordinateToDimension(opt.fixedCoordinate);
-    idx0 = parsePhaseSlice(opt.slice, dim, speciesData);
-    contourCount = optionOrDefault(opt, 'contourCount', 0);
-    controls = integerSliderControl('sliceIndex', [char(opt.fixedCoordinate) ' index'], ...
-        idx0, 1, phaseDimensionSize(dim, speciesData));
-
-    if isTimeDependent
-        controls = [controls, integerSliderControl('timeIndex', 'timeIndex', ...
-            parseTimeIndex(opt.timeIndex, timeDimensionSize(quantityData)), 1, timeDimensionSize(quantityData))];
-    end
-    controls = [controls, integerSliderControl('contourCount', 'contours', contourCount, 0, max(20, 2 * contourCount))];
-    controls = appendResonanceControls(controls, opt.resonance, true, true);
-
-    plotInteractiveMap(sprintf('%s %s phase-space slice', speciesLabel, quantityField), controls, dynamicUpdate, ...
-        @computePlotData, @renderMap);
-
-    function plotData = computePlotData(values)
-        tempTimeIndex = optionOrDefault(opt, 'timeIndex', 1);
-        if isTimeDependent
-            tempTimeIndex = values.timeIndex;
+    contourCount = getOptionValue(opt, 'contourCount', 0);
+    baseValues = struct('sliceIndex', initialSliceIndex, 'timeIndex', initialTimeIndex, 'contourCount', contourCount);
+    controls = struct([]);
+    if ~isempty(dynamicUpdate)
+        controls = integerSliderControl('sliceIndex', [char(opt.fixedCoordinate) ' index'], ...
+            initialSliceIndex, 1, phaseDimensionSize(dim, speciesData));
+        if quantitySpec.timeDependent
+            controls = [controls, integerSliderControl('timeIndex', 'timeIndex', ...
+                initialTimeIndex, 1, timeDimensionSize(quantityData))];
         end
-        [fieldData, timeIndexText] = selectQuantityFrame(quantityData, isTimeDependent, tempTimeIndex);
-        [Z, xVec, yVec, xlabelText, ylabelText, sliceTitle] = slicePhaseField( ...
-            dim, values.sliceIndex, fieldData, speciesData);
-        resOpt = resonanceOptionsFromValues(opt.resonance, values, true);
-        titleText = phaseQuantityTitleText(speciesLabel, quantityLatex, sliceTitle, timeIndexText, resOpt);
-        statusText = sprintf('%s %s, %s index = %d%s, contours = %d', ...
-            speciesLabel, quantityField, char(opt.fixedCoordinate), values.sliceIndex, timeIndexText, values.contourCount);
-        plotData = mapPlotData(Z, xVec, yVec, xlabelText, ylabelText, titleText, ...
-            ['$' quantityLatex '$'], opt.colormapIndex, values.contourCount, statusText);
+        controls = [controls, integerSliderControl('contourCount', 'contours', ...
+            contourCount, 0, max(20, 2 * contourCount))];
+        controls = appendResonanceControls(controls, opt.resonance, true, true);
+    end
+    figureName = sprintf('%s %s phase-space slice', speciesLabel, quantitySpec.field);
+    buildPlotData = @(values) buildPhaseQuantityPlotData(speciesData, speciesLabel, ...
+        quantityData, quantitySpec, dim, phaseSpaceOrbit, ...
+        meta, opt, applyControlValues(baseValues, values), ~isempty(dynamicUpdate));
+    runPICPlotMode(figureName, controls, dynamicUpdate, buildPlotData, ...
+        @renderMap, ...
+        sprintf('%s %s 在该切片中没有有限值数据。', speciesLabel, quantitySpec.field));
+end
+
+function plotData = buildPhaseQuantityPlotData(speciesData, speciesLabel, quantityData, ...
+    quantitySpec, dim, phaseSpaceOrbit, meta, opt, values, isInteractive)
+
+    [fieldData, timeIndexText] = selectQuantityFrame( ...
+        quantityData, quantitySpec.timeDependent, values.timeIndex);
+    [Z, xVec, yVec, xlabelText, ylabelText, sliceTitle] = slicePhaseField( ...
+        dim, values.sliceIndex, fieldData, speciesData);
+    resOpt = opt.resonance;
+    if isInteractive || any(isfinite(Z(:)))
+        resOpt = resonanceOptionsFromValues(resOpt, values, true);
+    end
+    titleText = phaseQuantityTitleText( ...
+        speciesLabel, quantitySpec.latex, sliceTitle, timeIndexText, resOpt);
+    statusText = sprintf('%s %s, %s index = %d%s', ...
+        speciesLabel, quantitySpec.field, char(opt.fixedCoordinate), values.sliceIndex, timeIndexText);
+    if isInteractive
+        statusText = sprintf('%s, contours = %d', statusText, values.contourCount);
+    end
+    plotData = buildMapPlotData(Z, xVec, yVec, xlabelText, ylabelText, titleText, ...
+        ['$' quantitySpec.latex '$'], opt.colormapIndex, values.contourCount, statusText);
+    if isInteractive || any(isfinite(Z(:)))
         plotData = attachResonanceOverlay(plotData, phaseSpaceOrbit, speciesLabel, dim, values.sliceIndex, resOpt, meta);
         plotData = attachPhaseDetuningLine(plotData, dim, opt.detuningLine, resOpt, meta);
     end
 end
 
-function plotPhasePower(picPhaseData, phaseSpaceOrbit, meta, opt)
+function plotPhasePower(picPhaseData, phaseSpaceOrbit, meta, opt, dynamicUpdate)
 
     [speciesData, speciesLabel] = resolveSpeciesData(picPhaseData, opt.species, 'phase');
     powerData = requireQuantityData(speciesData, 'Power');
-    [modeIdx, modeN] = parseModeN(opt.modeN, speciesData.modeIndexAll, speciesData.physicalNAll);
-    timeIndex = parseTimeIndex(opt.timeIndex, size(powerData, 5));
     dim = phaseCoordinateToDimension(opt.fixedCoordinate);
-    idx = parsePhaseSlice(opt.slice, dim, speciesData);
-    [Z, xVec, yVec, xlabelText, ylabelText, sliceTitle] = slicePhaseField(dim, idx, powerData(:, :, :, modeIdx, timeIndex), speciesData);
-
-    if ~any(isfinite(Z(:)))
-        fprintf('[plot] %s PhasePower 在该切片中没有有限值数据。\n', speciesLabel);
-        return;
+    initialSliceIndex = parsePhaseSlice(opt.slice, dim, speciesData);
+    [~, initialModeN] = parseModeN(opt.modeN, speciesData.modeIndexAll, speciesData.physicalNAll);
+    initialTimeIndex = parseTimeIndex(opt.timeIndex, size(powerData, 5));
+    contourCount = getOptionValue(opt, 'contourCount', 0);
+    baseValues = struct('sliceIndex', initialSliceIndex, 'modeN', initialModeN, ...
+        'timeIndex', initialTimeIndex, 'contourCount', contourCount);
+    controls = struct([]);
+    if ~isempty(dynamicUpdate)
+        controls = integerSliderControl('sliceIndex', [char(opt.fixedCoordinate) ' index'], ...
+            initialSliceIndex, 1, phaseDimensionSize(dim, speciesData));
+        if numel(speciesData.modeIndexAll) > 1
+            modeControl = integerSliderControl('modeN', 'n', initialModeN, ...
+                min(speciesData.physicalNAll), max(speciesData.physicalNAll));
+            modeControl.allowedValues = speciesData.physicalNAll;
+            controls = [controls, modeControl];
+        end
+        if size(powerData, 5) > 1
+            controls = [controls, integerSliderControl('timeIndex', 'timeIndex', ...
+                initialTimeIndex, 1, size(powerData, 5))];
+        end
+        controls = [controls, integerSliderControl('contourCount', 'contours', ...
+            contourCount, 0, max(20, 2 * contourCount))];
+        controls = appendResonanceControls(controls, opt.resonance, true);
     end
-
-    quantityLatex = 'P_{\mathrm{PIC}}';
-    timeIndexText = sprintf(', timeIndex = %d', timeIndex);
-    titleText = phasePowerTitleText(speciesLabel, quantityLatex, sliceTitle, modeN, timeIndexText, opt.resonance);
-    statusText = sprintf('%s PhasePower, %s index = %d%s%s', ...
-        speciesLabel, char(opt.fixedCoordinate), idx, modeStatusText(modeN), timeIndexText);
-    plotData = mapPlotData(Z, xVec, yVec, xlabelText, ylabelText, titleText, ...
-        ['$' quantityLatex '$'], opt.colormapIndex, opt.contourCount, statusText);
-    plotData = attachResonanceOverlay(plotData, phaseSpaceOrbit, speciesLabel, dim, idx, opt.resonance, meta);
-    drawMapFigure(sprintf('%s PhasePower phase-space slice', speciesLabel), plotData);
+    figureName = sprintf('%s PhasePower phase-space slice', speciesLabel);
+    buildPlotData = @(values) buildPhasePowerPlotData(speciesData, speciesLabel, powerData, ...
+        dim, phaseSpaceOrbit, meta, opt, applyControlValues(baseValues, values), ~isempty(dynamicUpdate));
+    runPICPlotMode(figureName, controls, dynamicUpdate, buildPlotData, ...
+        @renderMap, sprintf('%s PhasePower 在该切片中没有有限值数据。', speciesLabel));
 end
 
-function plotPhasePowerInteractive(picPhaseData, phaseSpaceOrbit, meta, opt, dynamicUpdate)
+function plotData = buildPhasePowerPlotData(speciesData, speciesLabel, powerData, ...
+    dim, phaseSpaceOrbit, meta, opt, values, isInteractive)
 
-    [speciesData, speciesLabel] = resolveSpeciesData(picPhaseData, opt.species, 'phase');
-    powerData = requireQuantityData(speciesData, 'Power');
-    dim = phaseCoordinateToDimension(opt.fixedCoordinate);
-    idx0 = parsePhaseSlice(opt.slice, dim, speciesData);
-    [~, modeN0] = parseModeN(opt.modeN, speciesData.modeIndexAll, speciesData.physicalNAll);
-    timeIndex0 = parseTimeIndex(opt.timeIndex, size(powerData, 5));
-    contourCount = optionOrDefault(opt, 'contourCount', 0);
-    controls = integerSliderControl('sliceIndex', [char(opt.fixedCoordinate) ' index'], ...
-        idx0, 1, phaseDimensionSize(dim, speciesData));
-    if numel(speciesData.modeIndexAll) > 1
-        modeControl = integerSliderControl('modeN', 'n', modeN0, ...
-            min(speciesData.physicalNAll), max(speciesData.physicalNAll));
-        modeControl.allowedValues = speciesData.physicalNAll;
-        controls = [controls, modeControl];
+    [modeIndex, modeN] = parseModeN(values.modeN, speciesData.modeIndexAll, speciesData.physicalNAll);
+    timeIndex = parseTimeIndex(values.timeIndex, size(powerData, 5));
+    [Z, xVec, yVec, xlabelText, ylabelText, sliceTitle] = slicePhaseField( ...
+        dim, values.sliceIndex, powerData(:, :, :, modeIndex, timeIndex), speciesData);
+    resOpt = opt.resonance;
+    if isInteractive || any(isfinite(Z(:)))
+        resOpt = resonanceOptionsFromValues(resOpt, values);
     end
-    if size(powerData, 5) > 1
-        controls = [controls, integerSliderControl('timeIndex', 'timeIndex', timeIndex0, 1, size(powerData, 5))];
+    quantityLatex = 'P_{\mathrm{PIC}}';
+    timeIndexText = sprintf(', timeIndex = %d', timeIndex);
+    titleText = phasePowerTitleText(speciesLabel, quantityLatex, sliceTitle, modeN, timeIndexText, resOpt);
+    statusText = sprintf('%s PhasePower, %s index = %d, n = %d%s', ...
+        speciesLabel, char(opt.fixedCoordinate), values.sliceIndex, modeN, timeIndexText);
+    if isInteractive
+        statusText = sprintf('%s, contours = %d', statusText, values.contourCount);
     end
-    controls = [controls, integerSliderControl('contourCount', 'contours', contourCount, 0, max(20, 2 * contourCount))];
-    controls = appendResonanceControls(controls, opt.resonance, true);
-
-    plotInteractiveMap(sprintf('%s PhasePower phase-space slice', speciesLabel), controls, dynamicUpdate, ...
-        @computePlotData, @renderMap);
-
-    function plotData = computePlotData(values)
-        tempModeN = modeN0;
-        if isfield(values, 'modeN')
-            tempModeN = values.modeN;
-        end
-        [tempModeIdx, tempModeN] = parseModeN(tempModeN, speciesData.modeIndexAll, speciesData.physicalNAll);
-        tempTimeIndex = timeIndex0;
-        if isfield(values, 'timeIndex')
-            tempTimeIndex = values.timeIndex;
-        end
-        [Z, xVec, yVec, xlabelText, ylabelText, sliceTitle] = slicePhaseField( ...
-            dim, values.sliceIndex, powerData(:, :, :, tempModeIdx, tempTimeIndex), speciesData);
-        resOpt = resonanceOptionsFromValues(opt.resonance, values);
-        quantityLatex = 'P_{\mathrm{PIC}}';
-        timeIndexText = sprintf(', timeIndex = %d', tempTimeIndex);
-        titleText = phasePowerTitleText(speciesLabel, quantityLatex, sliceTitle, tempModeN, timeIndexText, resOpt);
-        statusText = sprintf('%s PhasePower, %s index = %d%s%s, contours = %d', ...
-            speciesLabel, char(opt.fixedCoordinate), values.sliceIndex, ...
-            modeStatusText(tempModeN), timeIndexText, values.contourCount);
-        plotData = mapPlotData(Z, xVec, yVec, xlabelText, ylabelText, titleText, ...
-            ['$' quantityLatex '$'], opt.colormapIndex, values.contourCount, statusText);
+    plotData = buildMapPlotData(Z, xVec, yVec, xlabelText, ylabelText, titleText, ...
+        ['$' quantityLatex '$'], opt.colormapIndex, values.contourCount, statusText);
+    if isInteractive || any(isfinite(Z(:)))
         plotData = attachResonanceOverlay(plotData, phaseSpaceOrbit, speciesLabel, dim, values.sliceIndex, resOpt, meta);
     end
 end
 
-function plotPitchQuantity(picPitchData, opt)
+function plotPitchQuantity(picPitchData, opt, dynamicUpdate)
 
     [speciesData, speciesLabel] = resolveSpeciesData(picPitchData, opt.species, 'pitch');
-    [quantityData, quantityField, quantityLatex, isTimeDependent] = resolvePhaseQuantity(speciesData, opt.quantity);
-    [fieldData, timeIndexText] = selectQuantityFrame(quantityData, isTimeDependent, opt.timeIndex);
-    [Z, xVec, yVec, xlabelText, ylabelText] = pitchMapField(fieldData, speciesData);
-
-    if ~any(isfinite(Z(:)))
-        fprintf('[plot] %s pitch %s 没有有限值数据。\n', speciesLabel, quantityField);
-        return;
+    [quantityData, quantitySpec] = computePICQuantity(speciesData, opt.quantity);
+    contourCount = getOptionValue(opt, 'contourCount', 0);
+    timeIndex = getOptionValue(opt, 'timeIndex', 1);
+    if quantitySpec.timeDependent
+        timeIndex = parseTimeIndex(timeIndex, timeDimensionSize(quantityData));
     end
-
-    titleText = pitchTitleText(speciesLabel, quantityLatex, timeIndexText);
-    plotData = mapPlotData(Z, xVec, yVec, xlabelText, ylabelText, titleText, ...
-        ['$' quantityLatex '$'], opt.colormapIndex, opt.contourCount, ...
-        sprintf('%s pitch %s%s', speciesLabel, quantityField, timeIndexText));
-    drawMapFigure(sprintf('%s %s pitch-space map', speciesLabel, quantityField), plotData);
-end
-
-function plotPitchQuantityInteractive(picPitchData, opt, dynamicUpdate)
-
-    [speciesData, speciesLabel] = resolveSpeciesData(picPitchData, opt.species, 'pitch');
-    [quantityData, quantityField, quantityLatex, isTimeDependent] = resolvePhaseQuantity(speciesData, opt.quantity);
-    contourCount = optionOrDefault(opt, 'contourCount', 0);
-    controls = integerSliderControl('contourCount', 'contours', contourCount, 0, max(20, 2 * contourCount));
-    if isTimeDependent
-        controls = [integerSliderControl('timeIndex', 'timeIndex', ...
-            parseTimeIndex(opt.timeIndex, timeDimensionSize(quantityData)), 1, timeDimensionSize(quantityData)), controls];
-    end
-
-    plotInteractiveMap(sprintf('%s %s pitch-space map', speciesLabel, quantityField), controls, dynamicUpdate, ...
-        @computePlotData, @renderMap);
-
-    function plotData = computePlotData(values)
-        tempTimeIndex = optionOrDefault(opt, 'timeIndex', 1);
-        if isTimeDependent
-            tempTimeIndex = values.timeIndex;
+    baseValues = struct('timeIndex', timeIndex, 'contourCount', contourCount);
+    controls = struct([]);
+    if ~isempty(dynamicUpdate)
+        if quantitySpec.timeDependent
+            controls = integerSliderControl('timeIndex', 'timeIndex', ...
+                timeIndex, 1, timeDimensionSize(quantityData));
         end
-        [fieldData, timeIndexText] = selectQuantityFrame(quantityData, isTimeDependent, tempTimeIndex);
-        [Z, xVec, yVec, xlabelText, ylabelText] = pitchMapField(fieldData, speciesData);
-        titleText = pitchTitleText(speciesLabel, quantityLatex, timeIndexText);
-        plotData = mapPlotData(Z, xVec, yVec, xlabelText, ylabelText, titleText, ...
-            ['$' quantityLatex '$'], opt.colormapIndex, values.contourCount, ...
-            sprintf('%s pitch %s%s, contours = %d', speciesLabel, quantityField, timeIndexText, values.contourCount));
+        controls = [controls, integerSliderControl('contourCount', 'contours', ...
+            contourCount, 0, max(20, 2 * contourCount))];
     end
+
+    figureName = sprintf('%s %s pitch-space map', speciesLabel, quantitySpec.field);
+    buildPlotData = @(values) buildPitchQuantityPlotData(speciesData, speciesLabel, ...
+        quantityData, quantitySpec, opt, applyControlValues(baseValues, values), ~isempty(dynamicUpdate));
+    runPICPlotMode(figureName, controls, dynamicUpdate, buildPlotData, ...
+        @renderMap, ...
+        sprintf('%s pitch %s 没有有限值数据。', speciesLabel, quantitySpec.field));
 end
 
-function plotPitchPower(picPitchData, opt)
+function plotData = buildPitchQuantityPlotData(speciesData, speciesLabel, quantityData, ...
+    quantitySpec, opt, values, isInteractive)
+
+    [fieldData, timeIndexText] = selectQuantityFrame( ...
+        quantityData, quantitySpec.timeDependent, values.timeIndex);
+    [Z, xVec, yVec, xlabelText, ylabelText] = pitchMapField(fieldData, speciesData);
+    titleText = sprintf('$\\mathrm{%s}\\quad %s\\quad \\mathrm{pitch}%s$', ...
+        speciesLabel, quantitySpec.latex, timeTextToLatex(timeIndexText));
+    statusText = sprintf('%s pitch %s%s', speciesLabel, quantitySpec.field, timeIndexText);
+    if isInteractive
+        statusText = sprintf('%s, contours = %d', statusText, values.contourCount);
+    end
+    plotData = buildMapPlotData(Z, xVec, yVec, xlabelText, ylabelText, titleText, ...
+        ['$' quantitySpec.latex '$'], opt.colormapIndex, values.contourCount, statusText);
+end
+
+function plotPitchPower(picPitchData, opt, dynamicUpdate)
 
     [speciesData, speciesLabel] = resolveSpeciesData(picPitchData, opt.species, 'pitch');
     powerData = requireQuantityData(speciesData, 'Power');
-    [modeIdx, modeN] = parseModeN(opt.modeN, speciesData.modeIndexAll, speciesData.physicalNAll);
-    timeIndex = parseTimeIndex(opt.timeIndex, size(powerData, 4));
-    [Z, xVec, yVec, xlabelText, ylabelText] = pitchMapField(powerData(:, :, modeIdx, timeIndex), speciesData);
-
-    if ~any(isfinite(Z(:)))
-        fprintf('[plot] %s PitchPower 没有有限值数据。\n', speciesLabel);
-        return;
+    [~, initialModeN] = parseModeN(opt.modeN, speciesData.modeIndexAll, speciesData.physicalNAll);
+    initialTimeIndex = parseTimeIndex(opt.timeIndex, size(powerData, 4));
+    contourCount = getOptionValue(opt, 'contourCount', 0);
+    controls = struct([]);
+    if ~isempty(dynamicUpdate)
+        if numel(speciesData.modeIndexAll) > 1
+            modeControl = integerSliderControl('modeN', 'n', initialModeN, ...
+                min(speciesData.physicalNAll), max(speciesData.physicalNAll));
+            modeControl.allowedValues = speciesData.physicalNAll;
+            controls = [controls, modeControl];
+        end
+        if size(powerData, 4) > 1
+            controls = [controls, integerSliderControl('timeIndex', 'timeIndex', ...
+                initialTimeIndex, 1, size(powerData, 4))];
+        end
+        controls = [controls, integerSliderControl('contourCount', 'contours', ...
+            contourCount, 0, max(20, 2 * contourCount))];
     end
 
+    baseValues = struct('modeN', initialModeN, 'timeIndex', initialTimeIndex, 'contourCount', contourCount);
+    figureName = sprintf('%s PitchPower pitch-space map', speciesLabel);
+    buildPlotData = @(values) buildPitchPowerPlotData(speciesData, speciesLabel, ...
+        powerData, opt, applyControlValues(baseValues, values), ~isempty(dynamicUpdate));
+    runPICPlotMode(figureName, controls, dynamicUpdate, buildPlotData, ...
+        @renderMap, sprintf('%s PitchPower 没有有限值数据。', speciesLabel));
+end
+
+function plotData = buildPitchPowerPlotData(speciesData, speciesLabel, powerData, opt, values, isInteractive)
+
+    [modeIndex, modeN] = parseModeN(values.modeN, speciesData.modeIndexAll, speciesData.physicalNAll);
+    timeIndex = parseTimeIndex(values.timeIndex, size(powerData, 4));
+    [Z, xVec, yVec, xlabelText, ylabelText] = pitchMapField(powerData(:, :, modeIndex, timeIndex), speciesData);
     quantityLatex = 'P_{\mathrm{PIC}}';
     timeIndexText = sprintf(', timeIndex = %d', timeIndex);
-    titleText = pitchPowerTitleText(speciesLabel, quantityLatex, modeN, timeIndexText);
-    plotData = mapPlotData(Z, xVec, yVec, xlabelText, ylabelText, titleText, ...
-        ['$' quantityLatex '$'], opt.colormapIndex, opt.contourCount, ...
-        sprintf('%s PitchPower%s%s', speciesLabel, modeStatusText(modeN), timeIndexText));
-    drawMapFigure(sprintf('%s PitchPower pitch-space map', speciesLabel), plotData);
+    titleText = sprintf('$\\mathrm{%s}\\quad %s\\quad \\mathrm{pitch},\\quad n = %d%s$', ...
+        speciesLabel, quantityLatex, modeN, timeTextToLatex(timeIndexText));
+    statusText = sprintf('%s PitchPower, n = %d%s', speciesLabel, modeN, timeIndexText);
+    if isInteractive
+        statusText = sprintf('%s, contours = %d', statusText, values.contourCount);
+    end
+    plotData = buildMapPlotData(Z, xVec, yVec, xlabelText, ylabelText, titleText, ...
+        ['$' quantityLatex '$'], opt.colormapIndex, values.contourCount, statusText);
 end
 
-function plotPitchPowerInteractive(picPitchData, opt, dynamicUpdate)
+function plotDiffusivity(picDiffusivityData, opt, dynamicUpdate)
 
-    [speciesData, speciesLabel] = resolveSpeciesData(picPitchData, opt.species, 'pitch');
-    powerData = requireQuantityData(speciesData, 'Power');
-    [~, modeN0] = parseModeN(opt.modeN, speciesData.modeIndexAll, speciesData.physicalNAll);
-    timeIndex0 = parseTimeIndex(opt.timeIndex, size(powerData, 4));
-    contourCount = optionOrDefault(opt, 'contourCount', 0);
-    controls = struct([]);
-    if numel(speciesData.modeIndexAll) > 1
-        modeControl = integerSliderControl('modeN', 'n', modeN0, ...
-            min(speciesData.physicalNAll), max(speciesData.physicalNAll));
-        modeControl.allowedValues = speciesData.physicalNAll;
-        controls = [controls, modeControl];
-    end
-    if size(powerData, 4) > 1
-        controls = [controls, integerSliderControl('timeIndex', 'timeIndex', timeIndex0, 1, size(powerData, 4))];
-    end
-    controls = [controls, integerSliderControl('contourCount', 'contours', contourCount, 0, max(20, 2 * contourCount))];
-
-    plotInteractiveMap(sprintf('%s PitchPower pitch-space map', speciesLabel), controls, dynamicUpdate, ...
-        @computePlotData, @renderMap);
-
-    function plotData = computePlotData(values)
-        tempModeN = modeN0;
-        if isfield(values, 'modeN')
-            tempModeN = values.modeN;
-        end
-        [tempModeIdx, tempModeN] = parseModeN(tempModeN, speciesData.modeIndexAll, speciesData.physicalNAll);
-        tempTimeIndex = timeIndex0;
-        if isfield(values, 'timeIndex')
-            tempTimeIndex = values.timeIndex;
-        end
-        [Z, xVec, yVec, xlabelText, ylabelText] = pitchMapField(powerData(:, :, tempModeIdx, tempTimeIndex), speciesData);
-        quantityLatex = 'P_{\mathrm{PIC}}';
-        timeIndexText = sprintf(', timeIndex = %d', tempTimeIndex);
-        titleText = pitchPowerTitleText(speciesLabel, quantityLatex, tempModeN, timeIndexText);
-        plotData = mapPlotData(Z, xVec, yVec, xlabelText, ylabelText, titleText, ...
-            ['$' quantityLatex '$'], opt.colormapIndex, values.contourCount, ...
-            sprintf('%s PitchPower%s%s, contours = %d', speciesLabel, ...
-            modeStatusText(tempModeN), timeIndexText, values.contourCount));
-    end
-end
-
-function plotDiffusivityRadial(picDiffusivityData, opt)
-
+    plotType = requireIntegerInRange(opt.plotType, 1, 3, 'plotType');
     [speciesData, speciesLabel] = resolveSpeciesData(picDiffusivityData, opt.species, 'diffusivity');
+    D = requireQuantityData(speciesData, 'Diffusivity');
+    baseOpt = opt;
+    controls = struct([]);
+    switch plotType
+        case 1
+            plotTypeName = 'radial';
+            renderPlotData = @renderLine;
+            noFiniteMessage = sprintf('%s Diffusivity 径向剖面没有有限值数据。', speciesLabel);
+            if ~isempty(dynamicUpdate)
+                baseOpt.nRange = initialDiffusivityNRange(speciesData, opt.nRange);
+                baseOpt.timeIndex = parseTimeIndex(opt.timeIndex, size(D, 1));
+                controls = diffusivityRangeControls(speciesData, baseOpt.nRange);
+                controls = appendIndexControl(controls, 'timeIndex', baseOpt.timeIndex, size(D, 1));
+            end
+            buildPlotData = @(values) buildDiffusivityRadialPlotData(speciesData, speciesLabel, ...
+                diffusivityOptionsFromValues(baseOpt, values));
+        case 2
+            plotTypeName = 'time';
+            renderPlotData = @renderLine;
+            noFiniteMessage = sprintf('%s Diffusivity 时间曲线没有有限值数据。', speciesLabel);
+            if ~isempty(dynamicUpdate)
+                baseOpt.nRange = initialDiffusivityNRange(speciesData, opt.nRange);
+                baseOpt.radialIndex = parseIndex(opt.radialIndex, size(D, 3), 'radial');
+                controls = diffusivityRangeControls(speciesData, baseOpt.nRange);
+                controls = appendIndexControl(controls, 'radialIndex', baseOpt.radialIndex, size(D, 3));
+            end
+            buildPlotData = @(values) buildDiffusivityTimePlotData(speciesData, speciesLabel, ...
+                diffusivityOptionsFromValues(baseOpt, values));
+        case 3
+            plotTypeName = 'map';
+            renderPlotData = @renderMap;
+            noFiniteMessage = sprintf('%s Diffusivity 二维图没有有限值数据。', speciesLabel);
+            if ~isempty(dynamicUpdate)
+                [~, nAllowed] = diffusivityModeMask(speciesData, opt.nRange);
+                nMin = min(nAllowed);
+                nMax = max(nAllowed);
+                baseOpt.nRange = diffusivitySingleN(speciesData, opt.nRange);
+                if nMin < nMax
+                    controls = integerSliderControl('nRange', 'n', baseOpt.nRange, nMin, nMax);
+                    controls.allowedValues = nAllowed;
+                end
+            end
+            buildPlotData = @(values) buildDiffusivityMapPlotData(speciesData, speciesLabel, ...
+                applyControlValues(baseOpt, values));
+    end
+    runPICPlotMode(sprintf('%s Diffusivity %s', speciesLabel, plotTypeName), ...
+        controls, dynamicUpdate, buildPlotData, renderPlotData, noFiniteMessage);
+end
+
+function plotData = buildDiffusivityRadialPlotData(speciesData, speciesLabel, opt)
+
     [Dsum, selectedN] = diffusivityModeSum(speciesData, opt.nRange);
     timeIndex = parseTimeIndex(opt.timeIndex, size(Dsum, 1));
-    [xVec, xlabelText] = diffusivityRadialAxis(speciesData, opt.radialAxis);
-    yVec = Dsum(timeIndex, :);
-
-    if ~any(isfinite(yVec(:)))
-        fprintf('[plot] %s Diffusivity 径向剖面没有有限值数据。\n', speciesLabel);
-        return;
-    end
-
-    titleText = diffusivityTitleText(speciesLabel, selectedN, sprintf(',\\quad \\mathrm{timeIndex} = %d', timeIndex));
+    [xVec, xlabelText] = diagnosticRadialAxis(speciesData, opt.radialAxis);
+    titleText = diffusivityTitleText(speciesLabel, selectedN, ...
+        sprintf(',\\quad \\mathrm{timeIndex} = %d', timeIndex));
     statusText = sprintf('%s Diffusivity radial, n = [%d, %d], timeIndex = %d', ...
         speciesLabel, min(selectedN), max(selectedN), timeIndex);
-    plotData = linePlotData(xVec, yVec, xlabelText, '$D/(\mathrm{m}^{2}/\mathrm{s})$', titleText, statusText);
-    drawLineFigure(sprintf('%s Diffusivity radial', speciesLabel), plotData);
+    plotData = buildLinePlotData(xVec, Dsum(timeIndex, :), xlabelText, ...
+        '$D/(\mathrm{m}^{2}/\mathrm{s})$', titleText, statusText);
 end
 
-function plotDiffusivityRadialInteractive(picDiffusivityData, opt, dynamicUpdate)
+function plotData = buildDiffusivityTimePlotData(speciesData, speciesLabel, opt)
 
-    [speciesData, speciesLabel] = resolveSpeciesData(picDiffusivityData, opt.species, 'diffusivity');
-    D = requireQuantityData(speciesData, 'Diffusivity');
-    nRange0 = initialDiffusivityNRange(speciesData, opt.nRange);
-    timeIndex0 = parseTimeIndex(opt.timeIndex, size(D, 1));
-    controls = diffusivityRangeControls(speciesData, nRange0);
-    if size(D, 1) > 1
-        controls = [controls, integerSliderControl('timeIndex', 'timeIndex', timeIndex0, 1, size(D, 1))];
-    end
-
-    plotInteractiveMap(sprintf('%s Diffusivity radial', speciesLabel), controls, dynamicUpdate, ...
-        @computePlotData, @renderLine);
-
-    function plotData = computePlotData(values)
-        tempOpt = diffusivityOptionsFromValues(opt, values);
-        [Dsum, selectedN] = diffusivityModeSum(speciesData, tempOpt.nRange);
-        tempTimeIndex = parseTimeIndex(tempOpt.timeIndex, size(Dsum, 1));
-        [xVec, xlabelText] = diffusivityRadialAxis(speciesData, tempOpt.radialAxis);
-        titleText = diffusivityTitleText(speciesLabel, selectedN, ...
-            sprintf(',\\quad \\mathrm{timeIndex} = %d', tempTimeIndex));
-        statusText = sprintf('%s Diffusivity radial, n = [%d, %d], timeIndex = %d', ...
-            speciesLabel, min(selectedN), max(selectedN), tempTimeIndex);
-        plotData = linePlotData(xVec, Dsum(tempTimeIndex, :), xlabelText, ...
-            '$D/(\mathrm{m}^{2}/\mathrm{s})$', titleText, statusText);
-    end
-end
-
-function plotDiffusivityTime(picDiffusivityData, meta, opt)
-
-    [speciesData, speciesLabel] = resolveSpeciesData(picDiffusivityData, opt.species, 'diffusivity');
     [Dsum, selectedN] = diffusivityModeSum(speciesData, opt.nRange);
-    radialIndex = parseDiffusivityIndex(opt.radialIndex, size(Dsum, 2), 'radial');
-    [xVec, xlabelText] = diffusivityTimeAxis(speciesData, meta, opt.timeAxis);
-    [radialVec, ~, radialName] = diffusivityRadialAxis(speciesData, opt.radialAxis);
-    radialValue = radialVec(radialIndex);
-    yVec = Dsum(:, radialIndex);
-
-    if ~any(isfinite(yVec(:)))
-        fprintf('[plot] %s Diffusivity 时间曲线没有有限值数据。\n', speciesLabel);
-        return;
-    end
-
+    radialIndex = parseIndex(opt.radialIndex, size(Dsum, 2), 'radial');
+    [xVec, xlabelText] = diagnosticTimeAxis(speciesData, opt.timeAxis);
+    [radialVec, ~, radialName] = diagnosticRadialAxis(speciesData, opt.radialAxis);
     titleText = diffusivityTitleText(speciesLabel, selectedN, ...
-        sprintf(',\\quad %s = %.6g', radialName, radialValue));
+        sprintf(',\\quad %s = %.6g', radialName, radialVec(radialIndex)));
     statusText = sprintf('%s Diffusivity time, n = [%d, %d], radialIndex = %d', ...
         speciesLabel, min(selectedN), max(selectedN), radialIndex);
-    plotData = linePlotData(xVec, yVec, xlabelText, '$D/(\mathrm{m}^{2}/\mathrm{s})$', titleText, statusText);
-    drawLineFigure(sprintf('%s Diffusivity time', speciesLabel), plotData);
+    plotData = buildLinePlotData(xVec, Dsum(:, radialIndex), xlabelText, ...
+        '$D/(\mathrm{m}^{2}/\mathrm{s})$', titleText, statusText);
 end
 
-function plotDiffusivityTimeInteractive(picDiffusivityData, meta, opt, dynamicUpdate)
+function plotData = buildDiffusivityMapPlotData(speciesData, speciesLabel, opt)
 
-    [speciesData, speciesLabel] = resolveSpeciesData(picDiffusivityData, opt.species, 'diffusivity');
-    D = requireQuantityData(speciesData, 'Diffusivity');
-    nRange0 = initialDiffusivityNRange(speciesData, opt.nRange);
-    radialIndex0 = parseDiffusivityIndex(opt.radialIndex, size(D, 3), 'radial');
-    controls = diffusivityRangeControls(speciesData, nRange0);
-    if size(D, 3) > 1
-        controls = [controls, integerSliderControl('radialIndex', 'radialIndex', radialIndex0, 1, size(D, 3))];
-    end
-
-    plotInteractiveMap(sprintf('%s Diffusivity time', speciesLabel), controls, dynamicUpdate, ...
-        @computePlotData, @renderLine);
-
-    function plotData = computePlotData(values)
-        tempOpt = diffusivityOptionsFromValues(opt, values);
-        [Dsum, selectedN] = diffusivityModeSum(speciesData, tempOpt.nRange);
-        tempRadialIndex = parseDiffusivityIndex(tempOpt.radialIndex, size(Dsum, 2), 'radial');
-        [xVec, xlabelText] = diffusivityTimeAxis(speciesData, meta, tempOpt.timeAxis);
-        [radialVec, ~, radialName] = diffusivityRadialAxis(speciesData, tempOpt.radialAxis);
-        titleText = diffusivityTitleText(speciesLabel, selectedN, ...
-            sprintf(',\\quad %s = %.6g', radialName, radialVec(tempRadialIndex)));
-        statusText = sprintf('%s Diffusivity time, n = [%d, %d], radialIndex = %d', ...
-            speciesLabel, min(selectedN), max(selectedN), tempRadialIndex);
-        plotData = linePlotData(xVec, Dsum(:, tempRadialIndex), xlabelText, ...
-            '$D/(\mathrm{m}^{2}/\mathrm{s})$', titleText, statusText);
-    end
-end
-
-function plotDiffusivityMap(picDiffusivityData, meta, opt)
-
-    [speciesData, speciesLabel] = resolveSpeciesData(picDiffusivityData, opt.species, 'diffusivity');
     [Dn, selectedN] = diffusivityModeSlice(speciesData, opt.nRange);
-    [xVec, xlabelText] = diffusivityTimeAxis(speciesData, meta, opt.timeAxis);
-    [yVec, ylabelText] = diffusivityRadialAxis(speciesData, opt.radialAxis);
-    Z = Dn.';
-
-    if ~any(isfinite(Z(:)))
-        fprintf('[plot] %s Diffusivity 二维图没有有限值数据。\n', speciesLabel);
-        return;
-    end
-
+    [xVec, xlabelText] = diagnosticTimeAxis(speciesData, opt.timeAxis);
+    [yVec, ylabelText] = diagnosticRadialAxis(speciesData, opt.radialAxis);
     titleText = diffusivityTitleText(speciesLabel, selectedN, '');
     statusText = sprintf('%s Diffusivity map, n = %d', speciesLabel, selectedN);
-    plotData = mapPlotData(Z, xVec, yVec, xlabelText, ylabelText, titleText, ...
+    plotData = buildMapPlotData(Dn.', xVec, yVec, xlabelText, ylabelText, titleText, ...
         '$D/(\mathrm{m}^{2}/\mathrm{s})$', opt.colormapIndex, 0, statusText);
-    drawMapFigure(sprintf('%s Diffusivity map', speciesLabel), plotData);
 end
 
-function plotDiffusivityMapInteractive(picDiffusivityData, meta, opt, dynamicUpdate)
+function plotDensity(picDensityData, opt, dynamicUpdate)
 
-    [speciesData, speciesLabel] = resolveSpeciesData(picDiffusivityData, opt.species, 'diffusivity');
-    [nSliderMin, nSliderMax, n0, nAllowed] = diffusivitySingleNControlValues(speciesData, opt.nRange);
-    controls = struct([]);
-    if nSliderMin < nSliderMax
-        controls = integerSliderControl('nSingle', 'n', n0, nSliderMin, nSliderMax);
-        controls.allowedValues = nAllowed;
-    end
-
-    plotInteractiveMap(sprintf('%s Diffusivity map', speciesLabel), controls, dynamicUpdate, ...
-        @computePlotData, @renderMap);
-
-    function plotData = computePlotData(values)
-        tempOpt = opt;
-        tempOpt.nRange = n0;
-        if isfield(values, 'nSingle')
-            tempOpt.nRange = values.nSingle;
-        end
-        [Dn, selectedN] = diffusivityModeSlice(speciesData, tempOpt.nRange);
-        [xVec, xlabelText] = diffusivityTimeAxis(speciesData, meta, tempOpt.timeAxis);
-        [yVec, ylabelText] = diffusivityRadialAxis(speciesData, tempOpt.radialAxis);
-        titleText = diffusivityTitleText(speciesLabel, selectedN, '');
-        statusText = sprintf('%s Diffusivity map, n = %d', speciesLabel, selectedN);
-        plotData = mapPlotData(Dn.', xVec, yVec, xlabelText, ylabelText, titleText, ...
-            '$D/(\mathrm{m}^{2}/\mathrm{s})$', opt.colormapIndex, 0, statusText);
-    end
-end
-
-function plotDensityRadial(picDensityData, opt)
-
+    plotType = requireIntegerInRange(opt.plotType, 1, 3, 'plotType');
     [speciesData, speciesLabel] = resolveSpeciesData(picDensityData, opt.species, 'density');
-    densityData = densityQuantityData(speciesData);
-    timeIndex = parseTimeIndex(opt.timeIndex, size(densityData, 1));
-    yVec = densityData(timeIndex, :);
+    densityData = requireQuantityData(speciesData, 'Density');
+    assert(ismatrix(densityData) && size(densityData, 2) == speciesData.gridNx, ...
+        'Density 数据尺寸必须为 [time, radial]。');
+    controls = struct([]);
+    switch plotType
+        case 1
+            plotTypeName = 'radial';
+            timeIndex = parseTimeIndex(opt.timeIndex, size(densityData, 1));
+            controls = appendIndexControl(controls, 'timeIndex', timeIndex, ...
+                size(densityData, 1), ~isempty(dynamicUpdate));
+            buildPlotData = @(values) buildDensityRadialPlotData(speciesData, speciesLabel, ...
+                densityData, opt, applyControlValues(struct('timeIndex', timeIndex), values), ...
+                ~isempty(dynamicUpdate));
+            renderPlotData = @renderLine;
+            noFiniteMessage = sprintf('%s Density 径向剖面没有有限值数据。', speciesLabel);
+        case 2
+            plotTypeName = 'time';
+            radialIndex = parseIndex(opt.radialIndex, size(densityData, 2), 'radial');
+            controls = appendIndexControl(controls, 'radialIndex', radialIndex, ...
+                size(densityData, 2), ~isempty(dynamicUpdate));
+            baseOpt = opt;
+            baseOpt.radialIndex = radialIndex;
+            buildPlotData = @(values) buildDensityTimePlotData(speciesData, speciesLabel, ...
+                densityData, applyControlValues(baseOpt, values));
+            renderPlotData = @renderLine;
+            noFiniteMessage = sprintf('%s Density 时间曲线没有有限值数据。', speciesLabel);
+        case 3
+            plotTypeName = 'map';
+            buildPlotData = @(ignored) buildDensityMapPlotData( ...
+                speciesData, speciesLabel, densityData, opt);
+            renderPlotData = @renderMap;
+            noFiniteMessage = sprintf('%s Density 二维图没有有限值数据。', speciesLabel);
+    end
+    runPICPlotMode(sprintf('%s Density %s', speciesLabel, plotTypeName), ...
+        controls, dynamicUpdate, buildPlotData, renderPlotData, noFiniteMessage);
+end
 
-    if ~any(isfinite(yVec(:)))
-        fprintf('[plot] %s Density 径向剖面没有有限值数据。\n', speciesLabel);
+function plotData = buildDensityRadialPlotData(speciesData, speciesLabel, densityData, opt, values, isInteractive)
+
+    timeIndex = values.timeIndex;
+    deltaDensity = densityData(timeIndex, :);
+    if ~isInteractive && ~any(isfinite(deltaDensity(:)))
+        plotData = buildLinePlotData(1:numel(deltaDensity), deltaDensity, '', '', '', '');
         return;
     end
 
-    plotData = densityRadialPlotData(speciesData, speciesLabel, densityData, timeIndex, opt);
-    drawLineFigure(sprintf('%s Density radial', speciesLabel), plotData);
-end
-
-function plotDensityRadialInteractive(picDensityData, opt, dynamicUpdate)
-
-    [speciesData, speciesLabel] = resolveSpeciesData(picDensityData, opt.species, 'density');
-    densityData = densityQuantityData(speciesData);
-    timeIndex0 = parseTimeIndex(opt.timeIndex, size(densityData, 1));
-    controls = struct([]);
-    if size(densityData, 1) > 1
-        controls = integerSliderControl('timeIndex', 'timeIndex', timeIndex0, 1, size(densityData, 1));
-    end
-
-    plotInteractiveMap(sprintf('%s Density radial', speciesLabel), controls, dynamicUpdate, ...
-        @computePlotData, @renderLine);
-
-    function plotData = computePlotData(values)
-        tempTimeIndex = timeIndex0;
-        if isfield(values, 'timeIndex')
-            tempTimeIndex = values.timeIndex;
-        end
-        plotData = densityRadialPlotData(speciesData, speciesLabel, densityData, tempTimeIndex, opt);
-    end
-end
-
-function plotData = densityRadialPlotData(speciesData, speciesLabel, densityData, timeIndex, opt)
-
-    [xVec, xlabelText] = diffusivityRadialAxis(speciesData, opt.radialAxis);
-    deltaDensity = densityData(timeIndex, :);
+    [xVec, xlabelText] = diagnosticRadialAxis(speciesData, opt.radialAxis);
     timeText = sprintf(',\\quad \\mathrm{timeIndex} = %d', timeIndex);
 
     if isTotalDensityMode(opt)
         initialDensity = requireInitialDensity(speciesData);
         totalDensity = initialDensity + reshape(deltaDensity, 1, []);
-        titleText = densityTotalTitleText(speciesLabel, timeText);
+        titleText = sprintf('$\\mathrm{%s}\\quad n%s$', speciesLabel, timeText);
         statusText = sprintf('%s Density radial total, timeIndex = %d', speciesLabel, timeIndex);
-        plotData = linePlotData(xVec, initialDensity, xlabelText, ...
+        plotData = buildLinePlotData(xVec, initialDensity, xlabelText, ...
             '$n\,[\mathrm{m}^{-3}]$', titleText, statusText);
         plotData.lineLabel = '$n_0$';
         plotData.lineOverlays = struct('xVec', xVec, 'yVec', totalDensity, ...
             'label', '$n_0 + \delta n$');
+        plotData.finiteData = deltaDensity;
         return;
     end
 
     titleText = densityTitleText(speciesLabel, timeText);
     statusText = sprintf('%s Density radial, timeIndex = %d', speciesLabel, timeIndex);
-    plotData = linePlotData(xVec, deltaDensity, xlabelText, '$\delta n$', titleText, statusText);
+    plotData = buildLinePlotData(xVec, deltaDensity, xlabelText, '$\delta n$', titleText, statusText);
 end
 
-function plotDensityTime(picDensityData, meta, opt)
+function plotData = buildDensityTimePlotData(speciesData, speciesLabel, densityData, opt)
 
-    [speciesData, speciesLabel] = resolveSpeciesData(picDensityData, opt.species, 'density');
-    densityData = densityQuantityData(speciesData);
-    radialIndex = parseDiffusivityIndex(opt.radialIndex, size(densityData, 2), 'radial');
-    [xVec, xlabelText] = diffusivityTimeAxis(speciesData, meta, opt.timeAxis);
-    [radialVec, ~, radialName] = diffusivityRadialAxis(speciesData, opt.radialAxis);
-    radialValue = radialVec(radialIndex);
-    yVec = densityData(:, radialIndex);
-
-    if ~any(isfinite(yVec(:)))
-        fprintf('[plot] %s Density 时间曲线没有有限值数据。\n', speciesLabel);
-        return;
-    end
-
-    titleText = densityTitleText(speciesLabel, sprintf(',\\quad %s = %.6g', radialName, radialValue));
+    radialIndex = parseIndex(opt.radialIndex, size(densityData, 2), 'radial');
+    [xVec, xlabelText] = diagnosticTimeAxis(speciesData, opt.timeAxis);
+    [radialVec, ~, radialName] = diagnosticRadialAxis(speciesData, opt.radialAxis);
+    titleText = densityTitleText(speciesLabel, ...
+        sprintf(',\\quad %s = %.6g', radialName, radialVec(radialIndex)));
     statusText = sprintf('%s Density time, radialIndex = %d', speciesLabel, radialIndex);
-    plotData = linePlotData(xVec, yVec, xlabelText, '$\delta n$', titleText, statusText);
-    drawLineFigure(sprintf('%s Density time', speciesLabel), plotData);
+    plotData = buildLinePlotData(xVec, densityData(:, radialIndex), xlabelText, ...
+        '$\delta n$', titleText, statusText);
 end
 
-function plotDensityTimeInteractive(picDensityData, meta, opt, dynamicUpdate)
+function plotData = buildDensityMapPlotData(speciesData, speciesLabel, densityData, opt)
 
-    [speciesData, speciesLabel] = resolveSpeciesData(picDensityData, opt.species, 'density');
-    densityData = densityQuantityData(speciesData);
-    radialIndex0 = parseDiffusivityIndex(opt.radialIndex, size(densityData, 2), 'radial');
-    controls = struct([]);
-    if size(densityData, 2) > 1
-        controls = integerSliderControl('radialIndex', 'radialIndex', radialIndex0, 1, size(densityData, 2));
-    end
-
-    plotInteractiveMap(sprintf('%s Density time', speciesLabel), controls, dynamicUpdate, ...
-        @computePlotData, @renderLine);
-
-    function plotData = computePlotData(values)
-        tempRadialIndex = radialIndex0;
-        if isfield(values, 'radialIndex')
-            tempRadialIndex = values.radialIndex;
-        end
-        [xVec, xlabelText] = diffusivityTimeAxis(speciesData, meta, opt.timeAxis);
-        [radialVec, ~, radialName] = diffusivityRadialAxis(speciesData, opt.radialAxis);
-        titleText = densityTitleText(speciesLabel, ...
-            sprintf(',\\quad %s = %.6g', radialName, radialVec(tempRadialIndex)));
-        statusText = sprintf('%s Density time, radialIndex = %d', speciesLabel, tempRadialIndex);
-        plotData = linePlotData(xVec, densityData(:, tempRadialIndex), xlabelText, ...
-            '$\delta n$', titleText, statusText);
-    end
-end
-
-function plotDensityMap(picDensityData, meta, opt)
-
-    [speciesData, speciesLabel] = resolveSpeciesData(picDensityData, opt.species, 'density');
-    densityData = densityQuantityData(speciesData);
-    [xVec, xlabelText] = diffusivityTimeAxis(speciesData, meta, opt.timeAxis);
-    [yVec, ylabelText] = diffusivityRadialAxis(speciesData, opt.radialAxis);
-    Z = densityData.';
-
-    if ~any(isfinite(Z(:)))
-        fprintf('[plot] %s Density 二维图没有有限值数据。\n', speciesLabel);
-        return;
-    end
-
+    [xVec, xlabelText] = diagnosticTimeAxis(speciesData, opt.timeAxis);
+    [yVec, ylabelText] = diagnosticRadialAxis(speciesData, opt.radialAxis);
     titleText = densityTitleText(speciesLabel, '');
     statusText = sprintf('%s Density map', speciesLabel);
-    plotData = mapPlotData(Z, xVec, yVec, xlabelText, ylabelText, titleText, ...
+    plotData = buildMapPlotData(densityData.', xVec, yVec, xlabelText, ylabelText, titleText, ...
         '$\delta n$', opt.colormapIndex, 0, statusText);
-    drawMapFigure(sprintf('%s Density map', speciesLabel), plotData);
 end
 
-function plotDensityMapInteractive(picDensityData, meta, opt, dynamicUpdate)
-
-    [speciesData, speciesLabel] = resolveSpeciesData(picDensityData, opt.species, 'density');
-    densityData = densityQuantityData(speciesData);
-    controls = struct([]);
-
-    plotInteractiveMap(sprintf('%s Density map', speciesLabel), controls, dynamicUpdate, ...
-        @computePlotData, @renderMap);
-
-    function plotData = computePlotData(values) %#ok<INUSD>
-        [xVec, xlabelText] = diffusivityTimeAxis(speciesData, meta, opt.timeAxis);
-        [yVec, ylabelText] = diffusivityRadialAxis(speciesData, opt.radialAxis);
-        titleText = densityTitleText(speciesLabel, '');
-        statusText = sprintf('%s Density map', speciesLabel);
-        plotData = mapPlotData(densityData.', xVec, yVec, xlabelText, ylabelText, titleText, ...
-            '$\delta n$', opt.colormapIndex, 0, statusText);
-    end
-end
-
-function plotData = attachResonanceOverlay(plotData, phaseSpaceOrbit, speciesLabel, dim, idx, resOpt, meta)
+function plotData = attachResonanceOverlay(plotData, phaseSpaceOrbit, speciesLabel, dim, sliceIndex, resOpt, meta)
 
     plotData.resonanceZ = [];
     plotData.resonanceOverlays = struct('Z', {}, 'label', {}, 'harmonic', {});
@@ -1941,31 +1614,31 @@ function plotData = attachResonanceOverlay(plotData, phaseSpaceOrbit, speciesLab
         return;
     end
 
-    if ~hasSpeciesData(phaseSpaceOrbit, speciesLabel)
+    if ~hasSpeciesFields(phaseSpaceOrbit, speciesLabel, {})
         plotData.status = [plotData.status ', resonance = no orbit data'];
         return;
     end
 
     orbitData = phaseSpaceOrbit.(speciesLabel);
-    resOpt = validatedResonanceOverlayOptions(resOpt);
-    branchNames = resonanceBranchNames(resOpt);
+    resOpt = normalizeResonanceOverlayOptions(resOpt);
+    branchNames = normalizeResonanceBranches(resOpt.branch);
     hasZero = false(1, 0);
     physicalN = resOpt.toroidalMode;
-    iOverlay = 0;
-    for iBranch = 1:numel(branchNames)
-        harmonicValues = resOpt.harmonicMinList(iBranch):resOpt.harmonicMaxList(iBranch);
-        for iHarmonic = 1:numel(harmonicValues)
-            iOverlay = iOverlay + 1;
+    overlayIndex = 0;
+    for branchIndex = 1:numel(branchNames)
+        harmonicValues = resOpt.harmonicMinList(branchIndex):resOpt.harmonicMaxList(branchIndex);
+        for harmonicIndex = 1:numel(harmonicValues)
+            overlayIndex = overlayIndex + 1;
             lineOpt = resOpt;
-            lineOpt.branch = branchNames{iBranch};
-            lineOpt.harmonic = harmonicValues(iHarmonic);
+            lineOpt.branch = branchNames{branchIndex};
+            lineOpt.harmonic = harmonicValues(harmonicIndex);
             [residualHz, physicalN] = calculateResonanceResidualField(orbitData, lineOpt, meta);
-            [resZ, ~, ~, ~, ~, ~] = slicePhaseField(dim, idx, residualHz, orbitData);
-            plotData.resonanceOverlays(iOverlay).Z = resZ;
-            plotData.resonanceOverlays(iOverlay).label = resonanceOverlayLabel( ...
-                branchNames{iBranch}, harmonicValues(iHarmonic), numel(branchNames));
-            plotData.resonanceOverlays(iOverlay).harmonic = harmonicValues(iHarmonic);
-            hasZero(iOverlay) = residualHasZeroContour(resZ);
+            [resonanceZ, ~, ~, ~, ~, ~] = slicePhaseField(dim, sliceIndex, residualHz, orbitData);
+            plotData.resonanceOverlays(overlayIndex).Z = resonanceZ;
+            plotData.resonanceOverlays(overlayIndex).label = resonanceOverlayLabel( ...
+                branchNames{branchIndex}, harmonicValues(harmonicIndex), numel(branchNames));
+            plotData.resonanceOverlays(overlayIndex).harmonic = harmonicValues(harmonicIndex);
+            hasZero(overlayIndex) = residualHasZeroContour(resonanceZ);
         end
     end
     plotData.status = [plotData.status ', ' resonanceOverlayStatusText('', resOpt, physicalN, branchNames, hasZero)];
@@ -1982,9 +1655,9 @@ function plotData = attachPhaseDetuningLine(plotData, dim, lineOpt, resOpt, meta
         return;
     end
 
-    lineOpt = validatedPhaseDetuningLineOptions(lineOpt);
-    frequencyHz = validateFiniteScalar(resOpt.frequencyHz, 'resonance.frequencyHz');
-    toroidalMode = readPositiveIntegerScalar(resOpt.toroidalMode, 'resonance.toroidalMode');
+    lineOpt = normalizePhaseDetuningLineOptions(lineOpt);
+    frequencyHz = requireFiniteScalarInRange(resOpt.frequencyHz, -Inf, Inf, 'resonance.frequencyHz');
+    toroidalMode = requireIntegerInRange(resOpt.toroidalMode, 1, Inf, 'resonance.toroidalMode');
     kappa = resonanceDetuningKappa(meta, frequencyHz, toroidalMode);
 
     deltaPphiPlot = [-lineOpt.deltaPphiLeft, lineOpt.deltaPphiRight];
@@ -1999,18 +1672,20 @@ function plotData = attachPhaseDetuningLine(plotData, dim, lineOpt, resOpt, meta
     plotData.status = [plotData.status ', detuning line = on'];
 end
 
-function lineOpt = validatedPhaseDetuningLineOptions(lineOpt)
+function lineOpt = normalizePhaseDetuningLineOptions(lineOpt)
 
     requiredFields = {'E0', 'Pphi0', 'deltaPphiLeft', 'deltaPphiRight'};
-    for iField = 1:numel(requiredFields)
-        fieldName = requiredFields{iField};
+    for fieldIndex = 1:numel(requiredFields)
+        fieldName = requiredFields{fieldIndex};
         assert(isfield(lineOpt, fieldName) && ~isempty(lineOpt.(fieldName)), ...
             'detuningLine.%s must be provided.', fieldName);
     end
-    lineOpt.E0 = validateFiniteScalar(lineOpt.E0, 'detuningLine.E0');
-    lineOpt.Pphi0 = validateFiniteScalar(lineOpt.Pphi0, 'detuningLine.Pphi0');
-    lineOpt.deltaPphiLeft = validateFiniteScalar(lineOpt.deltaPphiLeft, 'detuningLine.deltaPphiLeft');
-    lineOpt.deltaPphiRight = validateFiniteScalar(lineOpt.deltaPphiRight, 'detuningLine.deltaPphiRight');
+    lineOpt.E0 = requireFiniteScalarInRange(lineOpt.E0, -Inf, Inf, 'detuningLine.E0');
+    lineOpt.Pphi0 = requireFiniteScalarInRange(lineOpt.Pphi0, -Inf, Inf, 'detuningLine.Pphi0');
+    lineOpt.deltaPphiLeft = requireFiniteScalarInRange( ...
+        lineOpt.deltaPphiLeft, -Inf, Inf, 'detuningLine.deltaPphiLeft');
+    lineOpt.deltaPphiRight = requireFiniteScalarInRange( ...
+        lineOpt.deltaPphiRight, -Inf, Inf, 'detuningLine.deltaPphiRight');
     assert(lineOpt.deltaPphiLeft > 0 && lineOpt.deltaPphiRight > 0, ...
         'detuningLine.deltaPphiLeft/deltaPphiRight must be positive.');
 end
@@ -2025,62 +1700,67 @@ function [kappa, unitRatio, omegaOverN] = resonanceDetuningKappa(meta, frequency
     kappa = unitRatio * omegaOverN;
 end
 
-function [quantityData, quantityField, quantityLatex, isTimeDependent] = resolvePhaseQuantity(speciesData, quantityName)
+function [quantityData, quantitySpec] = computePICQuantity(speciesData, quantityName)
+
+    quantitySpec = resolvePICQuantitySpec(quantityName);
+    if ~quantitySpec.supported
+        error('quantity 必须为 "J"、"F0"、"DF"、"f0"、"df" 或 "df/f0"。');
+    end
+
+    numerator = requireQuantityData(speciesData, quantitySpec.requiredFields{1});
+    quantityData = numerator;
+    if numel(quantitySpec.requiredFields) > 1
+        denominatorName = quantitySpec.requiredFields{2};
+        denominator = requireQuantityData(speciesData, denominatorName);
+        quantityData = divideQuantity( ...
+            numerator, denominator, denominatorName, 1e-6, quantitySpec.floorMode);
+    end
+end
+
+function quantitySpec = resolvePICQuantitySpec(quantityName)
 
     quantityText = strtrim(char(quantityName));
-    key = lower(strrep(strrep(quantityText, '_', ''), ' ', ''));
+    normalizedName = lower(strrep(strrep(quantityText, '_', ''), ' ', ''));
+    definitions = { ...
+        'J',     '\mathcal{J}',      false, {'J'},       '',         {},     ...
+            {'j', 'jacobian', 'phasespacejacobian', 'pitchspacejacobian'}; ...
+        'F0',    'F_0',              false, {'F0'},      '',         {'F0'}, ...
+            {'phasespacef0', 'pitchspacef0'}; ...
+        'DF',    '\delta F',         true,  {'DF'},      '',         {'DF'}, ...
+            {'deltaf', 'phasedeltaf', 'pitchdeltaf'}; ...
+        'f0',    'f_0',              false, {'F0', 'J'}, 'absolute', {'f0'}, {}; ...
+        'df',    '\delta f',         true,  {'DF', 'J'}, 'absolute', {'df'}, {}; ...
+        'df/f0', '\delta f / f_0',   true,  {'DF', 'F0'}, 'relative', {}, ...
+            {'df/f0', 'dff0', 'df2f0', 'dfoverf0'}};
 
-    if strcmp(quantityText, 'J') || ismember(key, {'j', 'jacobian', 'phasespacejacobian', 'pitchspacejacobian'})
-        quantityField = 'J';
-        quantityLatex = '\mathcal{J}';
-        isTimeDependent = false;
-        quantityData = requireQuantityData(speciesData, 'J');
-    elseif strcmp(quantityText, 'F0') || ismember(key, {'phasespacef0', 'pitchspacef0'})
-        quantityField = 'F0';
-        quantityLatex = 'F_0';
-        isTimeDependent = false;
-        quantityData = requireQuantityData(speciesData, 'F0');
-    elseif strcmp(quantityText, 'DF') || ismember(key, {'deltaf', 'phasedeltaf', 'pitchdeltaf'})
-        quantityField = 'DF';
-        quantityLatex = '\delta F';
-        isTimeDependent = true;
-        quantityData = requireQuantityData(speciesData, 'DF');
-    elseif strcmp(quantityText, 'f0')
-        quantityField = 'f0';
-        quantityLatex = 'f_0';
-        isTimeDependent = false;
-        quantityData = divideQuantity(requireQuantityData(speciesData, 'F0'), ...
-            requireQuantityData(speciesData, 'J'), 'J', 1e-6, 'absolute');
-    elseif strcmp(quantityText, 'df')
-        quantityField = 'df';
-        quantityLatex = '\delta f';
-        isTimeDependent = true;
-        quantityData = divideQuantity(requireQuantityData(speciesData, 'DF'), ...
-            requireQuantityData(speciesData, 'J'), 'J', 1e-6, 'absolute');
-    elseif ismember(key, {'df/f0', 'dff0', 'df2f0', 'dfoverf0'})
-        quantityField = 'df/f0';
-        quantityLatex = '\delta f / f_0';
-        isTimeDependent = true;
-        quantityData = divideQuantity(requireQuantityData(speciesData, 'DF'), ...
-            requireQuantityData(speciesData, 'F0'), 'F0', 1e-6, 'relative');
-    else
-        error('quantity 必须为 "J"、"F0"、"DF"、"f0"、"df" 或 "df/f0"。');
+    quantitySpec = struct( ...
+        'field', quantityText, ...
+        'latex', '', ...
+        'timeDependent', false, ...
+        'requiredFields', {{quantityText}}, ...
+        'floorMode', '', ...
+        'supported', false);
+    for quantityDefinitionIndex = 1:size(definitions, 1)
+        exactNames = definitions{quantityDefinitionIndex, 6};
+        normalizedNames = definitions{quantityDefinitionIndex, 7};
+        if ismember(quantityText, exactNames) || ismember(normalizedName, normalizedNames)
+            quantitySpec.field = definitions{quantityDefinitionIndex, 1};
+            quantitySpec.latex = definitions{quantityDefinitionIndex, 2};
+            quantitySpec.timeDependent = definitions{quantityDefinitionIndex, 3};
+            quantitySpec.requiredFields = definitions{quantityDefinitionIndex, 4};
+            quantitySpec.floorMode = definitions{quantityDefinitionIndex, 5};
+            quantitySpec.supported = true;
+            return;
+        end
     end
 end
 
 function data = requireQuantityData(speciesData, quantityField)
 
-    data = speciesData.(quantityField);
-    if isempty(data)
+    if ~isfield(speciesData, quantityField) || isempty(speciesData.(quantityField))
         error('%s %s 尚未读取。请检查文件路径。', speciesData.species, quantityField);
     end
-end
-
-function data = densityQuantityData(speciesData)
-
-    data = requireQuantityData(speciesData, 'Density');
-    assert(ismatrix(data) && size(data, 2) == speciesData.gridNx, ...
-        'Density 数据尺寸必须为 [time, radial]。');
+    data = speciesData.(quantityField);
 end
 
 function initialDensity = requireInitialDensity(speciesData)
@@ -2135,7 +1815,7 @@ function data = divideQuantity(numerator, denominator, denominatorName, floorVal
     end
 end
 
-function [fieldData, timeIndexText] = selectQuantityFrame(quantityData, isTimeDependent, timeIndex)
+function [fieldData, timeIndexText] = selectQuantityFrame(quantityData, isTimeDependent, requestedTimeIndex)
 
     if ~isTimeDependent
         fieldData = quantityData;
@@ -2144,15 +1824,15 @@ function [fieldData, timeIndexText] = selectQuantityFrame(quantityData, isTimeDe
     end
 
     nTime = timeDimensionSize(quantityData);
-    idx = parseTimeIndex(timeIndex, nTime);
+    selectedTimeIndex = parseTimeIndex(requestedTimeIndex, nTime);
     if ndims(quantityData) == 4
-        fieldData = quantityData(:, :, :, idx);
+        fieldData = quantityData(:, :, :, selectedTimeIndex);
     elseif ndims(quantityData) == 3
-        fieldData = quantityData(:, :, idx);
+        fieldData = quantityData(:, :, selectedTimeIndex);
     else
         error('含时间的诊断量必须为 3D 或 4D 数组。');
     end
-    timeIndexText = sprintf(', timeIndex = %d', idx);
+    timeIndexText = sprintf(', timeIndex = %d', selectedTimeIndex);
 end
 
 function nTime = timeDimensionSize(quantityData)
@@ -2205,36 +1885,36 @@ function [residualHz, physicalToroidalMode] = calculateResonanceResidualField(ph
     residualHz(~isfinite(residualHz)) = NaN;
 end
 
-function opt = validatedResonanceDetuningOptions(opt, meta)
+function opt = normalizeResonanceDetuningOptions(opt, meta)
 
     requiredFields = {'species', 'plotFile', 'branch', 'frequencyHz', 'toroidalMode', ...
         'poloidalMode', 'harmonic', 'E0', 'Pphi0', 'Lambda0', ...
         'deltaPphiLeft', 'deltaPphiRight', 'sampleCount'};
-    for iField = 1:numel(requiredFields)
-        fieldName = requiredFields{iField};
+    for fieldIndex = 1:numel(requiredFields)
+        fieldName = requiredFields{fieldIndex};
         assert(isfield(opt, fieldName) && ~isempty(opt.(fieldName)), ...
             'picResonanceDetuningOpt.%s must be provided.', fieldName);
     end
 
     opt.branch = normalizeResonanceBranch(opt.branch);
-    opt.frequencyHz = validateFiniteScalar(opt.frequencyHz, 'frequencyHz');
-    opt.toroidalMode = readPositiveIntegerScalar(opt.toroidalMode, 'toroidalMode');
-    opt.harmonic = validateIntegerScalar(opt.harmonic, 'harmonic');
+    opt.frequencyHz = requireFiniteScalarInRange(opt.frequencyHz, -Inf, Inf, 'frequencyHz');
+    opt.toroidalMode = requireIntegerInRange(opt.toroidalMode, 1, Inf, 'toroidalMode');
+    opt.harmonic = requireIntegerInRange(opt.harmonic, -Inf, Inf, 'harmonic');
     if strcmp(opt.branch, 'trapped')
         opt.poloidalMode = 0;
     else
-        opt.poloidalMode = readNonnegativeIntegerScalar(opt.poloidalMode, 'poloidalMode');
+        opt.poloidalMode = requireIntegerInRange(opt.poloidalMode, 0, Inf, 'poloidalMode');
     end
 
-    opt.E0 = validateFiniteScalar(opt.E0, 'E0');
-    opt.PphiPlot0 = validateFiniteScalar(opt.Pphi0, 'Pphi0');
+    opt.E0 = requireFiniteScalarInRange(opt.E0, -Inf, Inf, 'E0');
+    opt.PphiPlot0 = requireFiniteScalarInRange(opt.Pphi0, -Inf, Inf, 'Pphi0');
     opt.PphiRaw0 = -opt.PphiPlot0;
-    opt.Lambda0 = validateFiniteScalar(opt.Lambda0, 'Lambda0');
-    opt.deltaPphiLeft = validateFiniteScalar(opt.deltaPphiLeft, 'deltaPphiLeft');
-    opt.deltaPphiRight = validateFiniteScalar(opt.deltaPphiRight, 'deltaPphiRight');
+    opt.Lambda0 = requireFiniteScalarInRange(opt.Lambda0, -Inf, Inf, 'Lambda0');
+    opt.deltaPphiLeft = requireFiniteScalarInRange(opt.deltaPphiLeft, -Inf, Inf, 'deltaPphiLeft');
+    opt.deltaPphiRight = requireFiniteScalarInRange(opt.deltaPphiRight, -Inf, Inf, 'deltaPphiRight');
     assert(opt.deltaPphiLeft > 0 && opt.deltaPphiRight > 0, ...
         'deltaPphiLeft and deltaPphiRight must be positive.');
-    opt.sampleCount = readPositiveIntegerScalar(opt.sampleCount, 'sampleCount');
+    opt.sampleCount = requireIntegerInRange(opt.sampleCount, 1, Inf, 'sampleCount');
     assert(opt.sampleCount >= 5, 'sampleCount must be at least 5.');
 
     [opt.kappa, unitRatio, omegaOverN] = resonanceDetuningKappa(meta, opt.frequencyHz, opt.toroidalMode);
@@ -2243,14 +1923,60 @@ function opt = validatedResonanceDetuningOptions(opt, meta)
         opt.kappa, -opt.kappa, unitRatio, omegaOverN);
 end
 
-function plotInput = readResonanceDetuningPlotInput(plotFile, meta)
+function detuningInput = readAllResonanceDetuningInputs(plotFile, inputDir, speciesList, meta)
 
-    assert(isfile(plotFile), '缺少 plot 文件：%s', plotFile);
+    detuningInput = struct();
+    detuningInput.plot = captureResonanceDetuningInput( ...
+        plotFile, @() load(plotFile)); %#ok<LOAD>
+    detuningInput.mapping = struct();
+
+    nPhase = meta.gridE * meta.gridPphi * meta.gridLambda;
+    for speciesIndex = 1:numel(speciesList)
+        speciesName = char(speciesList{speciesIndex});
+        mappingFile = fullfile(inputDir, [speciesName 'PhaseSpaceMapping.bin']);
+        detuningInput.mapping.(speciesName) = captureResonanceDetuningInput( ...
+            mappingFile, @() readResonanceDetuningMappingRaw(mappingFile, nPhase));
+    end
+end
+
+function capturedInput = captureResonanceDetuningInput(filePath, readerFcn)
+
+    capturedInput = struct( ...
+        'path', filePath, ...
+        'exists', isfile(filePath), ...
+        'data', [], ...
+        'readException', []);
+    if ~capturedInput.exists
+        return;
+    end
+
+    try
+        capturedInput.data = readerFcn();
+    catch err
+        capturedInput.readException = err;
+    end
+end
+
+function data = requireCapturedResonanceDetuningInput(capturedInput)
+
+    if ~isempty(capturedInput.readException)
+        rethrow(capturedInput.readException);
+    end
+    data = capturedInput.data;
+end
+
+function plotInput = buildResonanceDetuningPlotInput(capturedPlot, requestedPlotFile, meta)
+
+    plotFile = capturedPlot.path;
+    assert(strcmp(char(requestedPlotFile), char(plotFile)) || ...
+        (ispc && strcmpi(char(requestedPlotFile), char(plotFile))), ...
+        'plotFile 已在“读取所有输入”阶段固定；修改后请重新运行该 section。');
+    assert(capturedPlot.exists, '缺少 plot 文件：%s', plotFile);
     if isfield(meta, 'NFP') && isfinite(meta.NFP)
         assert(meta.NFP == 1, '共振失谐诊断当前只按 NFP=1 实现；当前 NFP=%g。', meta.NFP);
     end
 
-    raw = load(plotFile);
+    raw = requireCapturedResonanceDetuningInput(capturedPlot);
     assert(isfield(raw, 'rhoplot') && isfield(raw, 'Rplot'), ...
         '%s 必须包含 rhoplot 和 Rplot。', plotFile);
 
@@ -2294,12 +2020,8 @@ function data2D = firstToroidalSlice(data)
     end
 end
 
-function mapping = readResonanceDetuningMapping(inputDir, speciesLabel, speciesData, branchName, plotInput, meta)
+function rawMapping = readResonanceDetuningMappingRaw(filePath, nPhase)
 
-    filePath = fullfile(inputDir, [char(speciesLabel) 'PhaseSpaceMapping.bin']);
-    assert(isfile(filePath), '缺少 mapping 文件：%s', filePath);
-
-    nPhase = speciesData.gridE * speciesData.gridPphi * speciesData.gridLambda;
     nRecord = 2 * nPhase;
     fid = fopen(filePath, 'rb');
     assert(fid >= 0, '无法打开文件：%s', filePath);
@@ -2312,6 +2034,30 @@ function mapping = readResonanceDetuningMapping(inputDir, speciesLabel, speciesD
     assert(numel(ids) == nRecord && numel(rho) == nRecord && numel(vpara) == nRecord && numel(mu) == nRecord, ...
         '%s 尺寸不匹配：期望每个数组长度为 2*gridE*gridPphi*gridLambda=%d。', filePath, nRecord);
     clear cleanupObj;
+
+    rawMapping = struct( ...
+        'file', filePath, ...
+        'ids', ids, ...
+        'rho', rho, ...
+        'vpara', vpara, ...
+        'mu', mu);
+end
+
+function mapping = buildResonanceDetuningMapping( ...
+    capturedMappings, speciesLabel, speciesData, branchName, plotInput, meta)
+
+    assert(isfield(capturedMappings, speciesLabel), ...
+        '物种 %s 的 mapping 输入未在“读取所有输入”阶段登记。', speciesLabel);
+    capturedMapping = capturedMappings.(speciesLabel);
+    filePath = capturedMapping.path;
+    assert(capturedMapping.exists, '缺少 mapping 文件：%s', filePath);
+    rawMapping = requireCapturedResonanceDetuningInput(capturedMapping);
+
+    nPhase = speciesData.gridE * speciesData.gridPphi * speciesData.gridLambda;
+    ids = rawMapping.ids;
+    rho = rawMapping.rho;
+    vpara = rawMapping.vpara;
+    mu = rawMapping.mu;
 
     [ids, rho, vpara, mu] = selectResonanceDetuningMappingBranch(ids, rho, vpara, mu, nPhase, branchName);
     valid = ~isPadRecord(ids) & isfinite(rho) & isfinite(vpara) & isfinite(mu);
@@ -2383,15 +2129,15 @@ end
 
 function gridPoint = nearestResonanceDetuningGridPoint(speciesData, mapping, residualHz, opt)
 
-    [~, iE] = min(abs(speciesData.E1d - opt.E0));
-    [~, iPphi] = min(abs(speciesData.Pphi1d - opt.PphiRaw0));
-    [~, iLambda] = min(abs(speciesData.Lambda1d - opt.Lambda0));
+    [~, eIndex] = min(abs(speciesData.E1d - opt.E0));
+    [~, pphiIndex] = min(abs(speciesData.Pphi1d - opt.PphiRaw0));
+    [~, lambdaIndex] = min(abs(speciesData.Lambda1d - opt.Lambda0));
 
     gridPoint = resonanceDetuningPoint( ...
-        speciesData.E1d(iE), speciesData.Pphi1d(iPphi), speciesData.Lambda1d(iLambda), ...
-        mapping.mu(iE, iPphi, iLambda), mapping.rho(iE, iPphi, iLambda), ...
-        mapping.r(iE, iPphi, iLambda), residualHz(iE, iPphi, iLambda));
-    gridPoint.index = [iE, iPphi, iLambda];
+        speciesData.E1d(eIndex), speciesData.Pphi1d(pphiIndex), speciesData.Lambda1d(lambdaIndex), ...
+        mapping.mu(eIndex, pphiIndex, lambdaIndex), mapping.rho(eIndex, pphiIndex, lambdaIndex), ...
+        mapping.r(eIndex, pphiIndex, lambdaIndex), residualHz(eIndex, pphiIndex, lambdaIndex));
+    gridPoint.index = [eIndex, pphiIndex, lambdaIndex];
 
     fprintf(['[resonance detuning] nearest grid point:\n', ...
         '  input E=%.16g, Pphi(plot)=%.16g, Pphi(raw)=%.16g, Lambda=%.16g\n', ...
@@ -2399,7 +2145,7 @@ function gridPoint = nearestResonanceDetuningGridPoint(speciesData, mapping, res
         '  delta dE=%.6g, dPphi(plot)=%.6g, dPphi(raw)=%.6g, dLambda=%.6g\n'], ...
         opt.E0, opt.PphiPlot0, opt.PphiRaw0, opt.Lambda0, ...
         gridPoint.E, -gridPoint.Pphi, gridPoint.Pphi, gridPoint.Lambda, gridPoint.mu, gridPoint.rho, gridPoint.r, gridPoint.residualHz, ...
-        iE, iPphi, iLambda, gridPoint.E - opt.E0, -gridPoint.Pphi - opt.PphiPlot0, ...
+        eIndex, pphiIndex, lambdaIndex, gridPoint.E - opt.E0, -gridPoint.Pphi - opt.PphiPlot0, ...
         gridPoint.Pphi - opt.PphiRaw0, gridPoint.Lambda - opt.Lambda0);
 end
 
@@ -2426,19 +2172,19 @@ function center = projectResonanceDetuningCenter(speciesData, mapping, residualH
     [projectedPEL, distance, faceIndex] = nearestPointOnTriangulatedSurface( ...
         surfaceData.vertices, surfaceData.faces, queryPEL);
 
-    rfInterp = phaseFieldInterpolant(speciesData, residualHz);
-    rhoInterp = phaseFieldInterpolant(speciesData, mapping.rho);
-    rInterp = phaseFieldInterpolant(speciesData, mapping.r);
-    muMapInterp = phaseFieldInterpolant(speciesData, mapping.mu);
+    residualInterpolant = phaseFieldInterpolant(speciesData, residualHz);
+    rhoInterpolant = phaseFieldInterpolant(speciesData, mapping.rho);
+    radiusInterpolant = phaseFieldInterpolant(speciesData, mapping.r);
+    mappingMuInterpolant = phaseFieldInterpolant(speciesData, mapping.mu);
 
     Pphi = projectedPEL(1);
     E = projectedPEL(2);
     Lambda = projectedPEL(3);
-    residualAtCenter = rfInterp(E, Pphi, Lambda);
-    rho = rhoInterp(E, Pphi, Lambda);
-    r = rInterp(E, Pphi, Lambda);
+    residualAtCenter = residualInterpolant(E, Pphi, Lambda);
+    rho = rhoInterpolant(E, Pphi, Lambda);
+    r = radiusInterpolant(E, Pphi, Lambda);
     muFromCoordinates = E * Lambda;
-    muFromMapping = muMapInterp(E, Pphi, Lambda);
+    muFromMapping = mappingMuInterpolant(E, Pphi, Lambda);
 
     center = resonanceDetuningPoint(E, Pphi, Lambda, muFromCoordinates, rho, r, residualAtCenter);
     center.muMapInterpolated = muFromMapping;
@@ -2468,14 +2214,14 @@ function [point, distance, faceIndex] = nearestPointOnTriangulatedSurface(vertic
     bestDistanceSquared = Inf;
     point = vertices(1, :);
     faceIndex = 1;
-    for iFace = 1:size(faces, 1)
-        tri = vertices(faces(iFace, :), :);
+    for candidateFaceIndex = 1:size(faces, 1)
+        tri = vertices(faces(candidateFaceIndex, :), :);
         candidate = nearestPointOnTriangle(queryPoint, tri(1, :), tri(2, :), tri(3, :));
         distanceSquared = sum((candidate - queryPoint) .^ 2);
         if distanceSquared < bestDistanceSquared
             bestDistanceSquared = distanceSquared;
             point = candidate;
-            faceIndex = iFace;
+            faceIndex = candidateFaceIndex;
         end
     end
     distance = sqrt(bestDistanceSquared);
@@ -2572,25 +2318,25 @@ function path = sampleResonanceDetuningPath(speciesData, mapping, residualHz, ce
             'outside=%d/%d, E=[%.6g, %.6g] grid=[%.6g, %.6g], Pphi(raw)=[%.6g, %.6g] grid=[%.6g, %.6g], ', ...
             'Lambda=[%.6g, %.6g] grid=[%.6g, %.6g].'], ...
             nnz(outside), numel(outside), ...
-            finiteMinOrNaN(E), finiteMaxOrNaN(E), min(speciesData.E1d), max(speciesData.E1d), ...
-            finiteMinOrNaN(Pphi), finiteMaxOrNaN(Pphi), min(speciesData.Pphi1d), max(speciesData.Pphi1d), ...
-            finiteMinOrNaN(Lambda), finiteMaxOrNaN(Lambda), min(speciesData.Lambda1d), max(speciesData.Lambda1d));
+            statisticOrNaN(E, @min, true), statisticOrNaN(E, @max, true), min(speciesData.E1d), max(speciesData.E1d), ...
+            statisticOrNaN(Pphi, @min, true), statisticOrNaN(Pphi, @max, true), min(speciesData.Pphi1d), max(speciesData.Pphi1d), ...
+            statisticOrNaN(Lambda, @min, true), statisticOrNaN(Lambda, @max, true), min(speciesData.Lambda1d), max(speciesData.Lambda1d));
         return;
     end
 
-    rfInterp = phaseFieldInterpolant(speciesData, residualHz);
-    rInterp = phaseFieldInterpolant(speciesData, mapping.r);
-    rhoInterp = phaseFieldInterpolant(speciesData, mapping.rho);
+    residualInterpolant = phaseFieldInterpolant(speciesData, residualHz);
+    radiusInterpolant = phaseFieldInterpolant(speciesData, mapping.r);
+    rhoInterpolant = phaseFieldInterpolant(speciesData, mapping.rho);
 
-    R = rfInterp(E, Pphi, Lambda);
-    r = rInterp(E, Pphi, Lambda);
-    rho = rhoInterp(E, Pphi, Lambda);
+    R = residualInterpolant(E, Pphi, Lambda);
+    r = radiusInterpolant(E, Pphi, Lambda);
+    rho = rhoInterpolant(E, Pphi, Lambda);
     x = r - center.r;
-    centerIdx = find(deltaPphiPlot == 0, 1);
-    R(centerIdx) = 0;
-    r(centerIdx) = center.r;
-    rho(centerIdx) = center.rho;
-    x(centerIdx) = 0;
+    centerIndex = find(deltaPphiPlot == 0, 1);
+    R(centerIndex) = 0;
+    r(centerIndex) = center.r;
+    rho(centerIndex) = center.rho;
+    x(centerIndex) = 0;
     valid = isfinite(E) & isfinite(Pphi) & isfinite(Lambda) & isfinite(R) & isfinite(r) & isfinite(x);
 
     path.rho = rho;
@@ -2602,7 +2348,7 @@ function path = sampleResonanceDetuningPath(speciesData, mapping, residualHz, ce
     fprintf(['[resonance detuning] sampled path: sampleCount=%d, valid=%d/%d, ', ...
         'Pphi(plot)=[%.6g, %.6g], Pphi(raw)=[%.6g, %.6g], x=[%.6g, %.6g].\n'], ...
         numel(deltaPphiPlot), nnz(valid), numel(valid), min(PphiPlot), max(PphiPlot), ...
-        min(Pphi), max(Pphi), finiteMinOrNaN(x(valid)), finiteMaxOrNaN(x(valid)));
+        min(Pphi), max(Pphi), statisticOrNaN(x(valid), @min, true), statisticOrNaN(x(valid), @max, true));
 end
 
 function fit = fitResonanceDetuningPath(path)
@@ -2613,11 +2359,11 @@ function fit = fitResonanceDetuningPath(path)
 
     [x, order] = sort(x);
     R = R(order);
-    [~, centerIdx] = min(abs(x));
-    linearIdx = centerIdx - 2:centerIdx + 2;
+    [~, centerIndex] = min(abs(x));
+    linearIndex = centerIndex - 2:centerIndex + 2;
 
-    xLinear = x(linearIdx);
-    RLinear = R(linearIdx);
+    xLinear = x(linearIndex);
+    RLinear = R(linearIndex);
     fit1 = noInterceptPolynomialFit(xLinear, RLinear, 1);
     fit2 = noInterceptPolynomialFit(x, R, 2);
 
@@ -2640,8 +2386,8 @@ end
 function fit = noInterceptPolynomialFit(x, y, order)
 
     X = zeros(numel(x), order);
-    for iOrder = 1:order
-        X(:, iOrder) = x .^ iOrder;
+    for termIndex = 1:order
+        X(:, termIndex) = x .^ termIndex;
     end
     coeff = X \ y;
     yFit = X * coeff;
@@ -2691,33 +2437,33 @@ function plotResonanceDetuningPath(path, fit, center, opt)
     legend('Location', 'best');
 end
 
-function [Z, xVec, yVec, xlabelText, ylabelText, titleText] = slicePhaseField(dim, idx, fieldData, speciesData)
+function [Z, xVec, yVec, xlabelText, ylabelText, titleText] = slicePhaseField(dim, sliceIndex, fieldData, speciesData)
 
     switch dim
         case 1
-            idx = clampIndex(idx, numel(speciesData.E1d), 'E');
-            Z = reshape(fieldData(idx, :, :), numel(speciesData.Pphi1d), numel(speciesData.Lambda1d));
+            sliceIndex = clampIndex(sliceIndex, numel(speciesData.E1d), 'E');
+            Z = reshape(fieldData(sliceIndex, :, :), numel(speciesData.Pphi1d), numel(speciesData.Lambda1d));
             xVec = speciesData.Lambda1d;
             yVec = -speciesData.Pphi1d;
             xlabelText = '$\Lambda$';
             ylabelText = '$P_{\varphi}$';
-            titleText = sprintf('$E = %.6g$', speciesData.E1d(idx));
+            titleText = sprintf('$E = %.6g$', speciesData.E1d(sliceIndex));
         case 2
-            idx = clampIndex(idx, numel(speciesData.Pphi1d), 'Pphi');
-            Z = reshape(fieldData(:, idx, :), numel(speciesData.E1d), numel(speciesData.Lambda1d));
+            sliceIndex = clampIndex(sliceIndex, numel(speciesData.Pphi1d), 'Pphi');
+            Z = reshape(fieldData(:, sliceIndex, :), numel(speciesData.E1d), numel(speciesData.Lambda1d));
             xVec = speciesData.Lambda1d;
             yVec = speciesData.E1d;
             xlabelText = '$\Lambda$';
             ylabelText = '$E$';
-            titleText = sprintf('$P_{\\varphi} = %.6g$', -speciesData.Pphi1d(idx));
+            titleText = sprintf('$P_{\\varphi} = %.6g$', -speciesData.Pphi1d(sliceIndex));
         case 3
-            idx = clampIndex(idx, numel(speciesData.Lambda1d), 'Lambda');
-            Z = reshape(fieldData(:, :, idx), numel(speciesData.E1d), numel(speciesData.Pphi1d));
+            sliceIndex = clampIndex(sliceIndex, numel(speciesData.Lambda1d), 'Lambda');
+            Z = reshape(fieldData(:, :, sliceIndex), numel(speciesData.E1d), numel(speciesData.Pphi1d));
             xVec = -speciesData.Pphi1d;
             yVec = speciesData.E1d;
             xlabelText = '$P_{\varphi}$';
             ylabelText = '$E$';
-            titleText = sprintf('$\\Lambda = %.6g$', speciesData.Lambda1d(idx));
+            titleText = sprintf('$\\Lambda = %.6g$', speciesData.Lambda1d(sliceIndex));
         otherwise
             error('切片维度必须为 1、2 或 3。');
     end
@@ -2757,41 +2503,35 @@ end
 function [Dn, selectedN] = diffusivityModeSlice(speciesData, nRange)
 
     data = requireQuantityData(speciesData, 'Diffusivity');
-    physicalN = diffusivityPhysicalN(speciesData);
+    physicalN = speciesData.physicalNAll;
     nTarget = diffusivitySingleN(speciesData, nRange);
-    [~, modeIdx] = min(abs(physicalN - nTarget));
-    selectedN = physicalN(modeIdx);
-    Dn = reshape(data(:, modeIdx, :), size(data, 1), size(data, 3));
+    [~, modeIndex] = min(abs(physicalN - nTarget));
+    selectedN = physicalN(modeIndex);
+    Dn = reshape(data(:, modeIndex, :), size(data, 1), size(data, 3));
     Dn(~isfinite(Dn)) = NaN;
 end
 
 function [modeMask, selectedN] = diffusivityModeMask(speciesData, nRange)
 
-    physicalN = diffusivityPhysicalN(speciesData);
+    physicalN = speciesData.physicalNAll;
     range = normalizeDiffusivityNRange(nRange);
     modeMask = physicalN >= range(1) & physicalN <= range(2);
     if ~any(modeMask)
-        [~, nearestIdx] = min(abs(physicalN - mean(range)));
-        modeMask(nearestIdx) = true;
+        [~, nearestIndex] = min(abs(physicalN - mean(range)));
+        modeMask(nearestIndex) = true;
     end
     selectedN = physicalN(modeMask);
-end
-
-function physicalN = diffusivityPhysicalN(speciesData)
-
-    physicalN = speciesData.physicalNAll;
 end
 
 function range = normalizeDiffusivityNRange(nRange)
 
     range = reshape(double(nRange), 1, []);
-    assert(numel(range) == 1 || numel(range) == 2, 'nRange 必须为标量或 [min max]。');
-    assert(all(isfinite(range)), 'nRange 必须为有限数。');
+    assert(ismember(numel(range), [1, 2]) && all(isfinite(range)), ...
+        'nRange 必须为有限标量或 [min max]。');
     if isscalar(range)
         range = [range, range];
-    else
-        range = sort(range);
     end
+    range = sort(range);
 end
 
 function range = initialDiffusivityNRange(speciesData, nRange)
@@ -2802,24 +2542,15 @@ end
 
 function nValue = diffusivitySingleN(speciesData, nRange)
 
-    physicalN = diffusivityPhysicalN(speciesData);
+    physicalN = speciesData.physicalNAll;
     rawRange = normalizeDiffusivityNRange(nRange);
     inRangeN = physicalN(physicalN >= rawRange(1) & physicalN <= rawRange(2));
     if isempty(inRangeN)
-        [~, nearestIdx] = min(abs(physicalN - mean(rawRange)));
-        nValue = physicalN(nearestIdx);
+        [~, nearestIndex] = min(abs(physicalN - mean(rawRange)));
+        nValue = physicalN(nearestIndex);
     else
         nValue = inRangeN(max(1, round(numel(inRangeN) / 2)));
     end
-end
-
-function [nSliderMin, nSliderMax, n0, nAllowed] = diffusivitySingleNControlValues(speciesData, nRange)
-
-    [~, selectedN] = diffusivityModeMask(speciesData, nRange);
-    nSliderMin = min(selectedN);
-    nSliderMax = max(selectedN);
-    n0 = diffusivitySingleN(speciesData, nRange);
-    nAllowed = selectedN;
 end
 
 function controls = diffusivityRangeControls(speciesData, nRange)
@@ -2838,20 +2569,25 @@ function controls = diffusivityRangeControls(speciesData, nRange)
     controls(2).allowedValues = nAllowed;
 end
 
-function opt = diffusivityOptionsFromValues(opt, values)
+function controls = appendIndexControl(controls, fieldName, value, count, enabled)
 
-    if isfield(values, 'nMin') && isfield(values, 'nMax')
-        opt.nRange = sort([values.nMin, values.nMax]);
+    if nargin < 5
+        enabled = true;
     end
-    if isfield(values, 'timeIndex')
-        opt.timeIndex = values.timeIndex;
-    end
-    if isfield(values, 'radialIndex')
-        opt.radialIndex = values.radialIndex;
+    if enabled && count > 1
+        controls = [controls, integerSliderControl(fieldName, fieldName, value, 1, count)];
     end
 end
 
-function [xVec, xlabelText] = diffusivityTimeAxis(speciesData, meta, axisType)
+function opt = diffusivityOptionsFromValues(opt, values)
+
+    opt = applyControlValues(opt, values);
+    if isfield(values, 'nMin') && isfield(values, 'nMax')
+        opt.nRange = sort([values.nMin, values.nMax]);
+    end
+end
+
+function [xVec, xlabelText] = diagnosticTimeAxis(speciesData, axisType)
 
     key = lower(strtrim(char(axisType)));
     switch key
@@ -2865,14 +2601,14 @@ function [xVec, xlabelText] = diffusivityTimeAxis(speciesData, meta, axisType)
             xVec = speciesData.timeSeconds;
             xlabelText = '$t/\mathrm{s}$';
         case 'steps'
-            xVec = (0:numel(speciesData.tDiag) - 1) * meta.diagSteps;
+            xVec = (0:numel(speciesData.tDiag) - 1) * speciesData.diagSteps;
             xlabelText = '$\mathrm{step}$';
         otherwise
             error('timeAxis 必须为 "ta"、"ms"、"s" 或 "steps"。');
     end
 end
 
-function [xVec, xlabelText, axisName] = diffusivityRadialAxis(speciesData, axisType)
+function [xVec, xlabelText, axisName] = diagnosticRadialAxis(speciesData, axisType)
 
     key = lower(strtrim(char(axisType)));
     switch key
@@ -2889,14 +2625,9 @@ function [xVec, xlabelText, axisName] = diffusivityRadialAxis(speciesData, axisT
     end
 end
 
-function idx = parseDiffusivityIndex(indexText, nIndex, label)
-
-    idx = parseIndex(indexText, nIndex, label);
-end
-
 function titleText = diffusivityTitleText(speciesLabel, selectedN, extraLatex)
 
-    if numel(selectedN) == 1
+    if isscalar(selectedN)
         nLatex = sprintf('n = %d', selectedN);
     else
         nLatex = sprintf('n \\in [%d,%d]', min(selectedN), max(selectedN));
@@ -2909,29 +2640,40 @@ function titleText = densityTitleText(speciesLabel, extraLatex)
     titleText = sprintf('$\\mathrm{%s}\\quad \\delta n%s$', speciesLabel, extraLatex);
 end
 
-function titleText = densityTotalTitleText(speciesLabel, extraLatex)
-
-    titleText = sprintf('$\\mathrm{%s}\\quad n%s$', speciesLabel, extraLatex);
-end
-
 function flag = isTotalDensityMode(opt)
 
-    modeText = 'delta';
-    if isfield(opt, 'radialDensityMode') && ~isempty(opt.radialDensityMode)
-        modeText = lower(strtrim(char(opt.radialDensityMode)));
-    end
+    modeText = lower(strtrim(char(getOptionValue(opt, 'radialDensityMode', 'delta'))));
+    assert(ismember(modeText, {'delta', 'total'}), ...
+        'radialDensityMode 必须为 "delta" 或 "total"。');
+    flag = strcmp(modeText, 'total');
+end
 
-    switch modeText
-        case 'delta'
-            flag = false;
-        case 'total'
-            flag = true;
-        otherwise
-            error('radialDensityMode 必须为 "delta" 或 "total"。');
+function values = applyControlValues(values, controlValues)
+
+    fieldNames = fieldnames(controlValues);
+    for fieldIndex = 1:numel(fieldNames)
+        fieldName = fieldNames{fieldIndex};
+        values.(fieldName) = controlValues.(fieldName);
     end
 end
 
-function plotData = linePlotData(xVec, yVec, xlabelText, ylabelText, titleText, statusText)
+function runPICPlotMode(figureName, controls, dynamicUpdate, buildPlotData, ...
+    renderPlotData, noFiniteMessage)
+
+    if ~isempty(dynamicUpdate)
+        plotInteractiveDiagnostic(figureName, controls, dynamicUpdate, buildPlotData, renderPlotData);
+        return;
+    end
+
+    plotData = buildPlotData(struct());
+    if ~any(isfinite(plotData.finiteData(:)))
+        fprintf('[plot] %s\n', noFiniteMessage);
+        return;
+    end
+    drawPICFigure(figureName, plotData, renderPlotData);
+end
+
+function plotData = buildLinePlotData(xVec, yVec, xlabelText, ylabelText, titleText, statusText)
 
     xVec = reshape(xVec, 1, []);
     yVec = reshape(yVec, 1, []);
@@ -2942,19 +2684,25 @@ function plotData = linePlotData(xVec, yVec, xlabelText, ylabelText, titleText, 
         'xlabelText', xlabelText, ...
         'ylabelText', ylabelText, ...
         'titleText', titleText, ...
-        'status', statusText);
+        'status', statusText, ...
+        'finiteData', yVec);
 end
 
-function drawLineFigure(figureName, plotData)
+function drawPICFigure(figureName, plotData, renderPlotData)
 
-    figHandle = figure('Name', figureName, 'Color', 'w', 'Position', [120, 120, 900, 560]);
-    axHandle = axes('Parent', figHandle, 'Units', 'normalized', 'Position', [0.12, 0.14, 0.82, 0.76]);
-    renderLine(axHandle, plotData);
+    layoutIndex = 1 + isfield(plotData, 'Z');
+    figurePositions = {[120, 120, 900, 560], [100, 80, 980, 760]};
+    axesPositions = {[0.12, 0.14, 0.82, 0.76], [0.11, 0.12, 0.74, 0.78]};
+    figHandle = figure('Name', figureName, 'Color', 'w', ...
+        'Position', figurePositions{layoutIndex});
+    axHandle = axes('Parent', figHandle, 'Units', 'normalized', ...
+        'Position', axesPositions{layoutIndex});
+    renderPlotData(axHandle, plotData);
 end
 
 function renderLine(axHandle, plotData)
 
-    resetMapAxes(axHandle);
+    resetPlotAxes(axHandle);
     hold(axHandle, 'on');
     maxLegendCount = 1;
     if isfield(plotData, 'lineOverlays') && ~isempty(plotData.lineOverlays)
@@ -2980,20 +2728,20 @@ function renderLine(axHandle, plotData)
     if isfield(plotData, 'lineOverlays') && ~isempty(plotData.lineOverlays)
         overlays = plotData.lineOverlays;
         colorTable = lines(max(numel(overlays) + 1, 7));
-        for iOverlay = 1:numel(overlays)
-            overlayX = reshape(overlays(iOverlay).xVec, 1, []);
-            overlayY = reshape(overlays(iOverlay).yVec, 1, []);
+        for overlayIndex = 1:numel(overlays)
+            overlayX = reshape(overlays(overlayIndex).xVec, 1, []);
+            overlayY = reshape(overlays(overlayIndex).yVec, 1, []);
             assert(numel(overlayX) == numel(overlayY), ...
                 '线图叠加曲线横纵坐标长度不一致。');
             overlayValid = isfinite(overlayX) & isfinite(overlayY);
             if any(overlayValid)
                 lineHandle = plot(axHandle, overlayX, overlayY, ...
-                    'LineWidth', 1.8, 'Color', colorTable(iOverlay + 1, :));
+                    'LineWidth', 1.8, 'Color', colorTable(overlayIndex + 1, :));
                 hasFiniteLine = true;
-                if isfield(overlays, 'label') && ~isempty(overlays(iOverlay).label)
+                if isfield(overlays, 'label') && ~isempty(overlays(overlayIndex).label)
                     legendCount = legendCount + 1;
                     legendHandles(legendCount) = lineHandle;
-                    legendLabels{legendCount} = overlays(iOverlay).label;
+                    legendLabels{legendCount} = overlays(overlayIndex).label;
                 end
             end
         end
@@ -3020,16 +2768,9 @@ function renderLine(axHandle, plotData)
     hold(axHandle, 'off');
 end
 
-function drawMapFigure(figureName, plotData)
-
-    figHandle = figure('Name', figureName, 'Color', 'w', 'Position', [100, 80, 980, 760]);
-    axHandle = axes('Parent', figHandle, 'Units', 'normalized', 'Position', [0.11, 0.12, 0.74, 0.78]);
-    renderMap(axHandle, plotData);
-end
-
 function renderMap(axHandle, plotData)
 
-    resetMapAxes(axHandle);
+    resetPlotAxes(axHandle);
     [X, Y] = meshgrid(plotData.xVec, plotData.yVec);
     pcolor(axHandle, X, Y, plotData.Z);
     shading(axHandle, 'interp');
@@ -3042,18 +2783,14 @@ function renderMap(axHandle, plotData)
 
     forceSigned = isfield(plotData, 'forceSigned') && plotData.forceSigned;
     isSigned = forceSigned || (~isempty(finiteZ) && any(finiteZ < 0));
-    if isSigned
-        [colorMin, colorMax] = symmetricFiniteColorLimits(plotData.Z);
-    else
-        [colorMin, colorMax] = finiteColorLimits(plotData.Z);
-    end
+    [colorMin, colorMax] = finiteColorLimits(plotData.Z, isSigned);
     clim(axHandle, [colorMin, colorMax]);
     colormap(axHandle, phaseSpaceColormap(isSigned, plotData.colormapIndex, 256));
 
-    cb = colorbar(axHandle);
-    cb.FontName = 'Times New Roman';
-    cb.FontSize = 13;
-    ylabel(cb, plotData.colorbarLabel, 'Interpreter', 'latex', 'FontName', 'Times New Roman', 'FontSize', 13);
+    colorbarHandle = colorbar(axHandle);
+    colorbarHandle.FontName = 'Times New Roman';
+    colorbarHandle.FontSize = 13;
+    ylabel(colorbarHandle, plotData.colorbarLabel, 'Interpreter', 'latex', 'FontName', 'Times New Roman', 'FontSize', 13);
 
     if isfield(plotData, 'resonanceOverlays') && ~isempty(plotData.resonanceOverlays)
         drawResonanceOverlays(axHandle, X, Y, plotData.resonanceOverlays);
@@ -3084,20 +2821,20 @@ function drawResonanceOverlays(axHandle, X, Y, overlays)
     legendHandles = gobjects(0);
     legendLabels = {};
     visibleIndex = 0;
-    for iOverlay = 1:numel(overlays)
-        resZ = overlays(iOverlay).Z;
-        if ~residualHasZeroContour(resZ)
+    for overlayIndex = 1:numel(overlays)
+        resonanceZ = overlays(overlayIndex).Z;
+        if ~residualHasZeroContour(resonanceZ)
             continue;
         end
 
         visibleIndex = visibleIndex + 1;
         lineColor = resonanceOverlayColor(visibleIndex, numel(overlays));
-        contour(axHandle, X, Y, resZ, [0, 0], ...
+        contour(axHandle, X, Y, resonanceZ, [0, 0], ...
             'EdgeColor', 'w', 'LineWidth', 2.8, 'HandleVisibility', 'off');
-        [~, lineHandle] = contour(axHandle, X, Y, resZ, [0, 0], ...
+        [~, lineHandle] = contour(axHandle, X, Y, resonanceZ, [0, 0], ...
             'EdgeColor', lineColor, 'LineWidth', 1.35);
         legendHandles(end + 1) = lineHandle;
-        legendLabels{end + 1} = overlays(iOverlay).label;
+        legendLabels{end + 1} = overlays(overlayIndex).label;
     end
 
     if ~isempty(legendHandles)
@@ -3116,7 +2853,7 @@ function lineColor = resonanceOverlayColor(index, totalCount)
     lineColor = colorTable(index, :);
 end
 
-function resetMapAxes(axHandle)
+function resetPlotAxes(axHandle)
 
     figHandle = ancestor(axHandle, 'figure');
     delete(findall(figHandle, 'Type', 'ColorBar'));
@@ -3124,7 +2861,7 @@ function resetMapAxes(axHandle)
     cla(axHandle);
 end
 
-function plotData = mapPlotData(Z, xVec, yVec, xlabelText, ylabelText, titleText, ...
+function plotData = buildMapPlotData(Z, xVec, yVec, xlabelText, ylabelText, titleText, ...
     colorbarLabel, colormapIndex, contourCount, statusText)
 
     plotData = struct( ...
@@ -3138,15 +2875,16 @@ function plotData = mapPlotData(Z, xVec, yVec, xlabelText, ylabelText, titleText
         'colormapIndex', colormapIndex, ...
         'contourCount', contourCount, ...
         'status', statusText, ...
+        'finiteData', Z, ...
         'forceSigned', false, ...
         'resonanceZ', [], ...
         'resonanceOverlays', struct('Z', {}, 'label', {}, 'harmonic', {}), ...
         'detuningLine', []);
 end
 
-function plotInteractiveMap(figName, controls, dynamicUpdate, computePlotData, renderPlotData)
+function plotInteractiveDiagnostic(figureName, controls, dynamicUpdate, computePlotData, renderPlotData)
 
-    figHandle = figure('Name', figName, 'Color', 'w', 'Position', [80, 40, 1080, 860]);
+    figHandle = figure('Name', figureName, 'Color', 'w', 'Position', [80, 40, 1080, 860]);
     nControl = numel(controls);
     controlBottom = 0.030;
     controlSpacing = 0.035;
@@ -3160,26 +2898,26 @@ function plotInteractiveMap(figName, controls, dynamicUpdate, computePlotData, r
 
     sliderLabels = gobjects(nControl, 1);
     sliders = gobjects(nControl, 1);
-    for iControl = 1:nControl
-        yPos = controlBottom + controlSpacing * (nControl - iControl);
-        sliderLabels(iControl) = uicontrol(figHandle, 'Style', 'text', 'Units', 'normalized', ...
+    for controlIndex = 1:nControl
+        yPos = controlBottom + controlSpacing * (nControl - controlIndex);
+        sliderLabels(controlIndex) = uicontrol(figHandle, 'Style', 'text', 'Units', 'normalized', ...
             'Position', [0.10, yPos - 0.007, 0.19, 0.030], ...
-            'String', sliderLabelText(controls(iControl), controls(iControl).value), ...
+            'String', sliderLabelText(controls(controlIndex), controls(controlIndex).value), ...
             'BackgroundColor', 'w', 'HorizontalAlignment', 'left', ...
             'FontName', 'Times New Roman', 'FontSize', 11);
-        sliders(iControl) = uicontrol(figHandle, 'Style', 'slider', 'Units', 'normalized', ...
+        sliders(controlIndex) = uicontrol(figHandle, 'Style', 'slider', 'Units', 'normalized', ...
             'Position', [0.30, yPos, 0.62, 0.022], ...
-            'Min', controls(iControl).min, 'Max', controls(iControl).max, ...
-            'Value', controls(iControl).value, ...
-            'SliderStep', sliderStepForControl(controls(iControl)), ...
+            'Min', controls(controlIndex).min, 'Max', controls(controlIndex).max, ...
+            'Value', controls(controlIndex).value, ...
+            'SliderStep', sliderStepForControl(controls(controlIndex)), ...
             'Callback', @refreshPlot);
     end
 
     if dynamicUpdate
         dynamicListeners = {};
         try
-            for iControl = 1:nControl
-                dynamicListeners{end + 1} = addlistener(sliders(iControl), 'ContinuousValueChange', @refreshPlot); %#ok<AGROW>
+            for controlIndex = 1:nControl
+                dynamicListeners{end + 1} = addlistener(sliders(controlIndex), 'ContinuousValueChange', @refreshPlot); %#ok<AGROW>
             end
             setappdata(figHandle, 'dynamicSliderListeners', dynamicListeners);
         catch
@@ -3197,13 +2935,13 @@ function plotInteractiveMap(figName, controls, dynamicUpdate, computePlotData, r
         end
 
         values = struct();
-        for iSlider = 1:nControl
-            sliderValue = clampSliderValue(get(sliders(iSlider), 'Value'), controls(iSlider));
-            values.(controls(iSlider).field) = sliderValue;
+        for sliderIndex = 1:nControl
+            sliderValue = clampSliderValue(get(sliders(sliderIndex), 'Value'), controls(sliderIndex));
+            values.(controls(sliderIndex).field) = sliderValue;
             if ~dynamicUpdate
-                set(sliders(iSlider), 'Value', sliderValue);
+                set(sliders(sliderIndex), 'Value', sliderValue);
             end
-            set(sliderLabels(iSlider), 'String', sliderLabelText(controls(iSlider), sliderValue));
+            set(sliderLabels(sliderIndex), 'String', sliderLabelText(controls(sliderIndex), sliderValue));
         end
 
         plotData = computePlotData(values);
@@ -3225,10 +2963,10 @@ function controls = appendResonanceControls(controls, resOpt, useHarmonicBounds,
     end
 
     if allowMultipleBranches
-        resOpt = validatedResonanceOverlayOptions(resOpt);
-        branchNames = resonanceBranchNames(resOpt);
+        resOpt = normalizeResonanceOverlayOptions(resOpt);
+        branchNames = normalizeResonanceBranches(resOpt.branch);
     else
-        resOpt = validatedResonanceOptions(resOpt);
+        resOpt = normalizeResonanceOptions(resOpt);
         branchNames = {resOpt.branch};
     end
     freqRange = normalizeSliderRange(resOpt.frequencyHzRange, resOpt.frequencyHz, 'frequencyHzRange', false);
@@ -3251,25 +2989,25 @@ function controls = appendResonanceControls(controls, resOpt, useHarmonicBounds,
     end
     if useHarmonicBounds
         if allowMultipleBranches && numel(branchNames) > 1
-            for iBranch = 1:numel(branchNames)
-                lBounds = [resOpt.harmonicMinList(iBranch), resOpt.harmonicMaxList(iBranch)];
-                lRange = normalizeSliderRangeForValues(resOpt.harmonicRange, lBounds, 'harmonicRange', true);
+            for branchIndex = 1:numel(branchNames)
+                lBounds = [resOpt.harmonicMinList(branchIndex), resOpt.harmonicMaxList(branchIndex)];
+                lRange = normalizeSliderRange(resOpt.harmonicRange, lBounds, 'harmonicRange', true);
                 controls = [controls, ...
-                    integerSliderControl(sprintf('resHarmonicMin%d', iBranch), ...
-                    [branchNames{iBranch} ' l min'], lBounds(1), lRange(1), lRange(2)), ...
-                    integerSliderControl(sprintf('resHarmonicMax%d', iBranch), ...
-                    [branchNames{iBranch} ' l max'], lBounds(2), lRange(1), lRange(2))]; %#ok<AGROW>
+                    integerSliderControl(sprintf('resHarmonicMin%d', branchIndex), ...
+                    [branchNames{branchIndex} ' l min'], lBounds(1), lRange(1), lRange(2)), ...
+                    integerSliderControl(sprintf('resHarmonicMax%d', branchIndex), ...
+                    [branchNames{branchIndex} ' l max'], lBounds(2), lRange(1), lRange(2))]; %#ok<AGROW>
             end
         else
             lBounds = [resOpt.harmonicMin, resOpt.harmonicMax];
-            lRange = normalizeSliderRangeForValues(resOpt.harmonicRange, lBounds, 'harmonicRange', true);
+            lRange = normalizeSliderRange(resOpt.harmonicRange, lBounds, 'harmonicRange', true);
             controls = [controls, ...
                 integerSliderControl('resHarmonicMin', 'l min', lBounds(1), lRange(1), lRange(2)), ...
                 integerSliderControl('resHarmonicMax', 'l max', lBounds(2), lRange(1), lRange(2))];
         end
     else
         lBounds = [resOpt.harmonicMin, resOpt.harmonicMax];
-        lRange = normalizeSliderRangeForValues(resOpt.harmonicRange, lBounds, 'harmonicRange', true);
+        lRange = normalizeSliderRange(resOpt.harmonicRange, lBounds, 'harmonicRange', true);
         controls = [controls, integerSliderControl('resHarmonic', 'l', resOpt.harmonic, lRange(1), lRange(2))];
     end
 end
@@ -3282,78 +3020,74 @@ function resOpt = resonanceOptionsFromValues(resOpt, values, allowMultipleBranch
     if nargin < 3
         allowMultipleBranches = false;
     end
-    if isfield(values, 'resFrequencyHz')
-        resOpt.frequencyHz = values.resFrequencyHz;
-    end
-    if isfield(values, 'resToroidalMode')
-        resOpt.toroidalMode = values.resToroidalMode;
-    end
-    if isfield(values, 'resPoloidalMode')
-        resOpt.poloidalMode = values.resPoloidalMode;
+    valueMap = { ...
+        'resFrequencyHz', 'frequencyHz'; 'resToroidalMode', 'toroidalMode'; ...
+        'resPoloidalMode', 'poloidalMode'; 'resHarmonicMin', 'harmonicMin'; ...
+        'resHarmonicMax', 'harmonicMax'};
+    for fieldIndex = 1:size(valueMap, 1)
+        if isfield(values, valueMap{fieldIndex, 1})
+            resOpt.(valueMap{fieldIndex, 2}) = values.(valueMap{fieldIndex, 1});
+        end
     end
     if isfield(values, 'resHarmonic')
         resOpt.harmonic = values.resHarmonic;
         resOpt.harmonicMin = values.resHarmonic;
         resOpt.harmonicMax = values.resHarmonic;
     end
-    if isfield(values, 'resHarmonicMin')
-        resOpt.harmonicMin = values.resHarmonicMin;
-    end
-    if isfield(values, 'resHarmonicMax')
-        resOpt.harmonicMax = values.resHarmonicMax;
-    end
     if allowMultipleBranches
         branchNames = normalizeResonanceBranches(resOpt.branch);
         if numel(branchNames) > 1
             resOpt = normalizeResonanceHarmonicOptions(resOpt);
             resOpt = normalizeResonanceOverlayHarmonicOptions(resOpt, numel(branchNames));
-            for iBranch = 1:numel(branchNames)
-                minField = sprintf('resHarmonicMin%d', iBranch);
-                maxField = sprintf('resHarmonicMax%d', iBranch);
+            for branchIndex = 1:numel(branchNames)
+                minField = sprintf('resHarmonicMin%d', branchIndex);
+                maxField = sprintf('resHarmonicMax%d', branchIndex);
                 if isfield(values, minField)
-                    resOpt.harmonicMinList(iBranch) = values.(minField);
+                    resOpt.harmonicMinList(branchIndex) = values.(minField);
                 end
                 if isfield(values, maxField)
-                    resOpt.harmonicMaxList(iBranch) = values.(maxField);
+                    resOpt.harmonicMaxList(branchIndex) = values.(maxField);
                 end
             end
         end
-        resOpt = validatedResonanceOverlayOptions(resOpt);
+        resOpt = normalizeResonanceOverlayOptions(resOpt);
     else
-        resOpt = validatedResonanceOptions(resOpt);
+        resOpt = normalizeResonanceOptions(resOpt);
     end
 end
 
-function resOpt = validatedResonanceOptions(resOpt)
+function resOpt = normalizeResonanceOptions(resOpt)
 
-    if ~isfield(resOpt, 'enabled')
-        resOpt.enabled = true;
-    end
     resOpt.branch = normalizeResonanceBranch(resOpt.branch);
-    resOpt.frequencyHz = validateFiniteScalar(resOpt.frequencyHz, 'frequencyHz');
-    resOpt.toroidalMode = readNonnegativeIntegerScalar(resOpt.toroidalMode, 'toroidalMode');
+    resOpt = normalizeResonanceCoreOptions(resOpt);
     if ~strcmp(resOpt.branch, 'trapped')
-        resOpt.poloidalMode = readNonnegativeIntegerScalar(resOpt.poloidalMode, 'poloidalMode');
+        resOpt.poloidalMode = requireIntegerInRange(resOpt.poloidalMode, 0, Inf, 'poloidalMode');
     end
     resOpt = normalizeResonanceHarmonicOptions(resOpt);
 end
 
-function resOpt = validatedResonanceOverlayOptions(resOpt)
+function resOpt = normalizeResonanceOverlayOptions(resOpt)
 
-    if ~isfield(resOpt, 'enabled')
-        resOpt.enabled = true;
-    end
     branchNames = normalizeResonanceBranches(resOpt.branch);
     resOpt.branch = branchNames;
-    resOpt.frequencyHz = validateFiniteScalar(resOpt.frequencyHz, 'frequencyHz');
-    resOpt.toroidalMode = readNonnegativeIntegerScalar(resOpt.toroidalMode, 'toroidalMode');
+    resOpt = normalizeResonanceCoreOptions(resOpt);
     if any(~strcmp(branchNames, 'trapped'))
-        resOpt.poloidalMode = readNonnegativeIntegerScalar(resOpt.poloidalMode, 'poloidalMode');
+        resOpt.poloidalMode = requireIntegerInRange(resOpt.poloidalMode, 0, Inf, 'poloidalMode');
     elseif ~isfield(resOpt, 'poloidalMode') || isempty(resOpt.poloidalMode)
         resOpt.poloidalMode = 0;
     end
     resOpt = normalizeResonanceHarmonicOptions(resOpt);
     resOpt = normalizeResonanceOverlayHarmonicOptions(resOpt, numel(branchNames));
+end
+
+
+function resOpt = normalizeResonanceCoreOptions(resOpt)
+
+    if ~isfield(resOpt, 'enabled')
+        resOpt.enabled = true;
+    end
+    resOpt.frequencyHz = requireFiniteScalarInRange(resOpt.frequencyHz, -Inf, Inf, 'frequencyHz');
+    resOpt.toroidalMode = requireIntegerInRange(resOpt.toroidalMode, 0, Inf, 'toroidalMode');
 end
 
 function resOpt = normalizeResonanceHarmonicOptions(resOpt)
@@ -3365,67 +3099,37 @@ function resOpt = normalizeResonanceHarmonicOptions(resOpt)
     assert(~isempty(rawHarmonic) && all(isfinite(rawHarmonic)) && all(rawHarmonic == floor(rawHarmonic)), ...
         'harmonic 必须是整数标量或整数范围。');
 
-    if isfield(resOpt, 'harmonicMin') && ~isempty(resOpt.harmonicMin)
-        harmonicMin = validateIntegerScalar(resOpt.harmonicMin, 'harmonicMin');
-    else
-        harmonicMin = min(rawHarmonic);
-    end
-    if isfield(resOpt, 'harmonicMax') && ~isempty(resOpt.harmonicMax)
-        harmonicMax = validateIntegerScalar(resOpt.harmonicMax, 'harmonicMax');
-    else
-        harmonicMax = max(rawHarmonic);
-    end
-    if harmonicMin > harmonicMax
-        tmp = harmonicMin;
-        harmonicMin = harmonicMax;
-        harmonicMax = tmp;
-    end
-
-    resOpt.harmonicMin = harmonicMin;
-    resOpt.harmonicMax = harmonicMax;
-    resOpt.harmonic = validateIntegerScalar(rawHarmonic(1), 'harmonic');
+    [resOpt.harmonicMin, resOpt.harmonicMax] = normalizeIntegerBounds( ...
+        getOptionValue(resOpt, 'harmonicMin', min(rawHarmonic)), ...
+        getOptionValue(resOpt, 'harmonicMax', max(rawHarmonic)), 1, 'harmonic bounds');
+    resOpt.harmonic = requireIntegerInRange(rawHarmonic(1), -Inf, Inf, 'harmonic');
 end
 
 function resOpt = normalizeResonanceOverlayHarmonicOptions(resOpt, nBranch)
 
-    if isfield(resOpt, 'harmonicMinList') && ~isempty(resOpt.harmonicMinList)
-        harmonicMinList = reshape(double(resOpt.harmonicMinList), 1, []);
-    else
-        harmonicMinList = resOpt.harmonicMin;
-    end
-    if isfield(resOpt, 'harmonicMaxList') && ~isempty(resOpt.harmonicMaxList)
-        harmonicMaxList = reshape(double(resOpt.harmonicMaxList), 1, []);
-    else
-        harmonicMaxList = resOpt.harmonicMax;
-    end
-    if isscalar(harmonicMinList)
-        harmonicMinList = repmat(harmonicMinList, 1, nBranch);
-    end
-    if isscalar(harmonicMaxList)
-        harmonicMaxList = repmat(harmonicMaxList, 1, nBranch);
-    end
-    assert(numel(harmonicMinList) == nBranch && numel(harmonicMaxList) == nBranch, ...
-        'harmonicMinList/harmonicMaxList must match the number of resonance branches.');
-
-    for iBranch = 1:nBranch
-        harmonicMin = validateIntegerScalar(harmonicMinList(iBranch), 'harmonicMinList');
-        harmonicMax = validateIntegerScalar(harmonicMaxList(iBranch), 'harmonicMaxList');
-        if harmonicMin > harmonicMax
-            tmp = harmonicMin;
-            harmonicMin = harmonicMax;
-            harmonicMax = tmp;
-        end
-        harmonicMinList(iBranch) = harmonicMin;
-        harmonicMaxList(iBranch) = harmonicMax;
-    end
-
-    resOpt.harmonicMinList = harmonicMinList;
-    resOpt.harmonicMaxList = harmonicMaxList;
+    [resOpt.harmonicMinList, resOpt.harmonicMaxList] = normalizeIntegerBounds( ...
+        getOptionValue(resOpt, 'harmonicMinList', resOpt.harmonicMin), ...
+        getOptionValue(resOpt, 'harmonicMaxList', resOpt.harmonicMax), ...
+        nBranch, 'harmonicMinList/harmonicMaxList');
 end
 
-function branchNames = resonanceBranchNames(resOpt)
+function [lowerValues, upperValues] = normalizeIntegerBounds(lowerValues, upperValues, count, fieldName)
 
-    branchNames = normalizeResonanceBranches(resOpt.branch);
+    lowerValues = reshape(double(lowerValues), 1, []);
+    upperValues = reshape(double(upperValues), 1, []);
+    if isscalar(lowerValues)
+        lowerValues = repmat(lowerValues, 1, count);
+    end
+    if isscalar(upperValues)
+        upperValues = repmat(upperValues, 1, count);
+    end
+    assert(numel(lowerValues) == count && numel(upperValues) == count && ...
+        all(isfinite(lowerValues)) && all(isfinite(upperValues)) && ...
+        all(lowerValues == floor(lowerValues)) && all(upperValues == floor(upperValues)), ...
+        '%s 必须包含 %d 组有限整数边界。', fieldName, count);
+    bounds = sort([lowerValues; upperValues], 1);
+    lowerValues = bounds(1, :);
+    upperValues = bounds(2, :);
 end
 
 function label = resonanceOverlayLabel(branchName, harmonic, nBranch)
@@ -3444,11 +3148,6 @@ function titleText = simpleTitleText(speciesLabel, quantityLatex, sliceTitle, ex
         speciesLabel, quantityLatex, sliceLatex, extraLatex);
 end
 
-function text = orbitFrequencyLatex(branchName)
-
-    text = sprintf('\\mathrm{%s}\\ \\mathrm{orbit}\\ \\mathrm{frequency}', branchName);
-end
-
 function titleText = phaseQuantityTitleText(speciesLabel, quantityLatex, sliceTitle, timeIndexText, resOpt)
 
     extraLatex = timeTextToLatex(timeIndexText);
@@ -3465,18 +3164,6 @@ function titleText = phasePowerTitleText(speciesLabel, quantityLatex, sliceTitle
         extraLatex = [extraLatex ',\quad \mathrm{res}'];
     end
     titleText = simpleTitleText(speciesLabel, quantityLatex, sliceTitle, extraLatex);
-end
-
-function titleText = pitchTitleText(speciesLabel, quantityLatex, timeIndexText)
-
-    titleText = sprintf('$\\mathrm{%s}\\quad %s\\quad \\mathrm{pitch}%s$', ...
-        speciesLabel, quantityLatex, timeTextToLatex(timeIndexText));
-end
-
-function titleText = pitchPowerTitleText(speciesLabel, quantityLatex, modeN, timeIndexText)
-
-    titleText = sprintf('$\\mathrm{%s}\\quad %s\\quad \\mathrm{pitch},\\quad n = %d%s$', ...
-        speciesLabel, quantityLatex, modeN, timeTextToLatex(timeIndexText));
 end
 
 function titleText = resonanceTitleText(speciesLabel, resOpt, physicalN, sliceTitle)
@@ -3592,52 +3279,23 @@ function [speciesData, speciesLabel] = resolveSpeciesData(dataStruct, speciesNam
     error('没有找到物种 "%s" 的 %s 数据。', speciesLabel, dataLabel);
 end
 
-function ok = hasSpeciesData(dataStruct, speciesName)
+function ok = hasSpeciesFields(dataStruct, speciesName, fieldNames)
 
     speciesName = strtrim(char(speciesName));
     ok = isfield(dataStruct, speciesName) && ~isempty(dataStruct.(speciesName));
-end
-
-function ok = hasSpeciesFieldData(dataStruct, speciesName, fieldName)
-
-    ok = false;
-    speciesName = strtrim(char(speciesName));
-    if isfield(dataStruct, speciesName) && isfield(dataStruct.(speciesName), fieldName)
-        ok = ~isempty(dataStruct.(speciesName).(fieldName));
+    for fieldIndex = 1:numel(fieldNames)
+        fieldName = fieldNames{fieldIndex};
+        ok = ok && isfield(dataStruct.(speciesName), fieldName) && ...
+            ~isempty(dataStruct.(speciesName).(fieldName));
     end
 end
 
-function ok = hasRequestedPhaseQuantity(dataStruct, speciesName, quantityName)
+function ok = hasRequestedPICQuantity(dataStruct, speciesName, quantityName)
 
-    speciesName = strtrim(char(speciesName));
-    if ~isfield(dataStruct, speciesName)
-        ok = false;
-        return;
-    end
-
-    quantityText = strtrim(char(quantityName));
-    key = lower(strrep(strrep(quantityText, '_', ''), ' ', ''));
-    if strcmp(quantityText, 'J') || ismember(key, {'j', 'jacobian', 'phasespacejacobian', 'pitchspacejacobian'})
-        requiredFields = {'J'};
-    elseif strcmp(quantityText, 'F0') || ismember(key, {'phasespacef0', 'pitchspacef0'})
-        requiredFields = {'F0'};
-    elseif strcmp(quantityText, 'DF') || ismember(key, {'deltaf', 'phasedeltaf', 'pitchdeltaf'})
-        requiredFields = {'DF'};
-    elseif strcmp(quantityText, 'f0')
-        requiredFields = {'F0', 'J'};
-    elseif strcmp(quantityText, 'df')
-        requiredFields = {'DF', 'J'};
-    elseif ismember(key, {'df/f0', 'dff0', 'df2f0', 'dfoverf0'})
-        requiredFields = {'DF', 'F0'};
-    else
-        requiredFields = {quantityText};
-    end
-
-    ok = true;
-    for iField = 1:numel(requiredFields)
-        ok = ok && isfield(dataStruct.(speciesName), requiredFields{iField}) && ...
-            ~isempty(dataStruct.(speciesName).(requiredFields{iField}));
-    end
+    ok = hasSpeciesFields(dataStruct, speciesName, {});
+    if ~ok, return; end
+    quantitySpec = resolvePICQuantitySpec(quantityName);
+    ok = hasSpeciesFields(dataStruct, speciesName, quantitySpec.requiredFields);
 end
 
 function dim = phaseCoordinateToDimension(coordinateText)
@@ -3660,48 +3318,49 @@ function dim = phaseCoordinateToDimension(coordinateText)
     end
 end
 
-function idx = parsePhaseSlice(sliceText, dim, speciesData)
+function sliceIndex = parsePhaseSlice(sliceText, dim, speciesData)
 
     if isnumeric(sliceText)
-        idx = double(sliceText);
+        sliceIndex = double(sliceText);
     else
         key = lower(strtrim(char(sliceText)));
         if ismember(key, {'middle', 'mid', 'center', 'centre'})
-            idx = defaultSliceIndex(dim, speciesData.gridE, speciesData.gridPphi, speciesData.gridLambda);
+            sliceIndex = defaultSliceIndex(dim, speciesData.gridE, speciesData.gridPphi, speciesData.gridLambda);
         elseif ismember(key, {'end', 'last'})
-            idx = phaseDimensionSize(dim, speciesData);
+            sliceIndex = phaseDimensionSize(dim, speciesData);
         else
-            idx = str2double(key);
+            sliceIndex = str2double(key);
         end
     end
 
-    idx = clampIndex(idx, phaseDimensionSize(dim, speciesData), char(phaseDimensionLabel(dim)));
+    coordinateLabels = {'E', 'Pphi', 'Lambda'};
+    sliceIndex = clampIndex(sliceIndex, phaseDimensionSize(dim, speciesData), coordinateLabels{dim});
 end
 
-function idx = parseIndex(indexText, nIndex, label)
+function index = parseIndex(indexText, nIndex, label)
 
     if isnumeric(indexText)
-        idx = double(indexText);
+        index = double(indexText);
     else
         key = lower(strtrim(char(indexText)));
         if ismember(key, {'middle', 'mid', 'center', 'centre'})
-            idx = max(1, round(nIndex / 2));
+            index = max(1, round(nIndex / 2));
         elseif ismember(key, {'end', 'last'})
-            idx = nIndex;
+            index = nIndex;
         else
-            idx = str2double(key);
+            index = str2double(key);
         end
     end
 
-    idx = clampIndex(idx, nIndex, label);
+    index = clampIndex(index, nIndex, label);
 end
 
-function idx = parseTimeIndex(timeIndex, nTime)
+function timeIndex = parseTimeIndex(indexText, nTime)
 
-    idx = parseIndex(timeIndex, nTime, 'timeIndex');
+    timeIndex = parseIndex(indexText, nTime, 'timeIndex');
 end
 
-function [modeIdx, modeN] = parseModeN(modeNText, modeIndexAll, physicalNAll)
+function [modeIndex, modeN] = parseModeN(modeNText, modeIndexAll, physicalNAll)
 
     assert(~isempty(modeIndexAll) && numel(modeIndexAll) == numel(physicalNAll), ...
         'modeN 列表为空或尺寸不一致。');
@@ -3710,16 +3369,16 @@ function [modeIdx, modeN] = parseModeN(modeNText, modeIndexAll, physicalNAll)
     else
         key = lower(strtrim(char(modeNText)));
         if ismember(key, {'middle', 'mid', 'center', 'centre'})
-            modeIdx = max(1, round(numel(modeIndexAll) / 2));
-            modeN = physicalNAll(modeIdx);
+            modeIndex = max(1, round(numel(modeIndexAll) / 2));
+            modeN = physicalNAll(modeIndex);
             return;
         elseif ismember(key, {'end', 'last'})
-            modeIdx = numel(modeIndexAll);
-            modeN = physicalNAll(modeIdx);
+            modeIndex = numel(modeIndexAll);
+            modeN = physicalNAll(modeIndex);
             return;
         elseif ismember(key, {'first', 'begin'})
-            modeIdx = 1;
-            modeN = physicalNAll(modeIdx);
+            modeIndex = 1;
+            modeN = physicalNAll(modeIndex);
             return;
         else
             modeN = str2double(key);
@@ -3728,14 +3387,9 @@ function [modeIdx, modeN] = parseModeN(modeNText, modeIndexAll, physicalNAll)
 
     assert(isscalar(modeN) && isfinite(modeN) && modeN == floor(modeN) && modeN >= 0, ...
         'modeN 必须为非负整数物理环向模数。');
-    modeIdx = find(physicalNAll == modeN, 1);
-    assert(~isempty(modeIdx), 'modeN 必须位于有效物理 n 集合 [%s]。当前值：%d。', ...
-        formatNumberList(physicalNAll), modeN);
-end
-
-function text = modeStatusText(modeN)
-
-    text = sprintf(', n = %d', modeN);
+    modeIndex = find(physicalNAll == modeN, 1);
+    assert(~isempty(modeIndex), 'modeN 必须位于有效物理 n 集合 [%s]。当前值：%d。', ...
+        strjoin(cellstr(compose('%g', physicalNAll(:))), ', '), modeN);
 end
 
 function nSlice = phaseDimensionSize(dim, speciesData)
@@ -3752,32 +3406,26 @@ function nSlice = phaseDimensionSize(dim, speciesData)
     end
 end
 
-function label = phaseDimensionLabel(dim)
-
-    labels = {'E', 'Pphi', 'Lambda'};
-    label = labels{dim};
-end
-
-function idx = defaultSliceIndex(dim, gridE, gridPphi, gridLambda)
+function sliceIndex = defaultSliceIndex(dim, gridE, gridPphi, gridLambda)
 
     switch dim
         case 1
-            idx = max(1, round(gridE / 2));
+            sliceIndex = max(1, round(gridE / 2));
         case 2
-            idx = max(1, round(gridPphi / 2));
+            sliceIndex = max(1, round(gridPphi / 2));
         case 3
-            idx = max(1, round(gridLambda / 2));
+            sliceIndex = max(1, round(gridLambda / 2));
         otherwise
             error('切片维度必须为 1、2 或 3。');
     end
 end
 
-function idx = clampIndex(idx, maxIndex, label)
+function index = clampIndex(index, maxIndex, label)
 
-    assert(isscalar(idx) && isfinite(idx) && idx == floor(idx), ...
+    assert(isscalar(index) && isfinite(index) && index == floor(index), ...
         '%s 下标必须是有限整数。', label);
-    assert(idx >= 1 && idx <= maxIndex, ...
-        '%s 下标 %d 超出有效范围 [1, %d]。', label, idx, maxIndex);
+    assert(index >= 1 && index <= maxIndex, ...
+        '%s 下标 %d 超出有效范围 [1, %d]。', label, index, maxIndex);
 end
 
 function branchName = normalizeFrequencyBranch(branchText)
@@ -3808,8 +3456,8 @@ function branchNames = normalizeResonanceBranches(branchText)
     end
 
     branchNames = {};
-    for iName = 1:numel(rawNames)
-        nameText = lower(strtrim(char(rawNames{iName})));
+    for nameIndex = 1:numel(rawNames)
+        nameText = lower(strtrim(char(rawNames{nameIndex})));
         if isempty(nameText)
             continue;
         elseif strcmp(nameText, 'all')
@@ -3842,8 +3490,8 @@ end
 function filePath = findExistingFile(searchDirs, fileName)
 
     filePath = '';
-    for iDir = 1:numel(searchDirs)
-        candidate = fullfile(searchDirs{iDir}, fileName);
+    for directoryIndex = 1:numel(searchDirs)
+        candidate = fullfile(searchDirs{directoryIndex}, fileName);
         if isfile(candidate)
             filePath = candidate;
             return;
@@ -3887,105 +3535,75 @@ end
 
 function data = readPhase3D(filePath, precision, gridE, gridPphi, gridLambda)
 
-    raw = readBinaryVector(filePath, precision);
-    expectedCount = gridE * gridPphi * gridLambda;
-    assert(numel(raw) == expectedCount, ...
-        '%s 尺寸不匹配：读到 %d 个数，期望 %d 个（gridE=%d, gridPphi=%d, gridLambda=%d）。', ...
-        filePath, numel(raw), expectedCount, gridE, gridPphi, gridLambda);
-    data = reshape(raw, [gridLambda, gridPphi, gridE]);
-    data = permute(data, [3, 2, 1]);
+    dimensionText = sprintf('gridE=%d, gridPphi=%d, gridLambda=%d', gridE, gridPphi, gridLambda);
+    data = readPICBinaryArray(filePath, precision, ...
+        [gridLambda, gridPphi, gridE], [3, 2, 1], dimensionText);
 end
 
 function data = readPhase4D(filePath, precision, gridE, gridPphi, gridLambda, expectedTime)
 
-    raw = readBinaryVector(filePath, precision);
-    perFrame = gridE * gridPphi * gridLambda;
-    assert(mod(numel(raw), perFrame) == 0, ...
-        '%s 尺寸不匹配：读到 %d 个数，不能被单帧长度 %d 整除（gridE=%d, gridPphi=%d, gridLambda=%d）。', ...
-        filePath, numel(raw), perFrame, gridE, gridPphi, gridLambda);
-    nTime = numel(raw) / perFrame;
-    assert(nTime == expectedTime, ...
-        '%s 尺寸不匹配：读到 %d 帧，期望 %d 帧（每帧 %d 个数，总数 %d）。', ...
-        filePath, nTime, expectedTime, perFrame, numel(raw));
-    data = reshape(raw, [gridLambda, gridPphi, gridE, nTime]);
-    data = permute(data, [3, 2, 1, 4]);
+    dimensionText = sprintf('gridE=%d, gridPphi=%d, gridLambda=%d, expectedTime=%d', ...
+        gridE, gridPphi, gridLambda, expectedTime);
+    data = readPICBinaryArray(filePath, precision, ...
+        [gridLambda, gridPphi, gridE, expectedTime], [3, 2, 1, 4], dimensionText);
 end
 
 function data = readPhasePower5D(filePath, precision, gridE, gridPphi, gridLambda, modeCount, expectedTime)
 
-    raw = readBinaryVector(filePath, precision);
-    perTime = gridE * gridPphi * gridLambda * modeCount;
-    assert(mod(numel(raw), perTime) == 0, ...
-        '%s 尺寸不匹配：读到 %d 个数，不能被单个输出时刻长度 %d 整除（gridE=%d, gridPphi=%d, gridLambda=%d, modeCount=%d）。', ...
-        filePath, numel(raw), perTime, gridE, gridPphi, gridLambda, modeCount);
-    nTime = numel(raw) / perTime;
-    assert(nTime == expectedTime, ...
-        '%s 尺寸不匹配：读到 %d 个输出时刻，期望 %d 个（每时刻 %d 个数，总数 %d）。', ...
-        filePath, nTime, expectedTime, perTime, numel(raw));
-    data = reshape(raw, [gridLambda, gridPphi, gridE, modeCount, nTime]);
-    data = permute(data, [3, 2, 1, 4, 5]);
+    dimensionText = sprintf( ...
+        'gridE=%d, gridPphi=%d, gridLambda=%d, modeCount=%d, expectedTime=%d', ...
+        gridE, gridPphi, gridLambda, modeCount, expectedTime);
+    data = readPICBinaryArray(filePath, precision, ...
+        [gridLambda, gridPphi, gridE, modeCount, expectedTime], [3, 2, 1, 4, 5], dimensionText);
 end
 
 function data = readPitch2D(filePath, precision, gridVpara, gridVperp)
 
-    raw = readBinaryVector(filePath, precision);
-    expectedCount = gridVpara * gridVperp;
-    assert(numel(raw) == expectedCount, ...
-        '%s 尺寸不匹配：读到 %d 个数，期望 %d 个（gridVpara=%d, gridVperp=%d）。', ...
-        filePath, numel(raw), expectedCount, gridVpara, gridVperp);
-    data = reshape(raw, [gridVperp, gridVpara]);
-    data = permute(data, [2, 1]);
+    dimensionText = sprintf('gridVpara=%d, gridVperp=%d', gridVpara, gridVperp);
+    data = readPICBinaryArray(filePath, precision, ...
+        [gridVperp, gridVpara], [2, 1], dimensionText);
 end
 
 function data = readPitch3D(filePath, precision, gridVpara, gridVperp, expectedTime)
 
-    raw = readBinaryVector(filePath, precision);
-    perFrame = gridVpara * gridVperp;
-    assert(mod(numel(raw), perFrame) == 0, ...
-        '%s 尺寸不匹配：读到 %d 个数，不能被单帧长度 %d 整除（gridVpara=%d, gridVperp=%d）。', ...
-        filePath, numel(raw), perFrame, gridVpara, gridVperp);
-    nTime = numel(raw) / perFrame;
-    assert(nTime == expectedTime, ...
-        '%s 尺寸不匹配：读到 %d 帧，期望 %d 帧（每帧 %d 个数，总数 %d）。', ...
-        filePath, nTime, expectedTime, perFrame, numel(raw));
-    data = reshape(raw, [gridVperp, gridVpara, nTime]);
-    data = permute(data, [2, 1, 3]);
+    dimensionText = sprintf('gridVpara=%d, gridVperp=%d, expectedTime=%d', ...
+        gridVpara, gridVperp, expectedTime);
+    data = readPICBinaryArray(filePath, precision, ...
+        [gridVperp, gridVpara, expectedTime], [2, 1, 3], dimensionText);
 end
 
 function data = readPitchPower4D(filePath, precision, gridVpara, gridVperp, modeCount, expectedTime)
 
-    raw = readBinaryVector(filePath, precision);
-    perTime = gridVpara * gridVperp * modeCount;
-    assert(mod(numel(raw), perTime) == 0, ...
-        '%s 尺寸不匹配：读到 %d 个数，不能被单个输出时刻长度 %d 整除（gridVpara=%d, gridVperp=%d, modeCount=%d）。', ...
-        filePath, numel(raw), perTime, gridVpara, gridVperp, modeCount);
-    nTime = numel(raw) / perTime;
-    assert(nTime == expectedTime, ...
-        '%s 尺寸不匹配：读到 %d 个输出时刻，期望 %d 个（每时刻 %d 个数，总数 %d）。', ...
-        filePath, nTime, expectedTime, perTime, numel(raw));
-    data = reshape(raw, [gridVperp, gridVpara, modeCount, nTime]);
-    data = permute(data, [2, 1, 3, 4]);
+    dimensionText = sprintf( ...
+        'gridVpara=%d, gridVperp=%d, modeCount=%d, expectedTime=%d', ...
+        gridVpara, gridVperp, modeCount, expectedTime);
+    data = readPICBinaryArray(filePath, precision, ...
+        [gridVperp, gridVpara, modeCount, expectedTime], [2, 1, 3, 4], dimensionText);
 end
 
 function data = readDiffusivity3D(filePath, precision, expectedTime, modeCount, gridNx)
 
-    raw = readBinaryVector(filePath, precision);
-    expectedCount = expectedTime * modeCount * gridNx;
-    assert(numel(raw) == expectedCount, ...
-        '%s 尺寸不匹配：读到 %d 个数，期望 %d 个（expectedTime=%d, modeCount=%d, gridNx=%d）。', ...
-        filePath, numel(raw), expectedCount, expectedTime, modeCount, gridNx);
-    data = reshape(raw, [gridNx, modeCount, expectedTime]);
-    data = permute(data, [3, 2, 1]);
+    dimensionText = sprintf('expectedTime=%d, modeCount=%d, gridNx=%d', ...
+        expectedTime, modeCount, gridNx);
+    data = readPICBinaryArray(filePath, precision, ...
+        [gridNx, modeCount, expectedTime], [3, 2, 1], dimensionText);
 end
 
 function data = readDensity2D(filePath, precision, expectedTime, gridNx)
 
+    dimensionText = sprintf('expectedTime=%d, gridNx=%d', expectedTime, gridNx);
+    data = readPICBinaryArray(filePath, precision, ...
+        [gridNx, expectedTime], [2, 1], dimensionText);
+end
+
+function data = readPICBinaryArray(filePath, precision, storageShape, permutation, dimensionText)
+
     raw = readBinaryVector(filePath, precision);
-    expectedCount = expectedTime * gridNx;
+    expectedCount = prod(storageShape);
     assert(numel(raw) == expectedCount, ...
-        '%s 尺寸不匹配：读到 %d 个数，期望 %d 个（expectedTime=%d, gridNx=%d）。', ...
-        filePath, numel(raw), expectedCount, expectedTime, gridNx);
-    data = reshape(raw, [gridNx, expectedTime]).';
+        '%s 尺寸不匹配：读到 %d 个数，期望 %d 个（%s）。', ...
+        filePath, numel(raw), expectedCount, dimensionText);
+    data = permute(reshape(raw, storageShape), permutation);
 end
 
 function raw = readBinaryVector(filePath, precision)
@@ -4016,9 +3634,9 @@ function [gridE, gridPphi, gridLambda] = readPhaseGrid(normData)
             'normalization2D.mat 缺少 "%s"。', requiredFields{fieldIndex});
     end
 
-    gridE = readPositiveIntegerScalar(normData.gridE, 'gridE');
-    gridPphi = readPositiveIntegerScalar(normData.gridPphi, 'gridPphi');
-    gridLambda = readPositiveIntegerScalar(normData.gridLambda, 'gridLambda');
+    gridE = requireIntegerInRange(normData.gridE, 1, Inf, 'gridE');
+    gridPphi = requireIntegerInRange(normData.gridPphi, 1, Inf, 'gridPphi');
+    gridLambda = requireIntegerInRange(normData.gridLambda, 1, Inf, 'gridLambda');
 end
 
 function phaseRange = readSpeciesRange(normData, rangeField)
@@ -4065,61 +3683,29 @@ function value = readPositiveScalar(normData, fieldName)
     assert(isscalar(value) && isfinite(value) && value > 0, '%s 必须是正标量。', fieldName);
 end
 
-function value = readPositiveIntegerScalar(rawValue, fieldName)
+function value = requireFiniteScalarInRange(value, minValue, maxValue, fieldName)
 
-    value = double(rawValue);
-    assert(isscalar(value) && isfinite(value) && value == floor(value) && value > 0, ...
-        '%s 必须是正整数标量。', fieldName);
-end
-
-function value = readNonnegativeIntegerScalar(rawValue, fieldName)
-
-    value = double(rawValue);
-    assert(isscalar(value) && isfinite(value) && value == floor(value) && value >= 0, ...
-        '%s 必须是非负整数标量。', fieldName);
-end
-
-function value = validateFiniteScalar(rawValue, fieldName)
-
-    value = double(rawValue);
+    value = double(value);
     assert(isscalar(value) && isfinite(value), '%s 必须是有限标量。', fieldName);
+    assert((~isfinite(minValue) || value >= minValue) && ...
+        (~isfinite(maxValue) || value <= maxValue), ...
+        '%s 必须位于 [%g, %g]。', fieldName, minValue, maxValue);
 end
 
-function value = validateIntegerScalar(rawValue, fieldName)
+function value = requireIntegerInRange(value, minValue, maxValue, fieldName)
 
-    value = double(rawValue);
-    assert(isscalar(value) && isfinite(value) && value == floor(value), '%s 必须是整数标量。', fieldName);
+    value = requireFiniteScalarInRange(value, minValue, maxValue, fieldName);
+    assert(value == floor(value), '%s 必须是整数。', fieldName);
 end
 
-function range = normalizeSliderRange(rawRange, initialValue, fieldName, isInteger)
-
-    range = reshape(double(rawRange), 1, []);
-    assert(numel(range) == 2 && all(isfinite(range)), '%s 必须为 [min max]。', fieldName);
-    range = sort(range);
-    initialValue = double(initialValue);
-    range(1) = min(range(1), initialValue);
-    range(2) = max(range(2), initialValue);
-
-    if isInteger
-        range = [floor(range(1)), ceil(range(2))];
-        if range(1) == range(2)
-            range = [range(1) - 1, range(2) + 1];
-        end
-    elseif range(1) == range(2)
-        deltaValue = max(1, 0.1 * abs(initialValue));
-        range = [range(1) - deltaValue, range(2) + deltaValue];
-    end
-end
-
-function range = normalizeSliderRangeForValues(rawRange, initialValues, fieldName, isInteger)
+function range = normalizeSliderRange(rawRange, initialValues, fieldName, isInteger)
 
     range = reshape(double(rawRange), 1, []);
     initialValues = reshape(double(initialValues), 1, []);
     assert(numel(range) == 2 && all(isfinite(range)), '%s 必须为 [min max]。', fieldName);
     assert(~isempty(initialValues) && all(isfinite(initialValues)), '%s 初始值必须有限。', fieldName);
     range = sort(range);
-    range(1) = min([range(1), initialValues]);
-    range(2) = max([range(2), initialValues]);
+    range = [min([range(1), initialValues]), max([range(2), initialValues])];
 
     if isInteger
         range = [floor(range(1)), ceil(range(2))];
@@ -4213,26 +3799,26 @@ end
 
 function data = localIdsToLinear(localIds, gridE, gridPphi, gridLambda)
 
-    [iE, iPphi, iLambda] = localIdsToSubscripts(localIds, gridPphi, gridLambda);
-    data = sub2ind([gridE, gridPphi, gridLambda], iE, iPphi, iLambda);
+    [eIndex, pphiIndex, lambdaIndex] = localIdsToSubscripts(localIds, gridPphi, gridLambda);
+    data = sub2ind([gridE, gridPphi, gridLambda], eIndex, pphiIndex, lambdaIndex);
 end
 
-function [iE, iPphi, iLambda] = localIdsToSubscripts(localIds, gridPphi, gridLambda)
+function [eIndex, pphiIndex, lambdaIndex] = localIdsToSubscripts(localIds, gridPphi, gridLambda)
 
     localIds = double(localIds(:));
     strideE = gridPphi * gridLambda;
-    iE = floor(localIds / strideE) + 1;
+    eIndex = floor(localIds / strideE) + 1;
     remainder = mod(localIds, strideE);
-    iPphi = floor(remainder / gridLambda) + 1;
-    iLambda = mod(remainder, gridLambda) + 1;
+    pphiIndex = floor(remainder / gridLambda) + 1;
+    lambdaIndex = mod(remainder, gridLambda) + 1;
 end
 
 function [baseE, basePphi, baseLambda] = initialCoordinatesFromLocalId(localIds, E1d, Pphi1d, Lambda1d)
 
-    [iE, iPphi, iLambda] = localIdsToSubscripts(localIds, numel(Pphi1d), numel(Lambda1d));
-    baseE = E1d(iE(:));
-    basePphi = Pphi1d(iPphi(:));
-    baseLambda = Lambda1d(iLambda(:));
+    [eIndex, pphiIndex, lambdaIndex] = localIdsToSubscripts(localIds, numel(Pphi1d), numel(Lambda1d));
+    baseE = E1d(eIndex(:));
+    basePphi = Pphi1d(pphiIndex(:));
+    baseLambda = Lambda1d(lambdaIndex(:));
 end
 
 function plotConservationDiagnostics(speciesName, diagnostics, E1d, Pphi1d, Lambda1d)
@@ -4257,16 +3843,16 @@ function plotInvariantErrors(speciesName, classLabel, diagnostic, E1d, Pphi1d, L
         mixedConservationError(diagnostic.Lambda, baseLambda)};
 
     figure('Name', [speciesName ' ' classLabel ' invariant error'], 'Color', 'w', 'Position', [100, 100, 900, 760]);
-    for iPlot = 1:numel(invariantLabels)
-        axHandle = subplot(3, 1, iPlot);
-        plot(axHandle, invariantErrors{iPlot}, '.');
+    for plotIndex = 1:numel(invariantLabels)
+        axHandle = subplot(3, 1, plotIndex);
+        plot(axHandle, invariantErrors{plotIndex}, '.');
         grid(axHandle, 'on');
-        ylabel(axHandle, invariantLabels{iPlot}, 'FontName', 'Times New Roman', 'FontSize', 14);
+        ylabel(axHandle, invariantLabels{plotIndex}, 'FontName', 'Times New Roman', 'FontSize', 14);
         set(axHandle, 'FontName', 'Times New Roman', 'FontSize', 14);
-        if iPlot == 1
+        if plotIndex == 1
             title(axHandle, sprintf('%s %s relative error', speciesName, classLabel), ...
                 'Interpreter', 'none', 'FontName', 'Times New Roman', 'FontSize', 14);
-        elseif iPlot == numel(invariantLabels)
+        elseif plotIndex == numel(invariantLabels)
             xlabel(axHandle, 'particle index', 'FontName', 'Times New Roman', 'FontSize', 14);
         end
     end
@@ -4283,8 +3869,8 @@ end
 
 function Z = fillEnclosedBlankRegions(Z)
 
-    [ny, nx] = size(Z);
-    if ny < 3 || nx < 3
+    [rowCount, columnCount] = size(Z);
+    if rowCount < 3 || columnCount < 3
         return;
     end
 
@@ -4294,7 +3880,7 @@ function Z = fillEnclosedBlankRegions(Z)
         return;
     end
 
-    visited = false(ny, nx);
+    visited = false(rowCount, columnCount);
     offsets = [-1, -1; -1, 0; -1, 1; 0, -1; 0, 1; 1, -1; 1, 0; 1, 1];
     blankIndex = find(blankMask);
 
@@ -4319,17 +3905,17 @@ function Z = fillEnclosedBlankRegions(Z)
             head = head + 1;
             nComponent = nComponent + 1;
             component(nComponent) = currentIndex;
-            [i, j] = ind2sub([ny, nx], currentIndex);
-            touchesBoundary = touchesBoundary || i == 1 || i == ny || j == 1 || j == nx;
+            [rowIndex, columnIndex] = ind2sub([rowCount, columnCount], currentIndex);
+            touchesBoundary = touchesBoundary || rowIndex == 1 || rowIndex == rowCount || columnIndex == 1 || columnIndex == columnCount;
 
-            for k = 1:8
-                ni = i + offsets(k, 1);
-                nj = j + offsets(k, 2);
-                if ni < 1 || ni > ny || nj < 1 || nj > nx
+            for neighborOffsetIndex = 1:8
+                neighborRowIndex = rowIndex + offsets(neighborOffsetIndex, 1);
+                neighborColumnIndex = columnIndex + offsets(neighborOffsetIndex, 2);
+                if neighborRowIndex < 1 || neighborRowIndex > rowCount || neighborColumnIndex < 1 || neighborColumnIndex > columnCount
                     touchesBoundary = true;
                     continue;
                 end
-                neighborIndex = sub2ind([ny, nx], ni, nj);
+                neighborIndex = sub2ind([rowCount, columnCount], neighborRowIndex, neighborColumnIndex);
                 if blankMask(neighborIndex)
                     if ~visited(neighborIndex)
                         tail = tail + 1;
@@ -4375,8 +3961,11 @@ function tf = residualHasZeroContour(Z)
     tf = any(finiteCell(:) & cellMin(:) < 0 & cellMax(:) > 0);
 end
 
-function [colorMin, colorMax] = finiteColorLimits(data)
+function [colorMin, colorMax] = finiteColorLimits(data, isSymmetric)
 
+    if nargin < 2
+        isSymmetric = false;
+    end
     finiteData = data(isfinite(data));
     if isempty(finiteData)
         colorMin = -1;
@@ -4384,38 +3973,26 @@ function [colorMin, colorMax] = finiteColorLimits(data)
         return;
     end
 
-    colorMin = min(finiteData);
+    if isSymmetric
+        finiteData = abs(finiteData);
+        colorMin = 0;
+    else
+        colorMin = min(finiteData);
+    end
     colorMax = max(finiteData);
     robustMax = finitePercentile(finiteData, 99.5);
     if isfinite(robustMax) && robustMax > colorMin && colorMax > 5 * robustMax
         colorMax = robustMax;
     end
-    if colorMin == colorMax
+    if isSymmetric
+        if colorMax <= 0
+            colorMax = 1;
+        end
+        colorMin = -colorMax;
+    elseif colorMin == colorMax
         colorMin = colorMin - 1;
         colorMax = colorMax + 1;
     end
-end
-
-function [colorMin, colorMax] = symmetricFiniteColorLimits(data)
-
-    finiteData = data(isfinite(data));
-    if isempty(finiteData)
-        colorMin = -1;
-        colorMax = 1;
-        return;
-    end
-
-    absData = abs(finiteData);
-    colorLimit = max(absData);
-    robustLimit = finitePercentile(absData, 99.5);
-    if isfinite(robustLimit) && robustLimit > 0 && colorLimit > 5 * robustLimit
-        colorLimit = robustLimit;
-    end
-    if colorLimit <= 0
-        colorLimit = 1;
-    end
-    colorMin = -colorLimit;
-    colorMax = colorLimit;
 end
 
 function value = finitePercentile(data, percent)
@@ -4606,45 +4183,19 @@ function value = safeDivide(numerator, denominator)
     end
 end
 
-function value = finiteMinOrNaN(x)
+function value = statisticOrNaN(x, statisticFcn, finiteOnly)
 
-    x = x(isfinite(x));
+    if finiteOnly
+        x = x(isfinite(x));
+    end
     if isempty(x)
         value = NaN;
     else
-        value = min(x);
+        value = statisticFcn(x);
     end
 end
 
-function value = finiteMaxOrNaN(x)
-
-    x = x(isfinite(x));
-    if isempty(x)
-        value = NaN;
-    else
-        value = max(x);
-    end
-end
-
-function value = maxOrNaN(x)
-
-    if isempty(x)
-        value = NaN;
-    else
-        value = max(x);
-    end
-end
-
-function value = meanOrNaN(x)
-
-    if isempty(x)
-        value = NaN;
-    else
-        value = mean(x);
-    end
-end
-
-function value = optionOrDefault(opt, fieldName, defaultValue)
+function value = getOptionValue(opt, fieldName, defaultValue)
 
     if isfield(opt, fieldName) && ~isempty(opt.(fieldName))
         value = opt.(fieldName);
@@ -4655,7 +4206,8 @@ end
 
 function logLoaded(name, data)
 
-    fprintf('[load] %s: size=[%s]\n', char(name), formatSize(size(data)));
+    sizeText = strjoin(cellstr(compose('%d', size(data).')), ' ');
+    fprintf('[load] %s: size=[%s]\n', char(name), sizeText);
 end
 
 function logSkipped(name, reason)
@@ -4663,26 +4215,12 @@ function logSkipped(name, reason)
     fprintf('[skip] %s: %s\n', char(name), reason);
 end
 
-function printOrbitSummaryIndex(summaryStruct)
+function printOrbitSummarySpecies(summaryStruct)
 
     fields = fieldnames(summaryStruct);
     if isempty(fields)
         fprintf('[orbit] 未处理任何 PhaseSpaceOrbit.bin。\n');
     else
         fprintf('[orbit] 已处理物种：%s\n', strjoin(fields, ', '));
-    end
-end
-
-function text = formatSize(dataSize)
-
-    text = strjoin(cellstr(compose('%d', dataSize(:))), ' ');
-end
-
-function text = formatNumberList(values)
-
-    if isempty(values)
-        text = '';
-    else
-        text = strjoin(cellstr(compose('%g', values(:))), ', ');
     end
 end
