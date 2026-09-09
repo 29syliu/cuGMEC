@@ -144,6 +144,7 @@
 | `ifDiagDensity` | `trueType` / `falseType` | 是否诊断离子扰动密度。 |  | `using ifDiagDensity = trueType;` |
 | `ifDiagDiffusivity` | `trueType` / `falseType` | 是否诊断离子扩散系数。 |  | `using ifDiagDiffusivity = trueType;` |
 | `ifDiagZFDrive` | `trueType` / `falseType` | 是否诊断 zonal-flow 驱动源。 |  | `using ifDiagZFDrive = falseType;` |
+| `ifDiagShearing` | `trueType` / `falseType` | 是否诊断 Hahm-Burrell 剪切率。 |  | `using ifDiagShearing = falseType;` |
 | `ifCheckNAN` | `trueType` / `falseType` | 是否检查 NaN。 | 如果诊断到 NaN，程序会立刻停止并进行输出。 | `using ifCheckNAN = trueType;` |
 
 ## MHD 场输出

@@ -144,6 +144,7 @@ Notation:
 | `ifDiagDensity` | `trueType` / `falseType` | Whether to diagnose the ion density perturbation. |  | `using ifDiagDensity = trueType;` |
 | `ifDiagDiffusivity` | `trueType` / `falseType` | Whether to diagnose ion diffusivity. |  | `using ifDiagDiffusivity = trueType;` |
 | `ifDiagZFDrive` | `trueType` / `falseType` | Whether to diagnose the zonal-flow drive source. |  | `using ifDiagZFDrive = falseType;` |
+| `ifDiagShearing` | `trueType` / `falseType` | Whether to diagnose the Hahm-Burrell shearing rate. |  | `using ifDiagShearing = falseType;` |
 | `ifCheckNAN` | `trueType` / `falseType` | Whether to check for NaN. | If NaN is diagnosed, the program stops immediately and writes output. | `using ifCheckNAN = trueType;` |
 
 ## MHD Field Output
