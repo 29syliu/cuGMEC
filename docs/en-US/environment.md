@@ -1,5 +1,7 @@
 # cuGMEC Environment Setup and Build
 
+[中文](../zh-CN/environment.md) | [PDF](environment.pdf)
+
 This document describes how to install the dependencies required by cuGMEC, configure environment variables, and build the executable. The target environment is a Linux GPU workstation or GPU cluster.
 
 ## 1. Dependency Overview

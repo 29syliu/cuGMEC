@@ -1,5 +1,7 @@
 ﻿# cuGMEC 参数表
 
+[English](../en-US/parameters.md) | [PDF](parameters.pdf)
+
 本文档对应 `src/cuGMEC_param.h`。修改这些参数后必须重新编译。
 
 示范列只给出一种写法，不表示推荐值。
@@ -193,4 +195,3 @@
 | `sortSteps` | 整数 | 粒子排序间隔。 |  | `const int sortSteps = 25;` |
 | `diagSteps` | 整数 | 诊断采样间隔。 |  | `const int diagSteps = 1;` |
 | `outputSteps` | 整数 | 场和相空间输出间隔。 |  | `const int outputSteps = 2500;` |
-

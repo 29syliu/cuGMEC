@@ -523,7 +523,14 @@ For example, an ITER steady-state full-torus case up to toroidal mode number 36 
 
 ## 💻 How to Use
 
-Under construction.
+A typical cuGMEC workflow is:
+
+1. Compute the tokamak equilibrium with [scripts/equilibrium/compute2D_0170.ipynb](scripts/equilibrium/compute2D_0170.ipynb), and export it with [scripts/equilibrium/output2D_0170.ipynb](scripts/equilibrium/output2D_0170.ipynb).
+2. Generate the cuGMEC input files with [scripts/preprocess/generateInput2D.m](scripts/preprocess/generateInput2D.m). If phase-space diagnostics are needed, also run [scripts/preprocess/generatePhaseSpaceMapping2D.m](scripts/preprocess/generatePhaseSpaceMapping2D.m).
+3. Configure [src/cuGMEC_param.h](src/cuGMEC_param.h) according to [docs/en-US/parameters.md](docs/en-US/parameters.md).
+4. Configure the repository-root [Makefile](Makefile) for the target environment according to [docs/en-US/environment.md](docs/en-US/environment.md), and then compile cuGMEC.
+5. Run the simulation locally or submit it to a computing cluster.
+6. Visualize the simulation output with [scripts/postprocess/visualizeMHD.m](scripts/postprocess/visualizeMHD.m) and [scripts/postprocess/visualizePIC.m](scripts/postprocess/visualizePIC.m).
 
 ---
 

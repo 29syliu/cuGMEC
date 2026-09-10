@@ -1,5 +1,7 @@
 # cuGMEC 环境配置与编译
 
+[English](../en-US/environment.md) | [PDF](environment.pdf)
+
 本文档说明 cuGMEC 所需依赖的安装方式、环境变量设置和编译命令。目标环境为 Linux GPU 工作站或 GPU 集群。
 
 ## 1. 依赖总览

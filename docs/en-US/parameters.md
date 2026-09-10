@@ -1,5 +1,7 @@
 # cuGMEC Parameter Table
 
+[中文](../zh-CN/parameters.md) | [PDF](parameters.pdf)
+
 This document corresponds to `src/cuGMEC_param.h`. You must recompile after changing these parameters.
 
 The Example column shows only one possible way to write each parameter; it does not imply a recommended value.
